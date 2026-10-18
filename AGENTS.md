@@ -137,7 +137,7 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   operations become subcommands in `_`, not new top-level scripts.
 - Code comments and docs in English; match the existing terse comment style.
   The user writes in Polish, is a senior engineer and prefers terse answers.
-- Git repo since 2026-10-18 (`main`, no remote). Vulkan-Headers is a
+- Git repo since 2026-10-18 (`master`, no remote). Vulkan-Headers is a
   submodule (`git submodule update --init`). Commit only when the user asks.
 - Steam here is the **Flatpak** (`~/.var/app/com.valvesoftware.Steam`): its
   `/dev/shm` is private, `$HOME` inside = that dir. Test games by hand with
