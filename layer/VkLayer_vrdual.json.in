@@ -1,0 +1,14 @@
+{
+    "file_format_version": "1.2.0",
+    "layer": {
+        "name": "VK_LAYER_VRDUAL_stereo",
+        "type": "GLOBAL",
+        "library_path": "./libVkLayer_vrdual.so",
+        "api_version": "1.4.357",
+        "implementation_version": "1",
+        "description": "vrdual PoC: per-eye vertex offset, GPU filter, frame export",
+        "functions": {
+            "vkNegotiateLoaderLayerInterfaceVersion": "vrdual_NegotiateLoaderLayerInterfaceVersion"
+        }
+    }
+}

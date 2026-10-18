@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+# vrdual — human front end. Bare `_` = help + interactive menu.
+# Implementation lives here; `vrdual` sources this file for the machine contract.
+set -euo pipefail
+VRDUAL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+B="$VRDUAL_ROOT/build"
+
+say() { printf '%s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------- commands --
+vrdual_build() { make -C "$VRDUAL_ROOT" -j"$(nproc)" all lib32 >&2; }
+
+# Lists display-class PCI GPUs and the narrowest link on the path to the CPU
+# (the GPU's own slot always claims x16; the chipset uplink is what limits).
+vrdual_gpus() {
+    local dev
+    for dev in /sys/bus/pci/devices/*; do
+        [[ "$(cat "$dev/class")" == 0x03* ]] || continue
+        local bdf path n minw=99 mins=99 node chipset=0
+        bdf=$(basename "$dev")
+        path=$(realpath "$dev")
+        n=0
+        for node in $(echo "${path#/sys/devices/}" | tr / ' '); do
+            [[ $node == pci* ]] && continue
+            local p=/sys/bus/pci/devices/$node w s
+            [[ -r $p/max_link_width ]] || continue
+            w=$(cat "$p/max_link_width"); s=$(cut -d' ' -f1 "$p/max_link_speed")
+            (( w < minw )) && minw=$w
+            awk "BEGIN{exit !($s < $mins)}" && mins=$s
+            n=$((n + 1))
+        done
+        # >2 bridge hops between root complex and GPU = behind a switch (chipset on AM4/AM5).
+        (( n > 4 )) && chipset=1
+        printf '%s\t%s\tGen-speed=%sGT/s\tx%s\tbridges=%s\t%s\n' "$bdf" \
+            "$(lspci -s "$bdf" | cut -d: -f3- | sed 's/^ //' | cut -c1-60)" "$mins" "$minw" "$n" \
+            "$( ((chipset)) && echo 'behind-switch(chipset?)' || echo 'cpu-direct')"
+    done
+}
+
+vrdual_clean() { rm -f /dev/shm/vrdual-* "$FLATPAK_SHM"/vrdual-* 2>/dev/null; say "removed vrdual-* from /dev/shm (and Flatpak Steam's)"; }
+
+# vrdual_run [--left-gpu G] [--right-gpu G] [--session S] [--snapshot PNG --at N] -- APP ARGS...
+# Starts the compositor and two copies of APP (one per eye/GPU). All VRDUAL_*
+# variables in the environment (IPD, ANCHOR, ...) are passed through.
+vrdual_run() {
+    local lg="" rg=""  # empty = left_gpu/right_gpu from the config file
+    local session="${VRDUAL_SESSION:-default}" snapshot="" at=120 scale="${VRDUAL_SCALE:-1}"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --left-gpu) lg=$2; shift 2 ;;
+            --right-gpu) rg=$2; shift 2 ;;
+            --session) session=$2; shift 2 ;;
+            --snapshot) snapshot=$2; shift 2 ;;
+            --at) at=$2; shift 2 ;;
+            --scale) scale=$2; shift 2 ;;
+            --) shift; break ;;
+            *) break ;;
+        esac
+    done
+    [[ $# -gt 0 ]] || { say "run: missing app command"; return 2; }
+    [[ -x $B/libVkLayer_vrdual.so || -f $B/libVkLayer_vrdual.so ]] || vrdual_build
+    rm -f /dev/shm/vrdual-"$session"-*
+    local -a envs=(VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION="$session")
+    local pids=()
+    env "${envs[@]}" VRDUAL_EYE=left ${lg:+VRDUAL_GPU="$lg"} "$@" >&2 & pids+=($!)
+    env "${envs[@]}" VRDUAL_EYE=right ${rg:+VRDUAL_GPU="$rg"} "$@" >&2 & pids+=($!)
+    local rc=0
+    if [[ -n $snapshot ]]; then
+        "$B/vrdual-compositor" --session "$session" --snapshot "$snapshot" --at "$at" || rc=$?
+        kill "${pids[@]}" 2>/dev/null || true
+        echo "$snapshot"
+    else
+        "$B/vrdual-compositor" --session "$session" --scale "$scale" || rc=$?
+        kill "${pids[@]}" 2>/dev/null || true
+    fi
+    wait 2>/dev/null || true
+    rm -f /dev/shm/vrdual-"$session"-*
+    return $rc
+}
+
+vrdual_demo() { vrdual_run "$@" -- "$B/vrdual-cube"; }
+
+# Calibration: static posts at 0.5/1/2/5/20 m, compositor keys change IPD live.
+vrdual_calib() { vrdual_run "$@" -- "$B/vrdual-cube" --scene calib; }
+
+# Config file + live control of a running session (thin wrappers on vrdual-ctl).
+vrdual_config() { "$B/vrdual-ctl" "${1:-show}" "${@:2}"; }
+vrdual_live() { pick_shm "$@"; "$B/vrdual-ctl" live "$@"; }
+vrdual_set() { pick_shm "$@"; "$B/vrdual-ctl" set "$@"; }
+vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@"; }
+
+# ------------------------------------------------------------ steam / HMD --
+STEAM_FLATPAK="$HOME/.var/app/com.valvesoftware.Steam"
+FLATPAK_SHM="/run/user/$(id -u)/.flatpak/com.valvesoftware.Steam/dev-shm"
+
+# Frame files and control block of a game inside Flatpak Steam live in its
+# private /dev/shm. Exports VRDUAL_SHM_DIR when that is where session S is
+# (or will be: Flatpak Steam runs and /dev/shm has nothing for S).
+pick_shm() {
+    [[ -n ${VRDUAL_SHM_DIR:-} ]] && return 0
+    local s="${VRDUAL_SESSION:-default}" a
+    for a in "$@"; do [[ ${prev:-} == --session ]] && s=$a; prev=$a; done
+    unset prev
+    if [[ ! -e /dev/shm/vrdual-$s-ctl && -d $FLATPAK_SHM/ ]]; then
+        export VRDUAL_SHM_DIR=$FLATPAK_SHM
+        say "session '$s': using Flatpak Steam's /dev/shm ($FLATPAK_SHM)"
+    fi
+}
+
+# Installs the layer (32 + 64 bit) and a launch wrapper where Steam games can
+# see them; prints the Steam launch option (stdout).
+vrdual_steam_install() {
+    make -C "$VRDUAL_ROOT" -j"$(nproc)" all lib32 >&2 || return 1
+    local host inside conf
+    if [[ -d $STEAM_FLATPAK ]]; then
+        host=$STEAM_FLATPAK/vrdual; inside=$HOME/vrdual; conf=$STEAM_FLATPAK/.config/vrdual
+    else
+        host=$HOME/.local/share/vrdual; inside=$host; conf=""
+    fi
+    mkdir -p "$host/layer"
+    cp "$B/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual64.so"
+    cp "$B/lib32/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual32.so"
+    local bits
+    for bits in 32 64; do
+        sed -e "s|\"./libVkLayer_vrdual.so\"|\"./libVkLayer_vrdual$bits.so\",\n        \"library_arch\": \"$bits\"|" \
+            -e 's|"file_format_version": "1.2.0"|"file_format_version": "1.2.1"|' \
+            "$VRDUAL_ROOT/layer/VkLayer_vrdual.json.in" >"$host/layer/VkLayer_vrdual$bits.json"
+    done
+    cat >"$host/run" <<'WRAP'
+#!/bin/sh
+# vrdual Steam wrapper (installed by `vrdual steam-install`).
+# Steam > game > Properties > Launch options:   <path of this file> %command%
+# One process, the game sees one GPU, the other renders the second eye.
+# OpenGL games go through Zink (GL on Vulkan) so the layer can see them.
+d=$(dirname "$(readlink -f "$0")")
+export VK_ADD_LAYER_PATH="$d/layer${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}"
+export VK_INSTANCE_LAYERS="VK_LAYER_VRDUAL_stereo${VK_INSTANCE_LAYERS:+:$VK_INSTANCE_LAYERS}"
+export VRDUAL_EYE="${VRDUAL_EYE:-both}"
+export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-zink}"
+exec "$@"
+WRAP
+    chmod +x "$host/run"
+    if [[ -n $conf && -f $(vrdual-config-path) ]]; then
+        mkdir -p "$conf" && cp "$(vrdual-config-path)" "$conf/vrdual.conf"
+        say "copied $(vrdual-config-path) -> $conf/vrdual.conf (the game reads that one)"
+    fi
+    say "installed to $host"
+    say "Steam > game > Properties > Launch options:"
+    echo "$inside/run %command%"
+}
+vrdual-config-path() { "$B/vrdual-ctl" path; }
+
+# SBS window for a running session (also finds games inside Flatpak Steam).
+vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
+
+# HMD output through OpenXR. Without an active runtime, uses WiVRn's Flatpak.
+vrdual_xr() {
+    pick_shm "$@"
+    if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
+        local w
+        w=$(flatpak info --show-location io.github.wivrn.wivrn 2>/dev/null) && export XR_RUNTIME_JSON=$w/files/share/openxr/1/openxr_wivrn.json
+    fi
+    "$B/vrdual-xr" "$@"
+}
+
+# WiVRn streaming server (Flatpak) for the Quest. Runs in the foreground.
+vrdual_wivrn() {
+    local opts=()
+    # A second server deletes the first one's IPC socket on exit (apps then fail
+    # with "Failed to connect to monado service process").
+    if pgrep -x wivrn-server >/dev/null; then
+        say "wivrn-server already running (pid $(pgrep -x wivrn-server | paste -sd' ')); stop it first"; return 1
+    fi
+    systemctl is-active -q avahi-daemon 2>/dev/null || {
+        opts+=(--no-publish-service)
+        say "avahi-daemon not running: headset will not find the PC by itself — add it by IP: $(ip -4 -o addr show scope global | awk '$2 !~ /docker|veth|br-/ {sub("/.*","",$4); print $4; exit}')"
+    }
+    flatpak run --command=wivrn-server io.github.wivrn.wivrn "${opts[@]}" "$@"
+}
+
+vrdual_snapshot() {
+    local out="${1:-$VRDUAL_ROOT/sbs.png}"
+    vrdual_run --snapshot "$out" --at "${2:-150}" -- "$B/vrdual-cube" --frames 100000
+}
+
+# Automated verification; exit 0 = everything passed. Opens two small windows
+# for ~20 s (one per GPU). Uses an empty temporary config, session "selftest".
+vrdual_selftest() {
+    local tmp fails=0 sess=selftest
+    tmp=$(mktemp -d)
+    _VRDUAL_SELFTEST_TMP=$tmp
+    trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
+    check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
+    vrdual_build || return 1
+
+    # 1. SPIR-V patcher: baked + live variants must validate; non-vertex must be refused.
+    glslc "$VRDUAL_ROOT/testapp/cube.vert" -o "$tmp/glsl.spv"
+    glslc -fshader-stage=vertex -x hlsl "$VRDUAL_ROOT/tools/test-shaders/hlsl_vs.hlsl" -o "$tmp/hlsl.spv"
+    glslc "$VRDUAL_ROOT/testapp/cube.frag" -o "$tmp/frag.spv"
+    local sh m
+    for sh in glsl hlsl; do
+        for m in "baked 0.03 0.02 5 0.25" "live 0x123456789a0"; do
+            label="spirv $sh ${m%% *}"
+            # shellcheck disable=SC2086
+            check bash -c "'$B/spvpatch' '$tmp/$sh.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv'"
+        done
+    done
+    label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+
+    # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
+    export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
+    rm -f /dev/shm/vrdual-$sess-*
+    local e
+    for e in left right; do
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e \
+            "$B/vrdual-cube" --scene calib --title "selftest $e" >"$tmp/$e.log" 2>&1 &
+    done
+    snap() {  # newest paired frame at least 15 frames after now
+        local f
+        f=$("$B/vrdual-compositor" --session $sess --snapshot "$1" --at 0 --timeout 20 2>&1 | grep -oE 'frame [0-9]+' | cut -d' ' -f2)
+        [[ -n $f ]] && "$B/vrdual-compositor" --session $sess --snapshot "$1" --at $((f + 15)) --timeout 20 >/dev/null 2>&1
+    }
+    set_live() { local kv; for kv in "$@"; do "$B/vrdual-ctl" --session $sess set ${kv/=/ } >/dev/null || return 1; done; }
+    local M="python3 -I $VRDUAL_ROOT/tools/measure_posts.py"
+    local i
+    for i in $(seq 100); do grep -q exporting "$tmp/left.log" && grep -q exporting "$tmp/right.log" && break; sleep 0.1; done
+    label="two GPUs selected";   check bash -c "grep -q 'pci 0000:06:00.0' '$tmp/left.log' && grep -q 'pci 0000:0b:00.0' '$tmp/right.log'"
+    label="live params enabled"; check grep -q 'live params at device address' "$tmp/left.log" "$tmp/right.log"
+    label="default ipd 64mm";    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/a.png' && $M '$tmp/a.png' --ipd 0.064 --anchor center"
+    set_live ipd=0.2
+    label="live ipd 200mm";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/b.png' && $M '$tmp/b.png' --ipd 0.2 --anchor center"
+    set_live ipd=0.064 anchor=left
+    label="anchor left";         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/c.png' && $M '$tmp/c.png' --ipd 0.064 --anchor left"
+    set_live anchor=right
+    label="anchor right";        check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/d.png' && $M '$tmp/d.png' --ipd 0.064 --anchor right"
+    set_live anchor=center ipd_near=0.2 near_dist=1 far_dist=5
+    label="near/far blend";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/e.png' && $M '$tmp/e.png' --ipd 0.064 --ipd-near 0.2 --near 1 --far 5"
+    kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
+
+    # 3. Mirror mode: ONE process, the app sees one GPU, the layer replays on the other.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        "$B/vrdual-cube" --scene calib --title "selftest mirror" >"$tmp/mirror.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'twin images' "$tmp/mirror.log" && break; sleep 0.1; done
+    label="mirror: app sees 1 GPU, twin on 0b"; check bash -c "grep -q 'app sees 1 GPU' '$tmp/mirror.log' && grep -q 'twin device on .*0000:0b:00.0' '$tmp/mirror.log'"
+    label="mirror: default ipd 64mm"; check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m1.png' && $M '$tmp/m1.png' --ipd 0.064 --anchor center"
+    set_live ipd=0.2
+    label="mirror: live ipd 200mm";   check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m2.png' && $M '$tmp/m2.png' --ipd 0.2 --anchor center"
+    kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
+
+    # 3b. Mirror with Vulkan 1.4 paths DXVK 3 needs: device addresses (captured on
+    # A, replayed on B) and vkMapMemory2. Wrong addresses on B = garbage right eye.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        "$B/vrdual-cube" --scene calib --bda --title "selftest bda" >"$tmp/bda.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'twin images' "$tmp/bda.log" && break; sleep 0.1; done
+    label="mirror bda: addresses replayed, ipd 64mm"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'device addresses replayed' '$tmp/bda.log' && snap '$tmp/bda.png' &&
+        $M '$tmp/bda.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/bda.log' || { cat '$tmp/bda.log'; false; }"
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
+    # 3c. Two swapchains (wined3d style): the small one is created last and must
+    # neither take the frame file nor crash the big one's export.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        "$B/vrdual-cube" --scene calib --extra-window --title "selftest 2 swapchains" >"$tmp/xw.log" 2>&1 &
+    local xw=$!
+    for i in $(seq 100); do grep -q 'exporting' "$tmp/xw.log" && break; sleep 0.1; done
+    label="mirror: 2 swapchains, biggest exported, ipd 64mm"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/xw.png' && $M '$tmp/xw.png' --ipd 0.064 --anchor center &&
+        kill -0 $xw && ! grep -q 'exporting 64x48' '$tmp/xw.log' || { cat '$tmp/xw.log'; false; }"
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
+    # 4. Mirror mode under Zink (OpenGL 2.1-era app), 64- and 32-bit; eyes must differ.
+    local gl
+    for gl in "$B/vrdual-gltest" "$B/lib32/vrdual-gltest"; do
+        [[ -x $gl ]] || { say "SKIP  mirror zink $(basename "$(dirname "$gl")") (make lib32)"; continue; }
+        rm -f /dev/shm/vrdual-$sess-*
+        env MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+            VRDUAL_SESSION=$sess VRDUAL_EYE=both "$gl" --title "selftest zink" >"$tmp/gl.log" 2>&1 &
+        label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped"
+        check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
+            [ \"\$(magick '$tmp/g.png' -crop 50%x100% +repage -format '%#\n' info: | sort -u | wc -l)\" = 2 ]"
+        kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
+    done
+    # 5. OpenXR output against Monado's simulated HMD (null compositor, no window).
+    local xrj="${VRDUAL_XR_TEST_RUNTIME:-$B/monado/openxr_monado.json}"
+    if [[ -f $xrj ]]; then
+        rm -f /dev/shm/vrdual-$sess-*
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            "$B/vrdual-cube" --scene calib --title "selftest xr" >"$tmp/xrsrc.log" 2>&1 &
+        local src=$!
+        label="openxr: focused session, 60 frames submitted"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess --frames 60 >'$tmp/xr.log' 2>&1;
+            grep -q 'session state 5' '$tmp/xr.log' && grep -q '60 frames submitted' '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
+        # game exits while streaming: WiVRn keeps the last image unless we send black
+        label="openxr: black frame after the game exits"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
+            for i in \$(seq 40); do grep -q 'first frame' '$tmp/xr3.log' && break; sleep 0.5; done; kill $src
+            for i in \$(seq 10); do grep -q 'blank frame submitted' '$tmp/xr3.log' && break; sleep 0.5; done; kill \$p; wait \$p
+            grep -q 'first frame' '$tmp/xr3.log' && grep -q 'blank frame submitted' '$tmp/xr3.log' || { cat '$tmp/xr3.log'; false; }"
+        kill $src 2>/dev/null || true; wait 2>/dev/null || true
+        # game gone, frame files left behind: the headset must not get the frozen frame
+        sleep 2
+        label="openxr: stale frames not shown"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 20 '$B/vrdual-xr' --session $sess --frames 1 >'$tmp/xr2.log' 2>&1 & p=\$!
+            for i in \$(seq 40); do grep -q 'session state 5' '$tmp/xr2.log' && break; sleep 0.5; done; sleep 2; kill \$p; wait \$p
+            grep -q 'session state 5' '$tmp/xr2.log' && grep -q 'no game frames' '$tmp/xr2.log' && ! grep -q 'frames submitted' '$tmp/xr2.log' || { cat '$tmp/xr2.log'; false; }"
+        label="openxr: Ctrl-C exits within 4 s"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 '$B/vrdual-xr' --session $sess >'$tmp/xr4.log' 2>&1 & p=\$!
+            for i in \$(seq 40); do grep -q 'session state 5' '$tmp/xr4.log' && break; sleep 0.5; done; kill -INT \$p
+            for i in \$(seq 8); do kill -0 \$p 2>/dev/null || break; sleep 0.5; done
+            if kill -0 \$p 2>/dev/null; then kill -9 \$p; cat '$tmp/xr4.log'; false; fi"
+    else
+        say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
+    fi
+    unset VRDUAL_CONFIG
+    if ((fails)); then say "selftest: $fails FAILED"; return 1; fi
+    say "selftest: all passed"
+}
+
+vrdual_help() {
+    cat >&2 <<'EOF'
+vrdual — dual-GPU per-eye rendering PoC (see README.md)
+
+  build                         compile layer, test app, compositor
+  gpus                          list GPUs + narrowest PCIe link on the path to the CPU
+  demo                          vrdual-cube on both GPUs + live side-by-side window
+  calib                         IPD calibration scene (posts at 0.5..20 m); keys in the window:
+                                  Up/Down IPD, PgUp/PgDn near IPD, N near/far on/off,
+                                  A anchor, -/= HFOV, W save to profile, H help, S swap
+  config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
+  live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
+  snapshot [out.png] [frame]    same, but save one paired SBS frame and exit
+  steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
+                                  the launch option:  .../vrdual/run %command%
+  view [--session S]            SBS window of a running game (finds Flatpak Steam sessions)
+  xr [--session S] [--lock head|world]   game in the HMD via OpenXR (WiVRn -> Quest)
+  wivrn                         start the WiVRn streaming server (Flatpak)
+  run [opts] -- APP ARGS...     any Vulkan app, one copy per eye
+                                  --left-gpu G --right-gpu G (pci:BBBB:BB:DD.F | index | name)
+                                  --session S --scale F --snapshot PNG --at N
+  clean                         remove stale /dev/shm/vrdual-*
+  selftest                      automated verification (~20 s, two small windows); exit 0 = pass
+
+Settings: config file, overridable per run by VRDUAL_<KEY> env (VRDUAL_IPD=0.066 ...).
+EOF
+}
+
+vrdual_dispatch() {
+    local cmd="${1:-help}"; shift || true
+    case "$cmd" in
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn) "vrdual_$cmd" "$@" ;;
+        steam-install) vrdual_steam_install "$@" ;;
+        *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
+    esac
+}
+
+# ------------------------------------------------------------- human entry --
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ $# -gt 0 ]]; then vrdual_dispatch "$@"; exit; fi
+    vrdual_help
+    PS3=$'\nchoose: '
+    select c in build gpus demo calib config snapshot steam-install view wivrn xr clean quit; do
+        [[ $c == quit || -z $c ]] && exit 0
+        vrdual_dispatch "$c"
+        break
+    done
+fi

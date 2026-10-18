@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Machine front end: no prompts, one subcommand per call, stdout = data,
+# prose on stderr, exit code = result. Same implementation as `_`.
+set -euo pipefail
+source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/_"
+[[ $# -gt 0 ]] || { vrdual_help; exit 2; }
+vrdual_dispatch "$@"
