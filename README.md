@@ -25,3 +25,18 @@ Steam games (also OpenGL ones, also Flatpak Steam), one process, two GPUs:
 ```
 
 More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · plan: [TODO.md](TODO.md) · for AI agents: [AGENTS.md](AGENTS.md)
+
+# Tested
+
+## Hardware
+
+* 2x AMD rx 7900 xtx
+
+## Games
+
+* American McGee Alice Madness Returns
+* LEGO Harry Potter 1-4
+  * Turn off video effects (I have not checked which but with enabled there is a "ghost" - likely DoF could be causing that)
+* Portal 2
+* Zen Bound 2
+
