@@ -106,6 +106,8 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - A mirror stop must leave the app intact: shadow mappings keep being copied
   to A afterwards (otherwise the game renders stale data and crashes).
   32-bit games: address space, see "Host memory" in ARCHITECTURE.
+- Test windows hidden behind others get ~1 frame/s from XWayland/Mutter: wait
+  for frame indices in checks, never for a fixed time.
 - One process can have several live swapchains (wined3d). Never size the frame
   file from one swapchain and publish from another (`shm_claim`).
 - `/dev/uinput` fails with ENODEV after a kernel package update until reboot

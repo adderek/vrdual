@@ -98,6 +98,9 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   VkInstance, same VkDeviceCreateInfo as the app's. The loader, other layers and
   the app never see it. Requires identical GPUs + driver (checked: memory types
   must match), so sizes, offsets and memory type indices carry over.
+  **Single GPU:** when no other GPU matches `right_gpu` (one card, or
+  `right_gpu` names the app's GPU) the twin is a second device on the app's
+  GPU: same code path, both eyes rendered there (about half the frame rate).
 - **Replay**: every device-level call runs on A, then again on B with all
   handles translated (arrays, nested structs, pNext chains). Created handles
   are recorded A→B. Queries (`vkGet*`) run on A only. Untranslatable commands
