@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -463,8 +464,8 @@ static bool filtering() { return g_cfg.eye >= 0 && strcmp(env("VRDUAL_FILTER", "
 static bool ext_hidden(const char* e) {
     // debugging aid: VRDUAL_KEEP_EXT=VK_EXT_a,VK_KHR_b leaves those visible
     if (const char* keep = getenv("VRDUAL_KEEP_EXT"); keep && strstr(keep, e)) return false;
-    // maintenance5 inline shader modules: the mirror patches them on both
-    // devices; the one-process-per-eye path only patches vkCreateShaderModule.
+    // maintenance5 inline shader modules: patched in vkCreateGraphicsPipelines
+    // (and by the mirror on B); still hidden in one-process-per-eye mode.
     // maintenance6 (*2 command variants) is plain replay. DXVK 3 needs both.
     if (!strcmp(e, "VK_KHR_maintenance5") || !strcmp(e, "VK_KHR_maintenance6")) return !g_cfg.mirror;
     static const char* const kDeny[] = {
@@ -840,6 +841,43 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateShaderModule(VkDevice dev, const
     return create_patched_module(dd->ep, dd->d.CreateShaderModule, dev, ci, alloc, out);
 }
 
+// Inline modules (maintenance5: VkShaderModuleCreateInfo first in a stage's
+// pNext, no module) never pass vkCreateShaderModule. Returns cis with ep's
+// patch applied to them (storage in p), or cis itself if there are none.
+struct InlinePatch {
+    std::vector<VkGraphicsPipelineCreateInfo> cis;
+    std::vector<std::vector<VkPipelineShaderStageCreateInfo>> stages;
+    std::deque<std::vector<uint32_t>> codes;
+    std::deque<VkShaderModuleCreateInfo> smcis;
+};
+
+static const VkGraphicsPipelineCreateInfo* patch_inline(EyeBuf& ep, uint32_t n, const VkGraphicsPipelineCreateInfo* cis, InlinePatch& p) {
+    for (uint32_t i = 0; i < n; ++i)
+        for (uint32_t s = 0; s < cis[i].stageCount && cis[i].pStages; ++s) {
+            auto* sm = (const VkShaderModuleCreateInfo*)cis[i].pStages[s].pNext;
+            if (cis[i].pStages[s].module || !sm || sm->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO) continue;
+            std::vector<uint32_t> code;
+            if (!spv_patch_for(ep, sm, code)) continue;
+            if (p.cis.empty()) { p.cis.assign(cis, cis + n); p.stages.resize(n); }
+            if (p.stages[i].empty()) p.stages[i].assign(cis[i].pStages, cis[i].pStages + cis[i].stageCount);
+            p.codes.push_back(std::move(code));
+            VkShaderModuleCreateInfo m = *sm;
+            m.codeSize = p.codes.back().size() * 4;
+            m.pCode = p.codes.back().data();
+            p.smcis.push_back(m);
+            p.stages[i][s].pNext = &p.smcis.back();
+            p.cis[i].pStages = p.stages[i].data();
+        }
+    return p.cis.empty() ? cis : p.cis.data();
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateGraphicsPipelines(VkDevice dev, VkPipelineCache cache, uint32_t n, const VkGraphicsPipelineCreateInfo* cis,
+                                                                const VkAllocationCallbacks* alloc, VkPipeline* out) {
+    DeviceData* dd = dev_of(key(dev));
+    InlinePatch p;
+    return dd->d.CreateGraphicsPipelines(dev, cache, n, patch_inline(dd->ep, n, cis, p), alloc, out);
+}
+
 // ----------------------------------------------------------- swapchain -----
 static uint32_t pixfmt_of(VkFormat f) {
     switch (f) {
@@ -1067,7 +1105,7 @@ static PFN_vkVoidFunction intercept_instance(const char* name) {
 static PFN_vkVoidFunction intercept_device(const char* name) {
 #define I(n) if (!strcmp(name, "vk" #n)) return (PFN_vkVoidFunction)vrd_##n
     I(DestroyDevice); I(GetDeviceQueue); I(GetDeviceQueue2); I(CreateShaderModule);
-    I(CreateSwapchainKHR); I(DestroySwapchainKHR); I(QueuePresentKHR);
+    I(CreateGraphicsPipelines); I(CreateSwapchainKHR); I(DestroySwapchainKHR); I(QueuePresentKHR);
 #undef I
     return nullptr;
 }

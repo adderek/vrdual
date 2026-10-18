@@ -9,7 +9,8 @@
 // presented every frame too (like wined3d's helper windows).
 //
 // --bda: Vulkan 1.4 paths DXVK 3 relies on: vertices read through a buffer
-// device address (no vertex input), memory mapped with vkMapMemory2.
+// device address (no vertex input), memory mapped with vkMapMemory2, vertex
+// shader passed inline in the pipeline (maintenance5, no VkShaderModule).
 //
 // --scene calib: static posts at 0.5, 1, 2, 5 and 20 m (eye height), for IPD
 // calibration: look at one post, adjust until it sits at a believable distance
@@ -128,6 +129,9 @@ int main(int argc, char** argv) {
     dci.ppEnabledExtensionNames = dext;
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     f12.bufferDeviceAddress = VK_TRUE;
+    VkPhysicalDeviceVulkan14Features f14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
+    f14.maintenance5 = VK_TRUE;
+    f12.pNext = &f14;
     if (bda) {
         if (props.apiVersion < VK_API_VERSION_1_4) { fprintf(stderr, "--bda needs a Vulkan 1.4 device\n"); return 1; }
         dci.pNext = &f12;
@@ -264,9 +268,10 @@ int main(int argc, char** argv) {
         CK(vkCreateShaderModule(dev, &c, nullptr, &m));
         return m;
     };
-    VkShaderModule vs = bda ? mkmod(kVertBda, sizeof kVertBda) : mkmod(kVert, sizeof kVert), fs = mkmod(kFrag, sizeof kFrag);
+    VkShaderModule vs = bda ? VK_NULL_HANDLE : mkmod(kVert, sizeof kVert), fs = mkmod(kFrag, sizeof kFrag);
+    VkShaderModuleCreateInfo vsi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, sizeof kVertBda, kVertBda};
     VkPipelineShaderStageCreateInfo st[2]{};
-    st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
+    st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, bda ? &vsi : nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
     st[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main"};
     VkVertexInputBindingDescription vb{0, 24, VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription va[2] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12}};

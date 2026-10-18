@@ -910,39 +910,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_CreateShaderModule(VkDevice dev, const V
 static VKAPI_ATTR VkResult VKAPI_CALL m_CreateGraphicsPipelines(VkDevice dev, VkPipelineCache cache, uint32_t n, const VkGraphicsPipelineCreateInfo* cis,
                                                               const VkAllocationCallbacks* alloc, VkPipeline* out) {
     MDev* md = mdev_of(key(dev));
-    // Inline modules (VkShaderModuleCreateInfo first in a stage's pNext) need the
-    // left-eye patch on A as well.
-    std::vector<VkGraphicsPipelineCreateInfo> acis;
-    std::vector<std::vector<VkPipelineShaderStageCreateInfo>> astages;
-    std::vector<std::vector<uint32_t>> codes;
-    std::vector<VkShaderModuleCreateInfo> smcis;
-    for (uint32_t i = 0; i < n; ++i)
-        for (uint32_t s = 0; s < cis[i].stageCount && cis[i].pStages; ++s) {
-            auto* sm = (const VkShaderModuleCreateInfo*)cis[i].pStages[s].pNext;
-            if (cis[i].pStages[s].module || !sm || sm->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO) continue;
-            if (acis.empty()) {
-                acis.assign(cis, cis + n);
-                astages.resize(n);
-                codes.reserve(64);
-                smcis.reserve(64);
-            }
-            if (astages[i].empty()) astages[i].assign(cis[i].pStages, cis[i].pStages + cis[i].stageCount);
-            std::vector<uint32_t> code;
-            if (smcis.size() < smcis.capacity() && spv_patch_for(md->dd->ep, sm, code)) {
-                codes.push_back(std::move(code));
-                VkShaderModuleCreateInfo m = *sm;
-                m.codeSize = codes.back().size() * 4;
-                m.pCode = codes.back().data();
-                smcis.push_back(m);
-                astages[i][s].pNext = &smcis.back();
-            }
-            acis[i].pStages = astages[i].data();
-        }
-    VkResult r = md->a.CreateGraphicsPipelines(dev, cache, n, acis.empty() ? cis : acis.data(), alloc, out);
+    // Inline modules need the left-eye patch on A as well (B's: in the pNext translation).
+    InlinePatch ip;
+    const VkGraphicsPipelineCreateInfo* acis = patch_inline(md->dd->ep, n, cis, ip);
+    VkResult r = md->a.CreateGraphicsPipelines(dev, cache, n, acis, alloc, out);
     if (g_trace) {
         trace_call("vkCreateGraphicsPipelines (manual)");
         for (uint32_t i = 0; i < n; ++i)
-            logf("  r=%d inline=%d flags=0x%llx stages=%u pipe=0x%llx", r, !acis.empty(), (unsigned long long)cis[i].flags, cis[i].stageCount,
+            logf("  r=%d inline=%d flags=0x%llx stages=%u pipe=0x%llx", r, acis != cis, (unsigned long long)cis[i].flags, cis[i].stageCount,
                  (unsigned long long)h2u(out[i]));
     }
     if (r < 0 || !md->live) return r;

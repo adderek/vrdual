@@ -119,6 +119,9 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - NVIDIA: glvnd hands GL apps NVIDIA's own GL, so `MESA_LOADER_DRIVER_OVERRIDE=zink`
   alone does nothing and the layer never sees the game. Also set
   `__GLX_VENDOR_LIBRARY_NAME=mesa` (the Steam wrapper does).
+- DXVK passes vertex shaders inline (maintenance5: `VkShaderModuleCreateInfo`
+  in the stage pNext, no module); the layer patches them in
+  `vkCreateGraphicsPipelines`. Symptom when missed: identical eyes, no 3D.
 - A second VkDevice on the same GPU cannot replay the first one's device
   addresses (NVIDIA: shared VA) — hence alternate-eye rendering for single GPU.
 - Proton logs: Steam writes none by default. Add `export PROTON_LOG=1` to the
