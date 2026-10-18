@@ -1,5 +1,11 @@
 # Input — gamepad / VR controllers → what the game understands
 
+**Status 2026-10-18:** implemented for VR controllers (`common/vrdual_input.hpp`,
+`vrdual-xr`): pad, mouse modes, `map_*`, per-game profile from the frame file.
+Selftest covers the Mapper; uinput read-back skipped until a reboot (module
+missing after a kernel update); not yet tried in the Quest. Open: real pad as
+a source (`vrdual input`, evdev grab), automatic aim/motion switch.
+
 **Goal:** play flat games with the headset on. Many games here are mouse-only
 (Zen Bound 2) or windowed without pointer grab, so the desktop mouse is
 unusable from inside the HMD.

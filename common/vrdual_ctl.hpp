@@ -3,6 +3,7 @@
 #pragma once
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cmath>
@@ -34,7 +35,7 @@ inline vrdual_ctl* ctl_open(const std::string& session, const Settings* seed, bo
             auto* c = (vrdual_ctl*)mmap(nullptr, sizeof(vrdual_ctl), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
             close(fd);
             if (c == MAP_FAILED) return nullptr;
-            c->version = 1;
+            c->version = 2;
             c->seq = 0;
             c->ipd = seed->f("ipd");
             c->ipd_near = seed->f("ipd_near");
@@ -53,6 +54,8 @@ inline vrdual_ctl* ctl_open(const std::string& session, const Settings* seed, bo
     }
     fd = open(ctl_path(session).c_str(), O_RDWR | O_CLOEXEC);
     if (fd < 0) return nullptr;
+    struct stat st;  // a block from an older build is shorter: grow it (new fields read 0)
+    if (fstat(fd, &st) == 0 && st.st_size < (off_t)sizeof(vrdual_ctl) && ftruncate(fd, sizeof(vrdual_ctl)) != 0) { close(fd); return nullptr; }
     auto* c = (vrdual_ctl*)mmap(nullptr, sizeof(vrdual_ctl), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
     if (c == MAP_FAILED) return nullptr;
@@ -85,12 +88,15 @@ template <typename F> inline void ctl_write(vrdual_ctl* c, F fn) {
 }
 
 static const char* const kLiveKeys[] = {"ipd", "ipd_near", "near_dist", "far_dist", "anchor", "hfov", "world_scale"};
+// Live but never saved: the head offset (vrdual-xr writes it every frame).
+static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z"};
 
 inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
     char b[64];
     if (k == "anchor") return vrdual_anchor_name(c.anchor);
     float v = k == "ipd" ? c.ipd : k == "ipd_near" ? c.ipd_near : k == "near_dist" ? c.near_dist
-            : k == "far_dist" ? c.far_dist : k == "hfov" ? c.hfov : c.world_scale;
+            : k == "far_dist" ? c.far_dist : k == "hfov" ? c.hfov : k == "head_x" ? c.head_x
+            : k == "head_y" ? c.head_y : k == "head_z" ? c.head_z : c.world_scale;
     snprintf(b, sizeof b, "%g", v);
     return b;
 }
@@ -103,13 +109,18 @@ inline std::string ctl_save(const vrdual_ctl& v, bool global) {
     return sec;
 }
 
-// Per-eye shader parameters, read by the patched vertex shader as a vec4:
-//   x = clip_dx for far objects, y = clip_dx for near objects,
-//   z = far distance in view-space W units, w = 1 / (far - near)
-// offset(W) = mix(x, y, clamp((z - W) * w, 0, 1))
-struct EyeParams { float v[4]; };
+// Per-eye shader parameters, read by the patched vertex shader:
+// vec4 #0  x = clip_dx for far objects, y = clip_dx for near objects,
+//          z = far distance in view-space W units, w = 1 / (far - near)
+//          offset(W) = mix(x, y, clamp((z - W) * w, 0, 1))
+// vec4 #1  head offset in clip units added to x, y, w (live mode only):
+//          camera moved by (hx, hy, hz) => clip.x -= P00*hx, clip.y -= P11*hy,
+//          clip.w -= hz (w = view depth). P11 = y_sign * P00 * aspect; y_sign
+//          is +1 for y-up clip space (GL via Zink, D3D via DXVK), -1 for
+//          Vulkan apps that flip y in the projection.
+struct EyeParams { float v[8]; };
 
-inline EyeParams eye_params(const vrdual_ctl& c, int eye) {
+inline EyeParams eye_params(const vrdual_ctl& c, int eye, float aspect = 16.0f / 9, float y_sign = 1) {
     float p00 = 1.0f / tanf(c.hfov * 0.5f * float(M_PI) / 180.0f);
     const char* an = vrdual_anchor_name(c.anchor);
     float far_ = -p00 * c.world_scale * eye_dx(an, eye, c.ipd);
@@ -117,7 +128,8 @@ inline EyeParams eye_params(const vrdual_ctl& c, int eye) {
     float near_ = -p00 * c.world_scale * eye_dx(an, eye, ipdn);
     float wf = c.far_dist * c.world_scale, wn = c.near_dist * c.world_scale;
     float inv = wf > wn ? 1.0f / (wf - wn) : 0.0f;
-    return {{far_, near_, wf, inv}};
+    return {{far_, near_, wf, inv, -p00 * c.world_scale * c.head_x, -y_sign * p00 * aspect * c.world_scale * c.head_y,
+             -c.world_scale * c.head_z, 0}};
 }
 
 }  // namespace vrdual

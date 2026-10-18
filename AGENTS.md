@@ -34,6 +34,8 @@ automatically.
 | `tools/gen_mirror.py` | generates `build/mirror_{dispatch,gen}.hpp` (dispatch table + ~400 replay wrappers) from vk.xml |
 | `compositor/xr.cpp` | `vrdual-xr`: OpenXR output (projection layer, game FOV), runtime opened without a loader |
 | `common/vrdual_frames.hpp` | frame file reading + L/R pairing (compositor and xr) |
+| `common/vrdual_input.hpp` | controllers → virtual pad / mouse / keys (Mapper, pure) + uinput devices |
+| `tools/input_test.cpp` | `vrdual-input-test`: Mapper scenarios + uinput pad round trip |
 | `testapp/gltest.cpp` | `vrdual-gltest`: GL 2.1-style Xlib/GLX app for Zink tests (also built 32-bit) |
 | `layer/spirv_patch.hpp` | SPIR-V rewriter (baked or live params, near/far blend, `w==1` skip) |
 | `layer/VkLayer_vrdual.json.in` | layer manifest (`VK_LAYER_VRDUAL_stereo`, explicit) |
@@ -101,8 +103,13 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - DXVK 3 (Proton) refuses a device without `bufferDeviceAddress`,
   `maintenance5`, `maintenance6` ("No adapters found" in the Proton log). The
   mirror replays device addresses (capture/replay) instead of hiding them.
+- A mirror stop must leave the app intact: shadow mappings keep being copied
+  to A afterwards (otherwise the game renders stale data and crashes).
+  32-bit games: address space, see "Host memory" in ARCHITECTURE.
 - One process can have several live swapchains (wined3d). Never size the frame
   file from one swapchain and publish from another (`shm_claim`).
+- `/dev/uinput` fails with ENODEV after a kernel package update until reboot
+  (the running kernel's modules are gone). The input test then skips.
 - Proton logs: Steam writes none by default. Add `export PROTON_LOG=1` to the
   installed wrapper (`vrdual steam-install` rewrites it), log lands in
   `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`. Launch with

@@ -76,8 +76,9 @@ struct Mem {
     VkDeviceSize size = 0;
     bool cached = false, coherent = true;
     bool mapped = false;
-    char* amap = nullptr;
-    char* bmap = nullptr;
+    char* amap = nullptr;    // null while A is mapped only during pushes (transient)
+    char* bmap = nullptr;    // same for B
+    bool a_released = false; // transient: A unmapped right after the app's vkMapMemory
     VkDeviceSize off = 0, len = 0;
     char* shadow = nullptr;  // non-cached only
     char* last = nullptr;    // what A and B hold, as last pushed
@@ -304,22 +305,57 @@ static bool word_diff_copy(const char* src, char* last, size_t len, char* d0, ch
     return any;
 }
 
-// md->lock held.
+// Offset of the first 4 KB page that differs, or SIZE_MAX.
+static size_t first_change(const char* src, const char* last, size_t len) {
+    for (size_t p = 0; p < len; p += 4096)
+        if (memcmp(src + p, last + p, std::min<size_t>(4096, len - p))) return p;
+    return SIZE_MAX;
+}
+
+// 32-bit processes run out of address space with four mappings per mapped
+// allocation (A, B, shadow, last): there A (under a shadow) and B are mapped
+// only while a push copies changed pages.
+static bool transient_maps() {
+    static const bool t = sizeof(void*) == 4 || !strcmp(env("VRDUAL_TRANSIENT_MAPS", "0"), "1");
+    return t;
+}
+
+// md->lock held. Copies what the app changed since the last push to A (when
+// the app writes a shadow; also after the mirror stopped, or the game would
+// render stale data) and to B (while the mirror is live).
 static void push_one(MDev* md, uint64_t amem, Mem& m) {
-    if (!m.mapped || !m.amap || !m.bmap) return;
-    bool changed = m.cached ? word_diff_copy(m.amap, m.last, m.len, nullptr, m.bmap)
-                            : word_diff_copy(m.shadow, m.last, m.len, m.amap, m.bmap);
-    if (changed && !m.coherent) {
+    bool to_a = !m.cached, to_b = md->live;
+    const char* src = m.cached ? m.amap : m.shadow;
+    if (!m.mapped || !src || (!to_a && !to_b)) return;
+    size_t first = first_change(src, m.last, m.len);
+    if (first == SIZE_MAX) return;
+    VkDevice adev = md->dd->device;
+    char *a = to_a ? m.amap : nullptr, *b = to_b ? m.bmap : nullptr;
+    bool a_tmp = to_a && !a, b_tmp = to_b && !b;
+    if (a_tmp && md->a.MapMemory(adev, u2h<VkDeviceMemory>(amem), m.off, m.len, 0, (void**)&a) < 0) {
+        a = nullptr;
+        logf("mirror: cannot map app memory for a shadow push (%llu MB) — data lost", (unsigned long long)(m.len >> 20));
+    }
+    if (b_tmp && md->b.MapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem), m.off, m.len, 0, (void**)&b) < 0) {
+        b = nullptr;
+        mirror_fail(md, "vkMapMemory failed on B");
+    }
+    word_diff_copy(src + first, m.last + first, m.len - first, a ? a + first : nullptr, b ? b + first : nullptr);
+    if (!m.coherent) {
         VkMappedMemoryRange ra{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, u2h<VkDeviceMemory>(amem), m.off, VK_WHOLE_SIZE};
         VkMappedMemoryRange rb{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, u2h<VkDeviceMemory>(m.bmem), m.off, VK_WHOLE_SIZE};
-        if (!m.cached) md->a.FlushMappedMemoryRanges(md->dd->device, 1, &ra);
-        md->b.FlushMappedMemoryRanges(md->bdev, 1, &rb);
+        if (a) md->a.FlushMappedMemoryRanges(adev, 1, &ra);
+        if (b) md->b.FlushMappedMemoryRanges(md->bdev, 1, &rb);
     }
+    if (a_tmp && a) md->a.UnmapMemory(adev, u2h<VkDeviceMemory>(amem));
+    if (b_tmp && b) md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem));
 }
 
 static void push_memory(MDev* md) {
     uint64_t t0 = now_ns();
     std::lock_guard<std::mutex> l(md->lock);
+    static const uint64_t fail_at = strtoull(env("VRDUAL_MIRROR_FAIL_AT", "0"), nullptr, 10);  // selftest: stop on purpose
+    if (fail_at && md->pushes == fail_at && md->live) mirror_fail(md, "VRDUAL_MIRROR_FAIL_AT reached");
     uint64_t bytes = 0;
     for (auto& kv : md->mems)
         if (kv.second.mapped) { push_one(md, kv.first, kv.second); bytes += kv.second.len; }
@@ -443,18 +479,29 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory m
     if (it == md->mems.end()) return r;
     Mem& m = it->second;
     VkDeviceSize len = size == VK_WHOLE_SIZE ? m.size - off : size;
+    bool tmp = transient_maps();
     void* bp = nullptr;
-    if (md->b.MapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem), off, len, 0, &bp) < 0) { mirror_fail(md, "vkMapMemory failed on B"); return r; }
+    if (!tmp && md->b.MapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem), off, len, 0, &bp) < 0) { mirror_fail(md, "vkMapMemory failed on B"); return r; }
     size_t cap = (size_t(len) + 4095) & ~size_t(4095);
     if (m.cap < cap || m.cap_off != off) {
         free_shadow(m);
         m.last = anon(cap);
         m.shadow = m.cached ? nullptr : anon(cap);
-        if (!m.last || (!m.cached && !m.shadow)) { mirror_fail(md, "out of memory for shadow mapping"); return r; }
+        if (!m.last || (!m.cached && !m.shadow)) {
+            free_shadow(m);
+            if (bp) md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem));
+            mirror_fail(md, "out of memory for shadow mapping");
+            return r;  // the app gets A's own pointer; other shadows keep reaching A
+        }
         m.cap = cap;
         m.cap_off = off;
     }
     m.amap = (char*)*pp;
+    m.a_released = tmp && !m.cached;
+    if (m.a_released) {  // the app writes the shadow; A is mapped per push
+        md->a.UnmapMemory(dev, mem);
+        m.amap = nullptr;
+    }
     m.bmap = (char*)bp;
     m.off = off;
     m.len = len;
@@ -466,22 +513,25 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory m
 
 static VKAPI_ATTR void VKAPI_CALL m_UnmapMemory(VkDevice dev, VkDeviceMemory mem) {
     MDev* md = mdev_of(key(dev));
-    if (md->live) {
-        std::lock_guard<std::mutex> l(md->lock);
+    bool a_released = false;
+    {
+        std::lock_guard<std::mutex> l(md->lock);  // also after a stop: the shadow's last writes must reach A
         auto it = md->mems.find(h2u(mem));
         if (it != md->mems.end() && it->second.mapped) {
-            push_one(md, it->first, it->second);
-            md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(it->second.bmem));
-            it->second.mapped = false;
-            it->second.amap = it->second.bmap = nullptr;
+            Mem& m = it->second;
+            push_one(md, it->first, m);
+            if (m.bmap) md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem));
+            a_released = m.a_released;
+            m.mapped = m.a_released = false;
+            m.amap = m.bmap = nullptr;
         }
     }
-    md->a.UnmapMemory(dev, mem);
+    if (!a_released) md->a.UnmapMemory(dev, mem);
 }
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_FlushMappedMemoryRanges(VkDevice dev, uint32_t n, const VkMappedMemoryRange* r) {
     MDev* md = mdev_of(key(dev));
-    if (md->live) {
+    {
         std::lock_guard<std::mutex> l(md->lock);
         for (uint32_t i = 0; i < n; ++i) {
             auto it = md->mems.find(h2u(r[i].memory));
@@ -622,7 +672,7 @@ static VKAPI_ATTR void VKAPI_CALL m_GetDeviceQueue2(VkDevice dev, const VkDevice
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo* si, VkFence f) {
     MDev* md = mdev_of(key(q));
-    if (md->live) push_memory(md);
+    push_memory(md);  // after a stop too: shadows must keep reaching A
     VkResult r = md->a.QueueSubmit(q, n, si, f);
     if (r < 0 || !md->live) return r;
     Ctx& c = ctx_begin(md);
@@ -641,7 +691,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit(VkQueue q, uint32_t n, const
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit2(VkQueue q, uint32_t n, const VkSubmitInfo2* si, VkFence f) {
     MDev* md = mdev_of(key(q));
-    if (md->live) push_memory(md);
+    push_memory(md);  // after a stop too: shadows must keep reaching A
     VkResult r = md->a.QueueSubmit2(q, n, si, f);
     if (r < 0 || !md->live) return r;
     Ctx& c = ctx_begin(md);

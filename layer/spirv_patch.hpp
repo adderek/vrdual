@@ -16,7 +16,11 @@
 //
 // Live mode reads the vec4 through a baked 64-bit buffer device address
 // (SPV_KHR_physical_storage_buffer), so the layer can change IPD at runtime by
-// writing host-visible memory — no pipeline rebuild, app stays unaware.
+// writing host-visible memory — no pipeline rebuild, app stays unaware. It also
+// reads a second vec4 h at addr+16 (head offset, vrdual_ctl.hpp EyeParams):
+//     x' += h.x, y' = v.y + h.y, w' = v.w + h.z, z' = v.z * w' / v.w
+// (z scaled with w keeps every vertex's depth z/w: no far-plane clipping,
+// depth order kept; same w == 1 skip).
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -31,7 +35,7 @@ enum : uint32_t {
     OpTypeStruct = 30, OpTypePointer = 32, OpConstant = 43, OpConstantComposite = 44,
     OpFunction = 54, OpFunctionEnd = 56, OpVariable = 59, OpLoad = 61, OpStore = 62,
     OpAccessChain = 65, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeExtract = 81,
-    OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133,
+    OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133, OpFDiv = 136,
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253,
 };
 enum : uint32_t {
@@ -187,7 +191,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     }
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
-    uint32_t c_params = 0, c_addr = 0, p_psb = 0;
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0;
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -195,6 +199,10 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         emit(globals, OpConstant, {t_uint, lo, uint32_t(o.addr)});
         emit(globals, OpConstant, {t_uint, hi, uint32_t(o.addr >> 32)});
         c_addr = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_addr, lo, hi});
+        uint32_t lo2 = fresh(), hi2 = fresh();
+        emit(globals, OpConstant, {t_uint, lo2, uint32_t(o.addr + 16)});
+        emit(globals, OpConstant, {t_uint, hi2, uint32_t((o.addr + 16) >> 32)});
+        c_addr2 = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_addr2, lo2, hi2});
         p_psb = fresh(); emit(globals, OpTypePointer, {p_psb, StoragePhysicalStorageBuffer, t_vec4});
     } else {
         uint32_t c[4];
@@ -225,12 +233,15 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         if (in_entry && I.op == OpReturn) {
             uint32_t ptr = pos_var;
             if (pos_struct) { ptr = fresh(); emit(out, OpAccessChain, {p_vec4, ptr, pos_var, c_member}); }
-            uint32_t prm = c_params;
+            uint32_t prm = c_params, hp = 0;
             if (live) {
-                uint32_t pp = fresh();
+                uint32_t pp = fresh(), pp2 = fresh();
                 prm = fresh();
+                hp = fresh();
                 emit(out, OpBitcast, {p_psb, pp, c_addr});
                 emit(out, OpLoad, {t_vec4, prm, pp, MemAccessAligned, 16});
+                emit(out, OpBitcast, {p_psb, pp2, c_addr2});
+                emit(out, OpLoad, {t_vec4, hp, pp2, MemAccessAligned, 16});
             }
             uint32_t v = fresh(), x = fresh(), wv = fresh(), a = fresh(), b = fresh(), wf = fresh(), inv = fresh();
             uint32_t t0 = fresh(), t1 = fresh(), t = fresh(), d = fresh(), e = fresh(), off = fresh(), x2 = fresh(), v2 = fresh();
@@ -248,13 +259,45 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             emit(out, OpFMul, {t_float, e, d, t});
             emit(out, OpFAdd, {t_float, off, a, e});
             emit(out, OpFAdd, {t_float, x2, x, off});
+            uint32_t y = 0, y2 = 0, w2 = 0, z = 0, z2 = 0;
+            if (live) {
+                uint32_t hx = fresh(), hy = fresh(), hw = fresh(), x3 = fresh(), zr = fresh();
+                y = fresh(); y2 = fresh(); w2 = fresh(); z = fresh(); z2 = fresh();
+                emit(out, OpCompositeExtract, {t_float, y, v, 1});
+                emit(out, OpCompositeExtract, {t_float, z, v, 2});
+                emit(out, OpCompositeExtract, {t_float, hx, hp, 0});
+                emit(out, OpCompositeExtract, {t_float, hy, hp, 1});
+                emit(out, OpCompositeExtract, {t_float, hw, hp, 2});
+                emit(out, OpFAdd, {t_float, x3, x2, hx});
+                emit(out, OpFAdd, {t_float, y2, y, hy});
+                emit(out, OpFAdd, {t_float, w2, wv, hw});
+                emit(out, OpFDiv, {t_float, zr, w2, wv});
+                emit(out, OpFMul, {t_float, z2, z, zr});
+                x2 = x3;
+            }
             if (o.skip_w1) {
                 uint32_t is1 = fresh(), xs = fresh();
                 emit(out, OpFOrdEqual, {t_bool, is1, wv, c_one});
                 emit(out, OpSelect, {t_float, xs, is1, x, x2});
                 x2 = xs;
+                if (live) {
+                    uint32_t ys = fresh(), ws = fresh(), zs = fresh();
+                    emit(out, OpSelect, {t_float, ys, is1, y, y2});
+                    emit(out, OpSelect, {t_float, ws, is1, wv, w2});
+                    emit(out, OpSelect, {t_float, zs, is1, z, z2});
+                    y2 = ys;
+                    w2 = ws;
+                    z2 = zs;
+                }
             }
             emit(out, OpCompositeInsert, {t_vec4, v2, x2, v, 0});
+            if (live) {
+                uint32_t v3 = fresh(), v4 = fresh(), v5 = fresh();
+                emit(out, OpCompositeInsert, {t_vec4, v3, y2, v2, 1});
+                emit(out, OpCompositeInsert, {t_vec4, v4, z2, v3, 2});
+                emit(out, OpCompositeInsert, {t_vec4, v5, w2, v4, 3});
+                v2 = v5;
+            }
             emit(out, OpStore, {ptr, v2});
             ++returns;
         }

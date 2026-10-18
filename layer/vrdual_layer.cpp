@@ -66,6 +66,8 @@ struct Config {
     std::string gpu;           // "" | index | pci:BBBB:BB:DD.F | substring of name
     std::string mirror_gpu;    // mirror mode: right eye GPU
     std::string session = "default";
+    std::string app;           // profile key written to the frame files (vrdual-xr picks input settings by it)
+    float lean_y_sign = 1;     // head offset y: +1 y-up clip (GL/D3D), -1 Vulkan apps flipping y in P
     bool log = true;
     vrdual_ctl* ctl = nullptr; // live session values
 };
@@ -103,12 +105,14 @@ static void load_config(const VkApplicationInfo* app) {
     c.session = env("VRDUAL_SESSION", "default");
     std::string app_name = app && app->pApplicationName ? app->pApplicationName : "";
     vrdual::Settings st = vrdual::load_settings({app_name, exe_name()});
+    c.app = st.profile.empty() ? (app_name.empty() ? exe_name() : app_name) : st.profile;
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
     c.export_frames = st.i("export") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
     c.lockstep_timeout_ms = st.i("lockstep_timeout_ms");
     c.live = st.i("live") != 0;
+    c.lean_y_sign = st.f("lean_y_sign") < 0 ? -1.0f : 1.0f;
     c.gpu = env("VRDUAL_GPU", c.eye == 0 ? st.s("left_gpu").c_str() : c.eye == 1 ? st.s("right_gpu").c_str() : "");
     if (c.mirror) c.mirror_gpu = st.s("right_gpu");
     if (c.eye < 0) {
@@ -171,6 +175,7 @@ struct EyeBuf {
     float* params = nullptr;
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
+    float aspect = 0;  // of the exported swapchain when params were last pushed
     int patched = 0, skipped = 0;
 };
 
@@ -260,6 +265,7 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     for (auto& s : hd->slots) { s.seq = 0; s.frame = ~0ull; }
     snprintf(hd->gpu_name, sizeof hd->gpu_name, "%.63s", gpu_name);
     snprintf(hd->pci, sizeof hd->pci, "%.31s", pci);
+    snprintf(hd->app, sizeof hd->app, "%.63s", g_cfg.app.c_str());
     __sync_synchronize();
     hd->magic = VRDUAL_MAGIC;
     logf("exporting %ux%u fmt=%u to %s", w, h, pixfmt, shm_path(eye).c_str());
@@ -626,14 +632,19 @@ static BdaPlan plan_bda(InstanceData* id, VkPhysicalDevice pd, const VkDeviceCre
 }
 
 // Writes this eye's params from the control block into the GPU-visible vec4.
+static float g_aspect = 16.0f / 9;  // exported swapchain (head offset y needs P11)
+
 static void push_params(EyeBuf& ep) {
     if (!g_cfg.ctl || !ep.params) return;
     uint64_t seq = g_cfg.ctl->seq;
-    if (seq == ep.ctl_seq) return;
+    if (seq == ep.ctl_seq && ep.aspect == g_aspect) return;
+    bool head_only = ep.ctl_seq != ~0ull && ep.aspect == g_aspect;
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
-    vrdual::EyeParams e = vrdual::eye_params(c, ep.eye);
+    vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
+    head_only &= !memcmp(ep.params, e.v, 4 * sizeof(float));  // head moves every frame: don't log it
     memcpy(ep.params, e.v, sizeof e.v);
-    if (ep.ctl_seq != ~0ull)
+    ep.aspect = g_aspect;
+    if (ep.ctl_seq != ~0ull && !head_only)
         logf("live[%s]: anchor=%s ipd=%.1fmm ipd_near=%.1fmm hfov=%g scale=%g -> clip_dx far %+.5f near %+.5f", ep.eye ? "R" : "L",
              vrdual_anchor_name(c.anchor), c.ipd * 1e3, c.ipd_near * 1e3, c.hfov, c.world_scale, e.v[0], e.v[1]);
     ep.ctl_seq = seq;
@@ -689,7 +700,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
         o.addr = ep.addr;  // live: shader reads params every draw
     } else {
         vrdual::EyeParams e = vrdual::eye_params(vrdual::ctl_read(g_cfg.ctl), ep.eye);
-        memcpy(o.params, e.v, sizeof e.v);
+        memcpy(o.params, e.v, sizeof o.params);  // baked: no head offset
         if (o.params[0] == 0 && o.params[1] == 0) return false;  // anchor eye
     }
     code.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
@@ -993,6 +1004,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     std::unique_lock<std::mutex> el(g_shm_lock);
     int own = g_cfg.eye >= 0 && g_cfg.export_frames && s && s->pixfmt ? shm_claim(sc_id(pi->pSwapchains[0]), s->extent) : kNotOwner;
     if (own == kNewOwner) {
+        g_aspect = float(s->extent.width) / float(s->extent.height ? s->extent.height : 1);
         VkPhysicalDeviceProperties p;
         dd->inst->GetPhysicalDeviceProperties(dd->phys, &p);
         shm_open_out(g_cfg.eye, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str());

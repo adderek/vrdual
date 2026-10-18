@@ -1,5 +1,11 @@
 # M4 — head pose for apps that don't know about the HMD
 
+**Status 2026-10-18:** steps 1–3 done: head offset in the control block
+(`head_x/y/z`), x/y/forward in the shader patch (x measured in selftest, y and
+forward checked by eye in the calib scene), `head_look = mouse|edge` and
+`head_lean` in `vrdual-xr`. Not yet tried in the Quest. Step 4 (rotation via
+`P·R·P⁻¹`) open.
+
 **Goal:** head rotation and translation (6DoF) change what the game shows,
 although the game's camera knows nothing about the HMD. Pose source: OpenXR
 `xrLocateViews` in `vrdual-xr`, written to the control block every frame; the

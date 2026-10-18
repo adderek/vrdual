@@ -104,7 +104,12 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   stop the mirror with a log line ("mirror STOPPED"), the app keeps running on A.
 - **Host memory**: non-cached mappings are given to the app as a CPU shadow;
   at each submit/flush/unmap the changed 8-byte words go to A and B. Cached
-  (readback) mappings are A's real ones; changes are copied to B.
+  (readback) mappings are A's real ones; changes are copied to B. After a
+  mirror stop the shadows keep being copied to A (the app still writes them).
+  32-bit processes (or `VRDUAL_TRANSIENT_MAPS=1`) map A-under-a-shadow and B
+  only while a push copies changed pages: two persistent buffers per mapping
+  instead of four, else large games exhaust the 4 GB address space (Alice
+  Madness Returns: "out of memory for shadow mapping" during a 4K video).
 - **Sync**: when the app learns that A finished work (fence wait/status,
   timeline wait/value), B is waited on too (5 s limit, else mirror stops), so B
   never reads memory the app already reuses.
@@ -136,7 +141,9 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   maintenance5/6 as above. Zink and DXVK fall back to plain paths. The API version is not clamped (Zink refuses a 1.4 driver
   reporting 1.3; `VRDUAL_CLAMP_API=1` to force).
 - Debug knobs: `VRDUAL_MIRROR_TRACE=N` (log first N mirrored calls),
-  `VRDUAL_FILTER=0`, `VRDUAL_KEEP_EXT=...`, `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_SHADOW=0`.
+  `VRDUAL_FILTER=0`, `VRDUAL_KEEP_EXT=...`, `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_SHADOW=0`,
+  `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_MIRROR_FAIL_AT=N` (stop the mirror at the
+  Nth memory sync, for tests).
 
 ## Steam (Flatpak or native) and OpenGL games
 
@@ -169,6 +176,31 @@ WiVRn (`vrdual wivrn`): Flatpak `io.github.wivrn.wivrn`. Without avahi-daemon
 it must run with `--no-publish-service` (the wrapper adds it) and the headset
 connects by IP; port 9757 TCP+UDP. `xrCreateInstance` blocks until a headset
 is connected.
+
+### Input and head motion (in `vrdual-xr`)
+
+The game is identified by `app` in the frame file header (v2; VkApplicationInfo
+name, else the exe), and its `[app:NAME]` settings select what the Touch
+controllers (OpenXR actions, Touch profile) and the head do. Only while game
+frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
+
+- `input = gamepad`: virtual Xbox 360 pad (045e:028e, SDL/Steam Input know it).
+- `input = mouse`: mouse + keyboard; `mouse_mode` `stick` (right stick →
+  velocity, `|x|^mouse_curve`), `motion` (right controller rotation → relative,
+  left grip = clutch), `aim` (controller ray ∩ picture → absolute pointer
+  device, maps to the whole desktop: best with fullscreen games). The menu
+  button cycles the modes; left stick = WASD/arrows (`lstick`).
+- `map_<button> = KEY_*|BTN_*|none` for a b x y l3 r3 lt rt lg rg menu.
+- `head_look = mouse` (head yaw/pitch deltas × `head_counts_per_deg` → mouse)
+  or `edge` (past `head_deadzone` from the start direction the angle sets a
+  turn rate, `head_rate` deg/s at 45° past it). Menu held 1 s re-centres.
+- `head_lean = on`: head position relative to the start (re-centred with the
+  menu button), soft-clamped to `lean_max` (`L·tanh(d/L)`), written to the
+  control block (`head_x/y/z`). The layer turns it into clip offsets for both
+  eyes (x and y like the eye offset, forward via w with z scaled along so depth
+  stays the same); y needs `lean_y_sign` (+1 GL/D3D games, −1 Vulkan apps that
+  flip y in the projection). Render-only: the game's camera and collision stay.
+  `vrdual set head_x 0.05` sets it by hand.
 
 Selftest's OpenXR check uses a Monado build at `build/monado/` (in-process
 runtime, `XRT_FEATURE_SERVICE=OFF`; copy `libopenxr_monado.so` + a json there,
@@ -257,6 +289,10 @@ world_scale = 100      # engine works in centimeters
 | `lockstep`, `lockstep_timeout_ms` | `1`, `250` | wait for the other eye at present |
 | `left_gpu`, `right_gpu` | `pci:0000:06:00.0`, `pci:0000:0b:00.0` | `pci:…`, index, or name substring |
 | `log` | `1` | layer logging |
+| `input`, `mouse_mode`, `mouse_speed`, `mouse_curve`, `deadzone`, `lstick` | `off`, `stick`, `1`, `2.5`, `0.15`, `wasd` | controllers (vrdual-xr), see "Input and head motion" |
+| `head_look`, `head_deadzone`, `head_rate`, `head_counts_per_deg` | `off`, `15`, `120`, `10` | head rotation → game camera |
+| `head_lean`, `lean_max`, `lean_y_sign` | `off`, `0.1`, `1` | head translation → rendered viewpoint |
+| `map_<button>` | mode default | `KEY_*`, `BTN_*` or `none` |
 
 These are per-process environment only: `VRDUAL_EYE` (`left`/`right`; unset = GPU
 filter only), `VRDUAL_GPU` (overrides `left_gpu`/`right_gpu`), `VRDUAL_SESSION`.

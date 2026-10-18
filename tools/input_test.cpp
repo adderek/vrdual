@@ -1,0 +1,159 @@
+// vrdual-input-test: checks the input Mapper with scripted controller states,
+// then a uinput round trip with a virtual pad (read back through evdev when
+// the event node is accessible; joysticks get a uaccess ACL on logind seats).
+// Exit 0 = all good. Never creates a mouse or keyboard (would move the desktop).
+#include <dirent.h>
+
+#include <chrono>
+#include <fstream>
+#include <thread>
+
+#include "../common/vrdual_input.hpp"
+
+using namespace vrdual;
+
+static int fails = 0;
+static void expect(bool ok, const char* what) {
+    printf("%s  %s\n", ok ? "ok  " : "FAIL", what);
+    if (!ok) ++fails;
+}
+static bool has(const std::vector<InEvent>& ev, InEvent e) {
+    for (auto& x : ev) if (x == e) return true;
+    return false;
+}
+static int rel(const std::vector<InEvent>& ev, int code) {
+    int s = 0;
+    for (auto& x : ev) if (x.dev == DEV_MOUSE && x.type == EV_REL && x.code == code) s += x.value;
+    return s;
+}
+
+static InputCfg cfg(const char* input, const char* mode = "stick") {
+    InputCfg c;
+    c.input = input;
+    c.mouse_mode = mode;
+    for (int& m : c.map) m = -1;
+    return c;
+}
+
+int main() {
+    {
+        Mapper m(cfg("gamepad"));
+        Controls c;
+        c.a = true; c.lx = 1; c.ly = 1; c.rt = 1;
+        auto ev = m.step(c, 0.01);
+        expect(has(ev, {DEV_PAD, EV_KEY, BTN_A, 1}), "gamepad: A -> BTN_A");
+        expect(has(ev, {DEV_PAD, EV_ABS, ABS_X, 32767}) && has(ev, {DEV_PAD, EV_ABS, ABS_Y, -32767}), "gamepad: left stick, y flipped");
+        expect(has(ev, {DEV_PAD, EV_ABS, ABS_RZ, 255}), "gamepad: right trigger axis");
+        c.a = false;
+        ev = m.step(c, 0.01);
+        expect(has(ev, {DEV_PAD, EV_KEY, BTN_A, 0}) && ev.size() == 1, "gamepad: release only, unchanged axes not resent");
+    }
+    {
+        Mapper m(cfg("mouse"));
+        Controls c;
+        c.rx = 1; c.rt = 1; c.ly = 1;
+        auto ev = m.step(c, 0.1);
+        expect(rel(ev, REL_X) == 150, "mouse stick: full right 0.1 s -> 150 counts");
+        expect(has(ev, {DEV_MOUSE, EV_KEY, BTN_LEFT, 1}), "mouse: right trigger -> left button");
+        expect(has(ev, {DEV_KBD, EV_KEY, KEY_W, 1}), "mouse: left stick up -> W");
+        c = Controls{};
+        c.rx = 0.1f;  // inside the dead zone
+        ev = m.step(c, 0.1);
+        expect(rel(ev, REL_X) == 0 && has(ev, {DEV_MOUSE, EV_KEY, BTN_LEFT, 0}) && has(ev, {DEV_KBD, EV_KEY, KEY_W, 0}),
+               "mouse: dead zone, releases");
+        // menu tap -> motion mode
+        c = Controls{}; c.menu = true; m.step(c, 0.1);
+        c.menu = false; m.step(c, 0.1);
+        expect(!strcmp(m.mouse_mode(), "motion"), "menu tap cycles stick -> motion");
+        c.hand_ok = true; c.hand_yaw = 0; m.step(c, 0.01);
+        c.hand_yaw = -10; ev = m.step(c, 0.01);  // turned right
+        expect(rel(ev, REL_X) == 200, "motion: 10 deg right -> 200 counts");
+        c.lg = 1; c.hand_yaw = -20; ev = m.step(c, 0.01);
+        expect(rel(ev, REL_X) == 0 && ev.empty(), "motion: left grip = clutch, no key");
+        c = Controls{}; c.menu = true; m.step(c, 0.1);
+        c.menu = false; m.step(c, 0.1);
+        expect(!strcmp(m.mouse_mode(), "aim"), "menu tap cycles motion -> aim");
+        c.aim_ok = true; c.aim_u = 0.5f; c.aim_v = 0.25f;
+        ev = m.step(c, 0.01);
+        expect(has(ev, {DEV_TABLET, EV_ABS, ABS_X, 32768}) && has(ev, {DEV_TABLET, EV_ABS, ABS_Y, 16384}), "aim: ray -> absolute pointer");
+    }
+    {
+        InputCfg k = cfg("mouse");
+        k.map[B_A] = input_code("KEY_F5");
+        k.map[B_B] = 0;
+        expect(k.map[B_A] == KEY_F5 && input_code("btn_south") == BTN_SOUTH, "code names resolve (KEY_F5, btn_south)");
+        Mapper m(k);
+        Controls c; c.a = c.b = true;
+        auto ev = m.step(c, 0.01);
+        expect(has(ev, {DEV_KBD, EV_KEY, KEY_F5, 1}) && ev.size() == 1, "map_a = KEY_F5, map_b = none");
+    }
+    {
+        InputCfg k = cfg("off");
+        k.head_look = "edge";
+        Mapper m(k);
+        Controls c; c.head_ok = true; c.head_yaw = 10;
+        m.step(c, 0.5);                       // reference = 10 deg
+        c.head_yaw = 40;                      // 30 deg left: 15 past the dead zone
+        auto ev = m.step(c, 0.5);             // 15/45*120 = 40 deg/s * 0.5 s * 10 counts/deg
+        expect(rel(ev, REL_X) == -200, "head edge: 30 deg left -> -200 counts in 0.5 s");
+        c.head_yaw = 20; ev = m.step(c, 0.5);
+        expect(rel(ev, REL_X) == 0, "head edge: inside the dead zone -> nothing");
+    }
+    {
+        InputCfg k = cfg("off");
+        k.head_look = "mouse";
+        Mapper m(k);
+        Controls c; c.head_ok = true; c.head_yaw = 179; m.step(c, 0.01);
+        c.head_yaw = -176; auto ev = m.step(c, 0.01);  // 5 deg left across the wrap
+        expect(rel(ev, REL_X) == -50, "head mouse: 5 deg left across +-180 -> -50");
+    }
+
+    // uinput round trip with a virtual pad
+    {
+        Uinput u;
+        bool made = u.emit({{DEV_PAD, EV_ABS, ABS_X, 0}});
+        if (!made && u.error().find("No such device") != std::string::npos) {
+            printf("skip  uinput: %s\n", u.error().c_str());
+            printf("%s\n", fails ? "input test: FAILED" : "input test: all passed (uinput skipped)");
+            return fails ? 1 : 0;
+        }
+        expect(made, "uinput: virtual pad created");
+        std::string node;
+        for (int i = 0; i < 40 && node.empty(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (DIR* d = opendir("/sys/class/input")) {
+                while (dirent* e = readdir(d)) {
+                    if (strncmp(e->d_name, "event", 5)) continue;
+                    std::ifstream f(std::string("/sys/class/input/") + e->d_name + "/device/name");
+                    std::string n;
+                    std::getline(f, n);
+                    if (n == Uinput::name(DEV_PAD)) {
+                        // ours: a real 360 pad would be on a usb path; virtual devices live under /devices/virtual
+                        char buf[512];
+                        ssize_t l = readlink((std::string("/sys/class/input/") + e->d_name).c_str(), buf, sizeof buf - 1);
+                        if (l > 0 && std::string(buf, l).find("virtual") != std::string::npos) node = std::string("/dev/input/") + e->d_name;
+                    }
+                }
+                closedir(d);
+            }
+        }
+        int fd = node.empty() ? -1 : open(node.c_str(), O_RDONLY | O_NONBLOCK);
+        if (fd < 0) {
+            printf("skip  uinput read back (%s)\n", node.empty() ? "no event node" : strerror(errno));
+        } else {
+            u.emit({{DEV_PAD, EV_KEY, BTN_A, 1}});
+            bool seen = false;
+            for (int i = 0; i < 40 && !seen; ++i) {
+                input_event e;
+                while (read(fd, &e, sizeof e) == (ssize_t)sizeof e)
+                    if (e.type == EV_KEY && e.code == BTN_A && e.value == 1) seen = true;
+                if (!seen) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            }
+            u.emit({{DEV_PAD, EV_KEY, BTN_A, 0}});
+            close(fd);
+            expect(seen, "uinput: BTN_A read back through evdev");
+        }
+    }
+    printf("%s\n", fails ? "input test: FAILED" : "input test: all passed");
+    return fails ? 1 : 0;
+}

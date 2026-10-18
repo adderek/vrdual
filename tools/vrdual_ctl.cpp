@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
         vrdual_ctl v = ctl_read(c);
         printf("app %s\nlive %u\n", v.app, v.live);
         for (auto k : kLiveKeys) printf("%s %s\n", k, live_value(v, k).c_str());
+        for (auto k : kHeadKeys) printf("%s %s\n", k, live_value(v, k).c_str());
         return 0;
     }
 
@@ -82,7 +83,8 @@ int main(int argc, char** argv) {
         const std::string &k = args[1], &v = args[2];
         bool known = false;
         for (auto lk : kLiveKeys) known |= k == lk;
-        if (!known) { fprintf(stderr, "not a live key: %s (live keys: ipd ipd_near near_dist far_dist anchor hfov world_scale)\n", k.c_str()); return 2; }
+        for (auto lk : kHeadKeys) known |= k == lk;
+        if (!known) { fprintf(stderr, "not a live key: %s (live keys: ipd ipd_near near_dist far_dist anchor hfov world_scale head_x head_y head_z)\n", k.c_str()); return 2; }
         ctl_write(c, [&](vrdual_ctl& x) {
             if (k == "ipd") x.ipd = parse_len(v);
             else if (k == "ipd_near") x.ipd_near = parse_len(v);
@@ -91,6 +93,9 @@ int main(int argc, char** argv) {
             else if (k == "anchor") x.anchor = vrdual_anchor_parse(v.c_str());
             else if (k == "hfov") x.hfov = strtof(v.c_str(), nullptr);
             else if (k == "world_scale") x.world_scale = strtof(v.c_str(), nullptr);
+            else if (k == "head_x") x.head_x = parse_len(v);
+            else if (k == "head_y") x.head_y = parse_len(v);
+            else if (k == "head_z") x.head_z = parse_len(v);
         });
         vrdual_ctl now = ctl_read(c);
         if (!now.live) fprintf(stderr, "note: session runs in baked mode, change applies after app restart\n");

@@ -44,6 +44,20 @@ static const Key kKeys[] = {
     {"left_gpu", "pci:0000:06:00.0", "GPU for the left eye (pci:..., index or name)"},
     {"right_gpu", "pci:0000:0b:00.0", "GPU for the right eye"},
     {"log", "1", "layer logging to stderr"},
+    // input (vrdual-xr): VR controllers -> virtual pad / mouse / keys; map_<button> = KEY_*|BTN_*
+    {"input", "off", "controllers as: off | gamepad | mouse"},
+    {"mouse_mode", "stick", "mouse from controllers: stick | motion | aim (menu button cycles)"},
+    {"mouse_speed", "1", "pointer speed factor"},
+    {"mouse_curve", "2.5", "stick response exponent (stick mode)"},
+    {"deadzone", "0.15", "stick dead zone, 0..1"},
+    {"lstick", "wasd", "left stick in mouse mode: wasd | arrows | none"},
+    {"head_look", "off", "head rotation turns the game camera: off | mouse | edge"},
+    {"head_deadzone", "15", "edge mode: degrees from the screen centre without turning"},
+    {"head_rate", "120", "edge mode: game turn rate at 45 degrees past the dead zone, deg/s"},
+    {"head_counts_per_deg", "10", "mouse counts per degree of game camera turn (calibrate per game)"},
+    {"head_lean", "off", "head translation moves the rendered viewpoint: off | on"},
+    {"lean_max", "0.1", "head offset soft limit, meters (L in L*tanh(d/L))"},
+    {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };
 
 inline std::string trim(std::string s) {

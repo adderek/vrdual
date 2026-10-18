@@ -6,11 +6,13 @@ parallel-camera pair the horizontal disparity (left-eye x minus right-eye x)
 of a post at distance d is  ipd(d) / d * eye_width / 2  pixels, where ipd(d)
 follows the near/far blend from common/vrdual_ctl.hpp.
 
-  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center]
+  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05]
 
 --anchor also checks where the LEFT eye sees each post: the original camera
 sees post k at x = (1 + (-0.5 + 0.25k)) * eye_width / 2; the left eye adds
 0 (anchor left), disparity/2 (center) or the full disparity (anchor right).
+--head-x: both eyes moved right by that many meters (head offset): every post
+moves left by head_x / d * eye_width / 2, disparity unchanged.
 
 Prints one line per post; exit 0 if every post is within tolerance, 1 if not,
 2 on usage/parse errors. Needs ImageMagick (`magick`) to decode the PNG.
@@ -44,6 +46,7 @@ def main():
     ap.add_argument("--near", type=float, default=0.5)
     ap.add_argument("--far", type=float, default=5.0)
     ap.add_argument("--anchor", choices=["center", "left", "right"])
+    ap.add_argument("--head-x", type=float, default=0.0)
     ap.add_argument("--tol-rel", type=float, default=0.04)
     ap.add_argument("--tol-px", type=float, default=1.0)
     a = ap.parse_args()
@@ -76,7 +79,7 @@ def main():
         line = f"post {d:5.1f} m  disparity {got:7.1f} px  expected {want:7.1f} px"
         if a.anchor:
             base = (1 + (-0.5 + 0.25 * k)) * ew / 2
-            lwant = base + share[a.anchor] * want
+            lwant = base + share[a.anchor] * want - a.head_x / d * ew / 2
             lgood = abs(l - lwant) <= max(a.tol_px, a.tol_rel * want) + 0.5
             good &= lgood
             line += f"  left-eye x {l:6.1f} (expected {lwant:6.1f})"

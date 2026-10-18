@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #define VRDUAL_MAGIC 0x56524455u /* "VRDU" */
-#define VRDUAL_VERSION 1u
+#define VRDUAL_VERSION 2u
 #define VRDUAL_SLOTS 4u
 
 enum vrdual_pixfmt {
@@ -35,6 +35,7 @@ struct vrdual_shm_header {
     struct vrdual_slot slots[VRDUAL_SLOTS];
     char gpu_name[64];
     char pci[32];
+    char app[64];                   // v2: producing app (profile key: VkApplicationInfo name, else exe)
 };
 
 #define VRDUAL_HDR_BYTES 4096u
@@ -62,6 +63,9 @@ struct vrdual_ctl {
     int32_t anchor;         // vrdual_anchor
     uint32_t live;          // 1 if the layers can apply changes without restart
     char app[64];           // app name (profile key) the session was seeded for
+    // version 2: head offset from vrdual-xr (meters, soft-clamped, in the frame
+    // of the start direction: x right, y up, z forward); 0 when no HMD drives it
+    float head_x, head_y, head_z;
 };
 
 static inline const char* vrdual_anchor_name(int a) {

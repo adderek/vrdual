@@ -32,12 +32,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_frames.hpp"
+#include "../common/vrdual_input.hpp"
 
 static volatile sig_atomic_t g_quit = 0;
 static PFN_xrGetInstanceProcAddr g_gipa;
@@ -51,6 +53,9 @@ XRFN(xrCreateSwapchain); XRFN(xrDestroySwapchain); XRFN(xrEnumerateSwapchainImag
 XRFN(xrWaitSwapchainImage); XRFN(xrReleaseSwapchainImage); XRFN(xrWaitFrame); XRFN(xrBeginFrame); XRFN(xrEndFrame);
 XRFN(xrLocateViews); XRFN(xrGetVulkanGraphicsRequirements2KHR); XRFN(xrCreateVulkanInstanceKHR);
 XRFN(xrGetVulkanGraphicsDevice2KHR); XRFN(xrCreateVulkanDeviceKHR);
+XRFN(xrStringToPath); XRFN(xrCreateActionSet); XRFN(xrCreateAction); XRFN(xrSuggestInteractionProfileBindings);
+XRFN(xrAttachSessionActionSets); XRFN(xrSyncActions); XRFN(xrGetActionStateFloat); XRFN(xrGetActionStateBoolean);
+XRFN(xrGetActionStateVector2f); XRFN(xrCreateActionSpace); XRFN(xrLocateSpace);
 #undef XRFN
 
 static void load_fns() {
@@ -61,6 +66,9 @@ static void load_fns() {
     L(xrDestroySwapchain); L(xrEnumerateSwapchainImages); L(xrAcquireSwapchainImage); L(xrWaitSwapchainImage);
     L(xrReleaseSwapchainImage); L(xrWaitFrame); L(xrBeginFrame); L(xrEndFrame); L(xrLocateViews);
     L(xrGetVulkanGraphicsRequirements2KHR); L(xrCreateVulkanInstanceKHR); L(xrGetVulkanGraphicsDevice2KHR); L(xrCreateVulkanDeviceKHR);
+    L(xrStringToPath); L(xrCreateActionSet); L(xrCreateAction); L(xrSuggestInteractionProfileBindings);
+    L(xrAttachSessionActionSets); L(xrSyncActions); L(xrGetActionStateFloat); L(xrGetActionStateBoolean);
+    L(xrGetActionStateVector2f); L(xrCreateActionSpace); L(xrLocateSpace);
 #undef L
 }
 
@@ -190,6 +198,148 @@ static void barrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImage
     vkCmdPipelineBarrier(cb, ss, ds, 0, 0, nullptr, 0, nullptr, 1, &b);
 }
 
+// ---------------------------------------------------------------- input ----
+// Touch controllers (WiVRn's Quest controllers) -> vrdual::Controls.
+static XrVector3f qrot(XrQuaternionf q, XrVector3f v) {  // rotate v by q
+    XrVector3f u{q.x, q.y, q.z};
+    auto cross = [](XrVector3f a, XrVector3f b) { return XrVector3f{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; };
+    XrVector3f t = cross(u, v);
+    t = {2 * t.x, 2 * t.y, 2 * t.z};
+    XrVector3f c = cross(u, t);
+    return {v.x + q.w * t.x + c.x, v.y + q.w * t.y + c.y, v.z + q.w * t.z + c.z};
+}
+static void yaw_pitch(XrQuaternionf q, float& yaw, float& pitch) {  // degrees, yaw positive = left
+    XrVector3f f = qrot(q, {0, 0, -1});
+    yaw = atan2f(-f.x, -f.z) * 57.29578f;
+    pitch = asinf(std::fmax(-1.f, std::fmin(1.f, f.y))) * 57.29578f;
+}
+
+struct XrInput {
+    XrActionSet set = XR_NULL_HANDLE;
+    XrAction stick, trigger, grip, click, a, b, x, y, menu, aim;
+    XrPath hand[2];
+    XrSpace aim_space = XR_NULL_HANDLE;
+    bool ok = false;
+
+    XrAction make(const char* name, XrActionType t, bool both) {
+        XrActionCreateInfo ci{XR_TYPE_ACTION_CREATE_INFO};
+        snprintf(ci.actionName, sizeof ci.actionName, "%s", name);
+        snprintf(ci.localizedActionName, sizeof ci.localizedActionName, "%s", name);
+        ci.actionType = t;
+        ci.countSubactionPaths = both ? 2 : 0;
+        ci.subactionPaths = both ? hand : nullptr;
+        XrAction act = XR_NULL_HANDLE;
+        if (xrCreateAction(set, &ci, &act) != XR_SUCCESS) ok = false;
+        return act;
+    }
+    XrPath path(const char* p) {
+        XrPath r = XR_NULL_PATH;
+        xrStringToPath(g_inst, p, &r);
+        return r;
+    }
+    void init(XrSession s) {
+        XrActionSetCreateInfo si{XR_TYPE_ACTION_SET_CREATE_INFO};
+        snprintf(si.actionSetName, sizeof si.actionSetName, "vrdual");
+        snprintf(si.localizedActionSetName, sizeof si.localizedActionSetName, "vrdual");
+        if (xrCreateActionSet(g_inst, &si, &set) != XR_SUCCESS) return;
+        hand[0] = path("/user/hand/left");
+        hand[1] = path("/user/hand/right");
+        ok = true;
+        stick = make("stick", XR_ACTION_TYPE_VECTOR2F_INPUT, true);
+        trigger = make("trigger", XR_ACTION_TYPE_FLOAT_INPUT, true);
+        grip = make("grip", XR_ACTION_TYPE_FLOAT_INPUT, true);
+        click = make("stick_click", XR_ACTION_TYPE_BOOLEAN_INPUT, true);
+        a = make("a", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        b = make("b", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        x = make("x", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        y = make("y", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        menu = make("menu", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
+        aim = make("aim", XR_ACTION_TYPE_POSE_INPUT, false);
+        if (!ok) return;
+        std::vector<XrActionSuggestedBinding> sb;
+        for (const char* h : {"left", "right"}) {
+            std::string p = std::string("/user/hand/") + h + "/input/";
+            sb.push_back({stick, path((p + "thumbstick").c_str())});
+            sb.push_back({trigger, path((p + "trigger/value").c_str())});
+            sb.push_back({grip, path((p + "squeeze/value").c_str())});
+            sb.push_back({click, path((p + "thumbstick/click").c_str())});
+        }
+        sb.push_back({a, path("/user/hand/right/input/a/click")});
+        sb.push_back({b, path("/user/hand/right/input/b/click")});
+        sb.push_back({x, path("/user/hand/left/input/x/click")});
+        sb.push_back({y, path("/user/hand/left/input/y/click")});
+        sb.push_back({menu, path("/user/hand/left/input/menu/click")});
+        sb.push_back({aim, path("/user/hand/right/input/aim/pose")});
+        XrInteractionProfileSuggestedBinding ipb{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        ipb.interactionProfile = path("/interaction_profiles/oculus/touch_controller");
+        ipb.countSuggestedBindings = uint32_t(sb.size());
+        ipb.suggestedBindings = sb.data();
+        XrResult r = xrSuggestInteractionProfileBindings(g_inst, &ipb);
+        XrActionSpaceCreateInfo asi{XR_TYPE_ACTION_SPACE_CREATE_INFO, nullptr, aim, XR_NULL_PATH, {{0, 0, 0, 1}, {0, 0, 0}}};
+        XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO, nullptr, 1, &set};
+        if (r != XR_SUCCESS || xrCreateActionSpace(s, &asi, &aim_space) != XR_SUCCESS || xrAttachSessionActionSets(s, &at) != XR_SUCCESS) {
+            fprintf(stderr, "[xr] controller actions unavailable (%s)\n", xr_str(r));
+            ok = false;
+            return;
+        }
+        fprintf(stderr, "[xr] controller actions attached (Touch profile)\n");
+    }
+    float f(XrSession s, XrAction act, int h) {
+        XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO, nullptr, act, hand[h]};
+        XrActionStateFloat st{XR_TYPE_ACTION_STATE_FLOAT};
+        return xrGetActionStateFloat(s, &gi, &st) == XR_SUCCESS && st.isActive ? st.currentState : 0;
+    }
+    bool btn(XrSession s, XrAction act, int h = -1) {
+        XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO, nullptr, act, h < 0 ? XR_NULL_PATH : hand[h]};
+        XrActionStateBoolean st{XR_TYPE_ACTION_STATE_BOOLEAN};
+        return xrGetActionStateBoolean(s, &gi, &st) == XR_SUCCESS && st.isActive && st.currentState;
+    }
+    XrVector2f v2(XrSession s, XrAction act, int h) {
+        XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO, nullptr, act, hand[h]};
+        XrActionStateVector2f st{XR_TYPE_ACTION_STATE_VECTOR2F};
+        return xrGetActionStateVector2f(s, &gi, &st) == XR_SUCCESS && st.isActive ? st.currentState : XrVector2f{0, 0};
+    }
+    // screen: the space the game picture is shown in, screen_q its orientation
+    // there; tan_h/tan_v: half-FOV tangents of the picture.
+    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, XrQuaternionf screen_q, float tan_h, float tan_v) {
+        vrdual::Controls c;
+        XrActiveActionSet aas{set, XR_NULL_PATH};
+        XrActionsSyncInfo sy{XR_TYPE_ACTIONS_SYNC_INFO, nullptr, 1, &aas};
+        if (xrSyncActions(s, &sy) != XR_SUCCESS) return c;
+        XrVector2f l = v2(s, stick, 0), r = v2(s, stick, 1);
+        c.lx = l.x; c.ly = l.y; c.rx = r.x; c.ry = r.y;
+        c.lt = f(s, trigger, 0); c.rt = f(s, trigger, 1);
+        c.lg = f(s, grip, 0); c.rg = f(s, grip, 1);
+        c.l3 = btn(s, click, 0); c.r3 = btn(s, click, 1);
+        c.a = btn(s, a); c.b = btn(s, b); c.x = btn(s, x); c.y = btn(s, y); c.menu = btn(s, menu);
+        const XrSpaceLocationFlags rot = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+        if (xrLocateSpace(aim_space, local, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
+            c.hand_ok = true;
+            yaw_pitch(loc.pose.orientation, c.hand_yaw, c.hand_pitch);
+        }
+        loc = {XR_TYPE_SPACE_LOCATION};
+        if (xrLocateSpace(aim_space, screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
+            XrQuaternionf inv{-screen_q.x, -screen_q.y, -screen_q.z, screen_q.w};
+            XrVector3f d = qrot(inv, qrot(loc.pose.orientation, {0, 0, -1}));  // picture at infinity: direction only
+            if (d.z < -1e-3f) {
+                c.aim_u = 0.5f + 0.5f * (d.x / -d.z) / tan_h;
+                c.aim_v = 0.5f - 0.5f * (d.y / -d.z) / tan_v;
+                c.aim_ok = c.aim_u >= 0 && c.aim_u <= 1 && c.aim_v >= 0 && c.aim_v <= 1;
+            }
+        }
+        loc = {XR_TYPE_SPACE_LOCATION};
+        if (xrLocateSpace(view, local, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
+            c.head_ok = true;
+            yaw_pitch(loc.pose.orientation, c.head_yaw, c.head_pitch);
+            c.head_px = loc.pose.position.x;
+            c.head_py = loc.pose.position.y;
+            c.head_pz = loc.pose.position.z;
+        }
+        return c;
+    }
+};
+
 // ----------------------------------------------------------------- main ----
 int main(int argc, char** argv) {
     std::string session = getenv("VRDUAL_SESSION") ? getenv("VRDUAL_SESSION") : "default";
@@ -307,6 +457,8 @@ int main(int argc, char** argv) {
     XR_CHECK(xrCreateReferenceSpace(s, &rci, &view_space));
     rci.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     XR_CHECK(xrCreateReferenceSpace(s, &rci, &local_space));
+    XrInput xin;
+    xin.init(s);
     uint32_t nvc = 0;
     xrEnumerateViewConfigurationViews(g_inst, sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &nvc, nullptr);
     std::vector<XrViewConfigurationView> vcv(nvc, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
@@ -327,6 +479,25 @@ int main(int argc, char** argv) {
     uint64_t shown = 0;
     int live = -1;  // game frames fresh? -1 = not reported yet
     bool blanked = false;
+    // input: profile follows the game in the frame file (hdr->app)
+    std::string input_app = "\x01";
+    std::unique_ptr<vrdual::Mapper> mapper;
+    vrdual::Uinput uinput;
+    double t_input = vrdual::now_s();
+    // head_lean: head position relative to a reference, in the frame of the
+    // reference yaw (x right, y up, z forward), soft-clamped -> control block
+    vrdual::InputCfg icfg;
+    bool lean_ref = false;
+    float ref_p[3] = {}, ref_yaw = 0;
+    int recentres = 0;
+    float sent[3] = {NAN, NAN, NAN};  // first call always writes (clears an offset a killed run left)
+    auto send_head = [&](float x, float y, float z) {
+        if (fabsf(x - sent[0]) < 5e-4f && fabsf(y - sent[1]) < 5e-4f && fabsf(z - sent[2]) < 5e-4f) return;
+        if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
+        if (!ctl) return;
+        vrdual::ctl_write(ctl, [&](vrdual_ctl& k) { k.head_x = x; k.head_y = y; k.head_z = z; });
+        sent[0] = x; sent[1] = y; sent[2] = z;
+    };
     double t_report = vrdual::now_s();
     fprintf(stderr, "[xr] reading %s and %s\n", L.name.c_str(), R.name.c_str());
 
@@ -373,6 +544,41 @@ int main(int argc, char** argv) {
             fprintf(stderr, fresh ? "[xr] game frames arriving\n" : "[xr] no game frames: showing nothing\n");
             live = fresh;
         }
+        if (fresh && L.hdr->app != input_app) {
+            input_app.assign(L.hdr->app, strnlen(L.hdr->app, sizeof L.hdr->app));
+            vrdual::InputCfg ic = vrdual::load_input_cfg(input_app);
+            mapper.reset(ic.input != "off" || ic.head_look != "off" || ic.lean ? new vrdual::Mapper(ic) : nullptr);
+            fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s\n", input_app.c_str(), ic.input.c_str(),
+                    ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off");
+            icfg = ic;
+            lean_ref = false;
+            recentres = 0;
+        }
+        double t_now = vrdual::now_s();
+        if (mapper && xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
+            if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
+            float th = tanf((ctl ? vrdual::ctl_read(ctl).hfov : 90.0f) * float(M_PI) / 360.0f);
+            float tv = th * float(L.h) / float(L.w ? L.w : 1);
+            XrQuaternionf sq = world && have_world ? world_pose[0].orientation : XrQuaternionf{0, 0, 0, 1};
+            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, world ? local_space : view_space, sq, th, tv);
+            uinput.emit(mapper->step(c, t_now - t_input));
+            if (icfg.lean && c.head_ok) {
+                if (!lean_ref || mapper->recentres != recentres) {
+                    ref_p[0] = c.head_px; ref_p[1] = c.head_py; ref_p[2] = c.head_pz;
+                    ref_yaw = c.head_yaw * float(M_PI) / 180.0f;
+                    lean_ref = true;
+                    recentres = mapper->recentres;
+                }
+                float d[3] = {c.head_px - ref_p[0], c.head_py - ref_p[1], c.head_pz - ref_p[2]};
+                // reference frame: forward (-sin, 0, -cos)(yaw), right (cos, 0, -sin)(yaw)
+                float rx = d[0] * cosf(ref_yaw) - d[2] * sinf(ref_yaw);
+                float fz = -d[0] * sinf(ref_yaw) - d[2] * cosf(ref_yaw);
+                float L = icfg.lean_max > 0 ? icfg.lean_max : 0.1f;
+                send_head(L * tanhf(rx / L), L * tanhf(d[1] / L), L * tanhf(fz / L));
+            }
+        }
+        if (!fresh || !mapper || !icfg.lean) send_head(0, 0, 0);  // nothing drives it: no stale offset
+        t_input = t_now;
         if (fs.shouldRender && (fresh || (out[0].released && out[1].released))) {
             // newest paired frame (or black once the game is gone) -> swapchain images
             uint64_t F;
@@ -522,6 +728,7 @@ int main(int argc, char** argv) {
     vkDeviceWaitIdle(g.dev);
     for (auto& o : out)
         if (o.sc) xrDestroySwapchain(o.sc);
+    send_head(0, 0, 0);
     xrDestroySession(s);
     xrDestroyInstance(g_inst);
     return 0;
