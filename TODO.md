@@ -8,7 +8,7 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 3. [M2 — faster frame transport + measurements](docs/tasks/M2-frame-transport.md)
 4. [M4 — head pose](docs/tasks/M4-head-pose.md): needs M3
 5. [M5 — real applications](docs/tasks/M5-real-apps.md): after M1 for games, demos earlier
-6. [M6 — single-GPU mode](docs/tasks/M6-single-gpu.md): works via mirror on one GPU (2026-10-18); a cheaper path is optional
+6. [M6 — single-GPU mode](docs/tasks/M6-single-gpu.md): alternate-eye rendering (2026-10-18); same-frame eyes optional
 7. [Guided IPD calibration](docs/tasks/guided-calibration.md): small, independent
 8. [Backlog: small defects and hardening](docs/tasks/backlog.md)
 

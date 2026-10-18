@@ -137,6 +137,8 @@ export VK_ADD_LAYER_PATH="$d/layer${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}"
 export VK_INSTANCE_LAYERS="VK_LAYER_VRDUAL_stereo${VK_INSTANCE_LAYERS:+:$VK_INSTANCE_LAYERS}"
 export VRDUAL_EYE="${VRDUAL_EYE:-both}"
 export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-zink}"
+# glvnd would pick NVIDIA's own GL (bypasses Vulkan and the layer); force Mesa.
+export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-mesa}"
 exec "$@"
 WRAP
     chmod +x "$host/run"
@@ -209,12 +211,9 @@ vrdual_selftest() {
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
-    rm -f /dev/shm/vrdual-$sess-*
-    local e
-    for e in left right; do
-        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e \
-            "$B/vrdual-cube" --scene calib --title "selftest $e" >"$tmp/$e.log" 2>&1 &
-    done
+    # Checks 2, 3, 3b and 4a need the second GPU (0b); single-GPU hosts skip them.
+    local two=1
+    [[ $(cat /sys/bus/pci/devices/0000:0b:00.0/class 2>/dev/null) == 0x03* ]] || two=0
     snap() {  # newest paired frame at least 15 frames after now
         local f
         f=$("$B/vrdual-compositor" --session $sess --snapshot "$1" --at 0 --timeout 20 2>&1 | grep -oE 'frame [0-9]+' | cut -d' ' -f2)
@@ -223,6 +222,13 @@ vrdual_selftest() {
     set_live() { local kv; for kv in "$@"; do "$B/vrdual-ctl" --session $sess set ${kv/=/ } >/dev/null || return 1; done; }
     local M="python3 -I $VRDUAL_ROOT/tools/measure_posts.py"
     local i
+    if (( two )); then
+    rm -f /dev/shm/vrdual-$sess-*
+    local e
+    for e in left right; do
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e \
+            "$B/vrdual-cube" --scene calib --title "selftest $e" >"$tmp/$e.log" 2>&1 &
+    done
     for i in $(seq 100); do grep -q exporting "$tmp/left.log" && grep -q exporting "$tmp/right.log" && break; sleep 0.1; done
     label="two GPUs selected";   check bash -c "grep -q 'pci 0000:06:00.0' '$tmp/left.log' && grep -q 'pci 0000:0b:00.0' '$tmp/right.log'"
     label="live params enabled"; check grep -q 'live params at device address' "$tmp/left.log" "$tmp/right.log"
@@ -261,6 +267,9 @@ vrdual_selftest() {
     check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'device addresses replayed' '$tmp/bda.log' && snap '$tmp/bda.png' &&
         $M '$tmp/bda.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/bda.log' || { cat '$tmp/bda.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+    else
+        say "SKIP  two-GPU checks (no GPU at 0000:0b:00.0)"
+    fi
 
     # 3c. Two swapchains (wined3d style): the small one is created last and must
     # neither take the frame file nor crash the big one's export.
@@ -274,22 +283,27 @@ vrdual_selftest() {
         kill -0 $xw && ! grep -q 'exporting 64x48' '$tmp/xw.log' || { cat '$tmp/xw.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
-    # 3d. Single-GPU mode: right_gpu = the app's GPU -> second device on the same card.
-    rm -f /dev/shm/vrdual-$sess-*
-    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
-        VRDUAL_RIGHT_GPU=pci:0000:06:00.0 "$B/vrdual-cube" --scene calib --title "selftest one gpu" >"$tmp/one.log" 2>&1 &
-    for i in $(seq 100); do grep -q 'twin images' "$tmp/one.log" && break; sleep 0.1; done
-    label="mirror single GPU: both eyes on 06, ipd 64mm"
-    check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'single-GPU mode' '$tmp/one.log' && grep -q 'twin device on .*0000:06:00.0' '$tmp/one.log' &&
-        snap '$tmp/one.png' && $M '$tmp/one.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/one.log' || { cat '$tmp/one.log'; false; }"
-    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+    # 3d. Single-GPU mode: right_gpu = the app's GPU -> alternate-eye rendering
+    # on that GPU (no twin device). With --bda the app's own device addresses
+    # must keep working (a twin on the same GPU could not replay them).
+    local opt
+    for opt in "" --bda; do
+        rm -f /dev/shm/vrdual-$sess-*
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            VRDUAL_RIGHT_GPU=pci:0000:06:00.0 "$B/vrdual-cube" --scene calib $opt --title "selftest one gpu" >"$tmp/one.log" 2>&1 &
+        for i in $(seq 100); do grep -q 'exporting' "$tmp/one.log" && break; sleep 0.1; done
+        label="single GPU${opt:+ $opt}: alternate eyes on 06, ipd 64mm"
+        check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'alternate-eye rendering on .*0000:06:00.0' '$tmp/one.log' &&
+            snap '$tmp/one.png' && $M '$tmp/one.png' --ipd 0.064 --anchor center || { cat '$tmp/one.log'; false; }"
+        kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+    done
 
     # 4. Mirror mode under Zink (OpenGL 2.1-era app), 64- and 32-bit; eyes must differ.
     local gl
     for gl in "$B/vrdual-gltest" "$B/lib32/vrdual-gltest"; do
         [[ -x $gl ]] || { say "SKIP  mirror zink $(basename "$(dirname "$gl")") (make lib32)"; continue; }
         rm -f /dev/shm/vrdual-$sess-*
-        env MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_SESSION=$sess VRDUAL_EYE=both "$gl" --title "selftest zink" >"$tmp/gl.log" 2>&1 &
         label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
@@ -299,9 +313,9 @@ vrdual_selftest() {
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like
     # Alice): the game must keep rendering fresh data (its shadowed uploads
     # still reach A), only the right eye freezes. gltest animates its texture.
-    if [[ -x $B/lib32/vrdual-gltest ]]; then
+    if [[ -x $B/lib32/vrdual-gltest ]] && (( two )); then
         rm -f /dev/shm/vrdual-$sess-*
-        env MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B/lib32" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B/lib32" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_MIRROR_FAIL_AT=30 "$B/lib32/vrdual-gltest" --title "selftest stop" >"$tmp/stop.log" 2>&1 &
         local gp=$!
         for i in $(seq 300); do grep -q STOPPED "$tmp/stop.log" && break; sleep 0.1; done

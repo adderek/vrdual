@@ -112,6 +112,15 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   file from one swapchain and publish from another (`shm_claim`).
 - `/dev/uinput` fails with ENODEV after a kernel package update until reboot
   (the running kernel's modules are gone). The input test then skips.
+- WiVRn listens on a dual-stack IPv6 socket: with `ipv6.disable=1` on the
+  kernel cmdline, `wivrn-server` dies with "Address family not supported by
+  protocol". Drop the boot parameter; to keep IPv6 off use the sysctl
+  `net.ipv6.conf.{all,default}.disable_ipv6=1` instead.
+- NVIDIA: glvnd hands GL apps NVIDIA's own GL, so `MESA_LOADER_DRIVER_OVERRIDE=zink`
+  alone does nothing and the layer never sees the game. Also set
+  `__GLX_VENDOR_LIBRARY_NAME=mesa` (the Steam wrapper does).
+- A second VkDevice on the same GPU cannot replay the first one's device
+  addresses (NVIDIA: shared VA) — hence alternate-eye rendering for single GPU.
 - Proton logs: Steam writes none by default. Add `export PROTON_LOG=1` to the
   installed wrapper (`vrdual steam-install` rewrites it), log lands in
   `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`. Launch with

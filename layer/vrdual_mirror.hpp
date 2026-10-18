@@ -1171,27 +1171,18 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
         enum_pd(inst, &n, nullptr);
         std::vector<VkPhysicalDevice> pds(n);
         enum_pd(inst, &n, pds.data());
-        // Another GPU matching right_gpu; failing that, the app's own GPU
-        // (single-GPU mode: a second device there renders the other eye).
-        int same = -1;
-        std::string same_name;
+        // Another GPU matching right_gpu. The app's own GPU never gets a twin:
+        // a second device there cannot replay A's device addresses (same VA).
         for (uint32_t i = 0; i < n && !md->bphys; ++i) {
             VkPhysicalDeviceProperties p;
             gpp(pds[i], &p);
             std::string pci = pci_string(gpp2, pds[i]);
-            if (pci == apci) { same = int(i); same_name = p.deviceName; continue; }
+            if (pci == apci) continue;
             if (gpu_matches(g_cfg.mirror_gpu, i, p.deviceName, pci)) {
                 md->bphys = pds[i];
                 md->bname = p.deviceName;
                 md->bpci = pci;
             }
-        }
-        if (!md->bphys && same >= 0) {
-            md->bphys = pds[same];
-            md->bname = same_name;
-            md->bpci = apci;
-            logf("mirror: single-GPU mode — no other GPU matches '%s', both eyes on %s (pci %s), about half the frame rate",
-                 g_cfg.mirror_gpu.c_str(), same_name.c_str(), apci.c_str());
         }
         if (md->bphys) {
             md->binst = inst;
@@ -1202,7 +1193,13 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
         ((PFN_vkDestroyInstance)gipa(inst, "vkDestroyInstance"))(inst, nullptr);
     }
     if (!md->bphys) {
-        logf("mirror: no GPU matching '%s' in any loaded driver — mirror off, left eye only", g_cfg.mirror_gpu.c_str());
+        // Single GPU: alternate-eye rendering on A (needs live params to switch eyes).
+        dd->aer = dd->ep.params != nullptr;
+        if (dd->aer)
+            logf("mirror: single-GPU mode — no other GPU matches '%s', alternate-eye rendering on the app's GPU (pci %s), half the frame rate per eye",
+                 g_cfg.mirror_gpu.c_str(), apci.c_str());
+        else
+            logf("mirror: no GPU matching '%s' and no live params for alternate-eye rendering — left eye only", g_cfg.mirror_gpu.c_str());
         return nullptr;
     }
     auto gipa = md->icd_gipa;

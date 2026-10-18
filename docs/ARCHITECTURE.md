@@ -99,8 +99,14 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   the app never see it. Requires identical GPUs + driver (checked: memory types
   must match), so sizes, offsets and memory type indices carry over.
   **Single GPU:** when no other GPU matches `right_gpu` (one card, or
-  `right_gpu` names the app's GPU) the twin is a second device on the app's
-  GPU: same code path, both eyes rendered there (about half the frame rate).
+  `right_gpu` names the app's GPU) there is no twin: alternate-eye rendering
+  on A. Frame 2F renders the left eye, 2F+1 the right (live params flipped
+  after each present's readback, which already waited for that frame); both
+  are published as pair F, so consumers pair them unchanged. Half the frame
+  rate per eye, one frame of time between the eyes. Needs live params (baked
+  → left eye only). A twin device on the same GPU cannot replay A's device
+  addresses (NVIDIA: one GPU VA space per process, "vkAllocateMemory failed
+  on B"), which breaks DXVK and Zink.
 - **Replay**: every device-level call runs on A, then again on B with all
   handles translated (arrays, nested structs, pNext chains). Created handles
   are recorded A→B. Queries (`vkGet*`) run on A only. Untranslatable commands

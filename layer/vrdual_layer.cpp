@@ -176,6 +176,8 @@ struct EyeBuf {
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
     float aspect = 0;  // of the exported swapchain when params were last pushed
+    int pushed_eye = -1;  // alternate-eye rendering flips `eye` every frame
+    float last[2][4] = {};  // per eye: last pushed v[0..3] (log only real changes)
     int patched = 0, skipped = 0;
 };
 
@@ -215,6 +217,7 @@ struct DeviceData {
     CopyRes cr;
     uint64_t frame = 0;
     mirror::MDev* md = nullptr;  // mirror twin, if any
+    bool aer = false;  // single GPU: alternate-eye rendering, ep.eye == frame & 1
 };
 
 // Never destroyed: driver threads can still call in while static destructors run at exit.
@@ -637,13 +640,15 @@ static float g_aspect = 16.0f / 9;  // exported swapchain (head offset y needs P
 static void push_params(EyeBuf& ep) {
     if (!g_cfg.ctl || !ep.params) return;
     uint64_t seq = g_cfg.ctl->seq;
-    if (seq == ep.ctl_seq && ep.aspect == g_aspect) return;
+    if (seq == ep.ctl_seq && ep.aspect == g_aspect && ep.pushed_eye == ep.eye) return;
     bool head_only = ep.ctl_seq != ~0ull && ep.aspect == g_aspect;
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
-    head_only &= !memcmp(ep.params, e.v, 4 * sizeof(float));  // head moves every frame: don't log it
+    head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
     memcpy(ep.params, e.v, sizeof e.v);
+    memcpy(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));
     ep.aspect = g_aspect;
+    ep.pushed_eye = ep.eye;
     if (ep.ctl_seq != ~0ull && !head_only)
         logf("live[%s]: anchor=%s ipd=%.1fmm ipd_near=%.1fmm hfov=%g scale=%g -> clip_dx far %+.5f near %+.5f", ep.eye ? "R" : "L",
              vrdual_anchor_name(c.anchor), c.ipd * 1e3, c.ipd_near * 1e3, c.hfov, c.world_scale, e.v[0], e.v[1]);
@@ -1008,6 +1013,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         VkPhysicalDeviceProperties p;
         dd->inst->GetPhysicalDeviceProperties(dd->phys, &p);
         shm_open_out(g_cfg.eye, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str());
+        if (dd->aer) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str());
     }
     if (dd->md) mirror::present_twin(dd, queue, family, pi, s, frame, own);
     if (!own || !ensure_copy_res(dd->d, dd->device, dd->set_loader_data, family, dd->cr)) {
@@ -1023,9 +1029,18 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         return dd->d.QueuePresentKHR(queue, pi);
     }
     dd->frame++;
-    shm_publish(g_cfg.eye, frame, s->rb.map, size_t(s->extent.width) * s->extent.height * 4);
-    el.unlock();
-    lockstep_wait(frame);
+    if (dd->aer) {
+        // Pair F = frames 2F (left) and 2F+1 (right). The copy waited for this
+        // frame's rendering, so the next frame's draws read the other eye's params.
+        shm_publish(dd->ep.eye, frame / 2, s->rb.map, size_t(s->extent.width) * s->extent.height * 4);
+        dd->ep.eye = int(dd->frame & 1);
+        push_params(dd->ep);
+        el.unlock();
+    } else {
+        shm_publish(g_cfg.eye, frame, s->rb.map, size_t(s->extent.width) * s->extent.height * 4);
+        el.unlock();
+        lockstep_wait(frame);
+    }
 
     VkPresentInfoKHR pi2 = *pi;
     pi2.waitSemaphoreCount = 1;

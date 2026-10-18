@@ -14,7 +14,7 @@ LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/spirv_patch.hpp
 all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/vrdual-ctl $(B)/vrdual-input-test
 
 # 32-bit layer for 32-bit games (Zen Bound 2, most older Steam titles).
-lib32: $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/vrdual-gltest
+lib32: $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json $(B)/lib32/vrdual-gltest
 
 $(B) $(B)/lib32:
 	mkdir -p $@
@@ -32,6 +32,9 @@ $(B)/lib32/vrdual-gltest: testapp/gltest.cpp | $(B)/lib32
 	$(CXX) -m32 $(CXXFLAGS) -o $@ $< -lGL -lX11
 
 $(B)/VkLayer_vrdual.json: layer/VkLayer_vrdual.json.in | $(B)
+	cp $< $@
+
+$(B)/lib32/VkLayer_vrdual.json: layer/VkLayer_vrdual.json.in | $(B)/lib32
 	cp $< $@
 
 $(B)/%.inc: testapp/% | $(B)
