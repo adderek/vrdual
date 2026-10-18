@@ -48,5 +48,6 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
 
 ## Games (tested with single GPU)
 
+* American McGee Alice Madness Returns
 * Overlord (green artifacts at the bottom of the screen)
 * Zen Bound 2
