@@ -38,12 +38,15 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
 * 2x AMD rx 7900 xtx
 * 1x NVIDIA RTX 5070 Ti (single GPU)
 
-## Games
+## Games (tested with dual GPU)
 
 * American McGee Alice Madness Returns
 * LEGO Harry Potter 1-4
   * Turn off video effects (I have not checked which but with enabled there is a "ghost" - likely DoF could be causing that)
-* Overlord (single GPU, RTX 5070 Ti: green artifacts at the bottom of the screen)
 * Portal 2
-* Zen Bound 2 (also single GPU, RTX 5070 Ti)
+* Zen Bound 2
 
+## Games (tested with single GPU)
+
+* Overlord (green artifacts at the bottom of the screen)
+* Zen Bound 2
