@@ -12,6 +12,11 @@ The apps don't need to know about it. Proof of concept, Linux, Vulkan, AMD.
 
 Settings: `~/.config/vrdual/vrdual.conf` (`./vrdual config init`).
 
+It also works on a single GPU (any vendor, also NVIDIA): the eyes are then
+rendered on alternate frames, half the frame rate per eye. The game window on
+the monitor shows left and right frames alternately, so it flickers; the
+headset is fine.
+
 Note: in most PCs the second graphics card sits behind the chipset and has a
 slower link (here: PCIe Gen3 x4 instead of Gen4 x16). Check with `./vrdual gpus`.
 
@@ -31,12 +36,14 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
 ## Hardware
 
 * 2x AMD rx 7900 xtx
+* 1x NVIDIA RTX 5070 Ti (single GPU)
 
 ## Games
 
 * American McGee Alice Madness Returns
 * LEGO Harry Potter 1-4
   * Turn off video effects (I have not checked which but with enabled there is a "ghost" - likely DoF could be causing that)
+* Overlord (single GPU, RTX 5070 Ti: green artifacts at the bottom of the screen)
 * Portal 2
-* Zen Bound 2
+* Zen Bound 2 (also single GPU, RTX 5070 Ti)
 
