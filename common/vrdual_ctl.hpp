@@ -23,6 +23,21 @@ inline std::string shm_dir() {
 }
 inline std::string ctl_path(const std::string& session) { return shm_dir() + "/vrdual-" + session + "-ctl"; }
 
+// Live values from config (creation, and a new game joining an old block).
+inline void ctl_seed(vrdual_ctl& c, const Settings& s) {
+    c.version = 3;
+    c.ipd = s.f("ipd");
+    c.ipd_near = s.f("ipd_near");
+    c.near_dist = s.f("near_dist");
+    c.far_dist = s.f("far_dist");
+    c.world_scale = s.f("world_scale");
+    c.hfov = s.f("hfov");
+    c.anchor = vrdual_anchor_parse(s.s("anchor").c_str());
+    c.live = s.i("live") != 0;
+    c.hud_depth = s.f("hud_depth");
+    snprintf(c.app, sizeof c.app, "%.63s", s.app.c_str());
+}
+
 // Opens the session's control block. With `seed` non-null the block is created
 // if missing and filled from `seed` (exactly one creator wins via O_EXCL).
 inline vrdual_ctl* ctl_open(const std::string& session, const Settings* seed, bool* created = nullptr) {
@@ -35,18 +50,8 @@ inline vrdual_ctl* ctl_open(const std::string& session, const Settings* seed, bo
             auto* c = (vrdual_ctl*)mmap(nullptr, sizeof(vrdual_ctl), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
             close(fd);
             if (c == MAP_FAILED) return nullptr;
-            c->version = 3;
             c->seq = 0;
-            c->ipd = seed->f("ipd");
-            c->ipd_near = seed->f("ipd_near");
-            c->near_dist = seed->f("near_dist");
-            c->far_dist = seed->f("far_dist");
-            c->world_scale = seed->f("world_scale");
-            c->hfov = seed->f("hfov");
-            c->anchor = vrdual_anchor_parse(seed->s("anchor").c_str());
-            c->live = seed->i("live") != 0;
-            c->hud_depth = seed->f("hud_depth");
-            snprintf(c->app, sizeof c->app, "%.63s", seed->app.c_str());
+            ctl_seed(*c, *seed);
             __sync_synchronize();
             c->magic = VRDUAL_CTL_MAGIC;
             if (created) *created = true;

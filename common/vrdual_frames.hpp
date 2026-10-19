@@ -24,6 +24,7 @@ struct Eye {
     uint32_t w = 0, h = 0, fmt = 0;
     std::vector<uint8_t> px;  // last paired frame
     bool remapped = false;    // set when the size changed; the user clears it
+    ino_t ino = 0;            // of the mapped file (a re-created dir/file = new inode)
 };
 
 inline double now_s() {
@@ -49,6 +50,7 @@ inline bool eye_map(Eye& e) {
     if (h->magic != VRDUAL_MAGIC || vrdual_file_bytes(h->slot_bytes) > (uint64_t)st.st_size) { munmap(p, st.st_size); return false; }
     e.hdr = h;
     e.bytes = st.st_size;
+    e.ino = st.st_ino;
     e.w = h->width; e.h = h->height; e.fmt = h->pixfmt;
     e.remapped = true;
     fprintf(stderr, "[compositor] %s eye: %ux%u on %s (pci %s)\n", e.eye ? "right" : "left", e.w, e.h, h->gpu_name, h->pci);

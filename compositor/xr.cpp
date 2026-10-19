@@ -16,6 +16,11 @@
 // ~/.config/openxr/1/active_runtime.json, /etc/xdg/..., /etc/...) is opened
 // directly and negotiated with like the loader would.
 //
+// Runs across games: start it once, before or after the game. VRDUAL_SHM_DIR
+// may list several dirs (a:b, `vrdual xr` passes /dev/shm and Flatpak Steam's);
+// while no frames arrive it follows the dir where the session's frames are
+// fresh. A new game process (frame header `producer`) reloads its settings.
+//
 //   vrdual-xr [--session S] [--lock world|head] [--frames N] [--swap]
 #define XR_NO_PROTOTYPES
 #define XR_USE_GRAPHICS_API_VULKAN
@@ -578,9 +583,31 @@ int main(int argc, char** argv) {
     std::vector<int64_t> formats(nf);
     xrEnumerateSwapchainFormats(s, nf, &nf, formats.data());
 
-    vrdual::Eye L{0, vrdual::shm_dir() + "/vrdual-" + session + "-0"}, R{1, vrdual::shm_dir() + "/vrdual-" + session + "-1"};
+    std::vector<std::string> dirs;
+    {
+        std::stringstream ss(vrdual::shm_dir());
+        for (std::string d; std::getline(ss, d, ':');) if (!d.empty()) dirs.push_back(d);
+        if (dirs.empty()) dirs.push_back("/dev/shm");
+    }
+    vrdual::Eye L{0, ""}, R{1, ""};
     EyeOut out[2];
     vrdual_ctl* ctl = nullptr;
+    size_t dir_i = 0;
+    auto use_dir = [&](size_t i) {
+        dir_i = i;
+        setenv("VRDUAL_SHM_DIR", dirs[i].c_str(), 1);  // ctl_path follows
+        for (vrdual::Eye* e : {&L, &R}) {
+            if (e->hdr) munmap(e->hdr, e->bytes);
+            e->hdr = nullptr;
+            e->w = e->h = 0;
+            e->name = dirs[i] + "/vrdual-" + session + "-" + char('0' + e->eye);
+        }
+        if (ctl) munmap(ctl, sizeof *ctl);
+        ctl = nullptr;
+    };
+    use_dir(0);
+    double t_scan = 0;
+    uint32_t producer = 0;  // frame header of the game whose settings are loaded
     // anchored (world lock, or head lock frozen): the picture lives in LOCAL
     // space at world_base (between the eyes, level), captured on the next
     // valid view after have_world is cleared
@@ -615,7 +642,7 @@ int main(int argc, char** argv) {
         sent[0] = x; sent[1] = y; sent[2] = z;
     };
     double t_report = vrdual::now_s();
-    fprintf(stderr, "[xr] reading %s and %s\n", L.name.c_str(), R.name.c_str());
+    for (auto& d : dirs) fprintf(stderr, "[xr] watching %s/vrdual-%s-{0,1}\n", d.c_str(), session.c_str());
 
     while (true) {
         if (g_quit && running) { xrRequestExitSession(s); g_quit = 0; }
@@ -658,11 +685,30 @@ int main(int argc, char** argv) {
         // No new game frame for 1 s (game exited or hung): show black. Submitting
         // no layer is not enough, WiVRn's headset keeps the last streamed image.
         bool fresh = vrdual::eye_map(L) && vrdual::eye_map(R) && std::max(vrdual::eye_age_s(L), vrdual::eye_age_s(R)) < 1.0;
+        if (!fresh && vrdual::now_s() - t_scan > 1) {  // game in another dir (host vs Flatpak)?
+            t_scan = vrdual::now_s();
+            struct stat st;  // Steam restarted = new Flatpak /dev/shm: the old mapping is dead
+            if (L.hdr && stat(L.name.c_str(), &st) == 0 && st.st_ino != L.ino) use_dir(dir_i);
+            for (size_t i = 0; i < dirs.size(); ++i) {
+                if (i == dir_i) continue;
+                vrdual::Eye p{0, dirs[i] + "/vrdual-" + session + "-0"};
+                bool there = vrdual::eye_map(p) && vrdual::eye_age_s(p) < 1.0;
+                if (p.hdr) munmap(p.hdr, p.bytes);
+                if (there) {
+                    fprintf(stderr, "[xr] session '%s' found in %s\n", session.c_str(), dirs[i].c_str());
+                    use_dir(i);
+                    break;
+                }
+            }
+        }
         if (int(fresh) != live) {
             fprintf(stderr, fresh ? "[xr] game frames arriving\n" : "[xr] no game frames: showing nothing\n");
             live = fresh;
         }
-        if (fresh && L.hdr->app != input_app) {
+        if (fresh && (L.hdr->app != input_app || L.hdr->producer != producer)) {  // other game, or the same one restarted
+            producer = L.hdr->producer;
+            if (ctl) munmap(ctl, sizeof *ctl);  // the new game may have a new block
+            ctl = nullptr;
             input_app.assign(L.hdr->app, strnlen(L.hdr->app, sizeof L.hdr->app));
             vrdual::InputCfg ic = vrdual::load_input_cfg(input_app);
             mapper.reset(ic.input != "off" || ic.head_look != "off" || ic.lean ? new vrdual::Mapper(ic) : nullptr);

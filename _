@@ -139,10 +139,11 @@ export VRDUAL_EYE="${VRDUAL_EYE:-both}"
 export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-zink}"
 # glvnd would pick NVIDIA's own GL (bypasses Vulkan and the layer); force Mesa.
 export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-mesa}"
-# Host config copy (steam-install); Proton log in ~/.var/app/…Steam/steam-<appid>.log
+# Host config copy (steam-install); Proton games log to ~/.var/app/…Steam/steam-<appid>.log
 [ -f "$d/vrdual.conf" ] && export VRDUAL_CONFIG="${VRDUAL_CONFIG:-$d/vrdual.conf}"
 export PROTON_LOG="${PROTON_LOG:-1}"
-exec "$@"
+# native games (no Proton): stderr incl. the layer log -> game.log next to this
+case "$*" in *proton*) exec "$@" ;; *) exec "$@" 2>"$d/game.log" ;; esac
 WRAP
     chmod +x "$host/run"
     if [[ -f $(vrdual-config-path) ]]; then
@@ -175,7 +176,8 @@ vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 
 # HMD output through OpenXR. Without an active runtime, uses WiVRn's Flatpak.
 vrdual_xr() {
-    pick_shm "$@"
+    # follows the game between host /dev/shm and Flatpak Steam's, across games
+    if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM"; fi
     steam_layer_check
     if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
         local w
@@ -395,6 +397,20 @@ vrdual_selftest() {
             for i in \$(seq 40); do grep -q 'session state 5' '$tmp/xr4.log' && break; sleep 0.5; done; kill -INT \$p
             for i in \$(seq 8); do kill -0 \$p 2>/dev/null || break; sleep 0.5; done
             if kill -0 \$p 2>/dev/null; then kill -9 \$p; cat '$tmp/xr4.log'; false; fi"
+        # xr first, then two games one after another: it finds the session in the
+        # second dir, reloads on the new process; the new game re-seeds the block
+        rm -f /dev/shm/vrdual-$sess-*
+        local cube="exec env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both '$B/vrdual-cube' --scene calib --title 'selftest xr2'"
+        label="openxr: started before the games, follows a game restart"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SHM_DIR='$tmp/none:/dev/shm' timeout 60 '$B/vrdual-xr' --session $sess >'$tmp/xr5.log' 2>&1 & p=\$!
+            w() { for i in \$(seq 40); do [[ \$(grep -c \"\$1\" '$tmp/xr5.log') -ge \$2 ]] && return 0; sleep 0.5; done; return 1; }
+            w 'session state 5' 1; $cube >'$tmp/g1.log' 2>&1 & g=\$!
+            w 'game frames arriving' 1; kill \$g; wait \$g; w 'no game frames' 2
+            VRDUAL_HFOV=70 $cube >'$tmp/g2.log' 2>&1 & g=\$!
+            w 'game frames arriving' 2; ok=\$?; hf=\$('$B/vrdual-ctl' live --session $sess 2>/dev/null | awk '\$1==\"hfov\"{print \$2}')
+            kill \$g \$p; wait
+            [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
+                grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
     else
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
     fi

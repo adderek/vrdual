@@ -123,9 +123,16 @@ static void load_config(const VkApplicationInfo* app) {
     bool created = false;
     c.ctl = vrdual::ctl_open(c.session, &st, &created);
     if (!c.ctl) { logf("cannot open control block %s", vrdual::ctl_path(c.session).c_str()); return; }
+    // Joined a block another process left (an earlier game in the same Steam
+    // run, or the other eye): this process's config wins, once, so the next
+    // game gets its own [app:] values instead of the previous game's.
+    static bool seeded_here = false;
+    bool reseed = !created && !seeded_here;
+    if (reseed) vrdual::ctl_write(c.ctl, [&](vrdual_ctl& k) { vrdual::ctl_seed(k, st); });
+    seeded_here = true;
     vrdual_ctl v = vrdual::ctl_read(c.ctl);
     logf("app='%s' exe='%s' profile='%s' session=%s (%s control block)", app_name.c_str(), exe_name().c_str(),
-         st.profile.c_str(), c.session.c_str(), created ? "seeded" : "joined");
+         st.profile.c_str(), c.session.c_str(), created ? "seeded" : reseed ? "re-seeded" : "joined");
     logf("eye=%s anchor=%s ipd=%.1fmm ipd_near=%.1fmm world_scale=%g hfov=%g skip_w1=%d gpu='%s'%s%s",
          c.mirror ? "both" : c.eye ? "right" : "left", vrdual_anchor_name(v.anchor), v.ipd * 1e3, v.ipd_near * 1e3,
          v.world_scale, v.hfov, c.skip_w1, c.gpu.c_str(), c.mirror ? " mirror_gpu=" : "", c.mirror_gpu.c_str());
@@ -264,6 +271,12 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     __sync_synchronize();
     hd->version = VRDUAL_VERSION;
     hd->width = w; hd->height = h; hd->stride = w * 4; hd->pixfmt = pixfmt; hd->eye = eye;
+    static const uint32_t producer = [] {  // per process: vrdual-xr reloads settings when it changes
+        uint32_t r = 0;
+        if (FILE* f = fopen("/dev/urandom", "rb")) { if (fread(&r, sizeof r, 1, f) != 1) r = 0; fclose(f); }
+        return r ? r : uint32_t(getpid()) | 1u;
+    }();
+    hd->producer = producer;
     hd->slot_bytes = slot;
     hd->last_frame = 0;
     for (auto& s : hd->slots) { s.seq = 0; s.frame = ~0ull; }

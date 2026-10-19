@@ -162,11 +162,17 @@ manifests) and a `run` wrapper to `~/.var/app/com.valvesoftware.Steam/vrdual`
 the launch option `…/vrdual/run %command%`. The wrapper enables the layer in
 mirror mode and sets `MESA_LOADER_DRIVER_OVERRIDE=zink`, so OpenGL games render
 through Vulkan (Zink). The host config is copied next to it (`vrdual.conf`,
-`VRDUAL_CONFIG` in the wrapper); the wrapper also sets `PROTON_LOG=1`.
+`VRDUAL_CONFIG` in the wrapper); the wrapper also sets `PROTON_LOG=1`
+(`~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`) and sends a native
+game's stderr to `…/vrdual/game.log`.
 
 Flatpak Steam has a private `/dev/shm` (host:
 `/run/user/UID/.flatpak/com.valvesoftware.Steam/dev-shm`). Host tools take it
-from `VRDUAL_SHM_DIR`; `vrdual view|xr|live|set|save` set it automatically.
+from `VRDUAL_SHM_DIR`; `vrdual view|live|set|save` set it automatically.
+`vrdual xr` watches both (`VRDUAL_SHM_DIR=/dev/shm:<flatpak>`) and runs across
+games: start it once; a new game process (frame header `producer`, v3)
+reloads its settings. A game joining a control block left by an earlier one
+re-seeds it from its own config (once per process).
 
 ## HMD output (`vrdual-xr`, OpenXR)
 

@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #define VRDUAL_MAGIC 0x56524455u /* "VRDU" */
-#define VRDUAL_VERSION 2u
+#define VRDUAL_VERSION 3u
 #define VRDUAL_SLOTS 4u
 
 enum vrdual_pixfmt {
@@ -29,7 +29,7 @@ struct vrdual_shm_header {
     uint32_t width, height, stride; // stride in bytes
     uint32_t pixfmt;                // vrdual_pixfmt
     uint32_t eye;                   // 0 left, 1 right
-    uint32_t pad0;
+    uint32_t producer;              // v3: random per producing process (new game = new value)
     uint64_t slot_bytes;
     volatile uint64_t last_frame;   // highest published frame (+1, 0 = none)
     struct vrdual_slot slots[VRDUAL_SLOTS];

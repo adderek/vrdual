@@ -71,6 +71,8 @@ map_x = KEY_E
 | `screen_scale_y` | `1` | 0.1..10 | picture height scale |
 
 Command line: `vrdual xr [--session S] [--lock world|head] [--frames N] [--swap]`.
+Start it once, before or after the game; it keeps running across games and
+reloads each new game's settings.
 `--lock world` (default) keeps the picture in the room; `--lock head` keeps it
 in front of the face (films). Controls, always on:
 
@@ -110,7 +112,7 @@ layout (a b x y, sticks, triggers, grips = bumpers).
 | `VRDUAL_EYE` | `left` `right` `both` | which eye this process renders; `both` = mirror mode (Steam wrapper) |
 | `VRDUAL_GPU` | like `left_gpu` | overrides the GPU choice for this process |
 | `VRDUAL_CONFIG` | path | config file |
-| `VRDUAL_SHM_DIR` | path | where frame files / control block live (set automatically for Flatpak Steam) |
+| `VRDUAL_SHM_DIR` | path (`vrdual xr`: `a:b` list) | where frame files / control block live (set automatically for Flatpak Steam; `vrdual xr` watches host and Flatpak and follows the game) |
 | `XR_RUNTIME_JSON` | path | OpenXR runtime for `vrdual xr` (default: WiVRn Flatpak) |
 
 Debugging only: `VRDUAL_FILTER=0` (no GPU / capability filter),
