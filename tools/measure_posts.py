@@ -6,13 +6,15 @@ parallel-camera pair the horizontal disparity (left-eye x minus right-eye x)
 of a post at distance d is  ipd(d) / d * eye_width / 2  pixels, where ipd(d)
 follows the near/far blend from common/vrdual_ctl.hpp.
 
-  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05]
+  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--hud-depth 1.5]
 
 --anchor also checks where the LEFT eye sees each post: the original camera
 sees post k at x = (1 + (-0.5 + 0.25k)) * eye_width / 2; the left eye adds
 0 (anchor left), disparity/2 (center) or the full disparity (anchor right).
 --head-x: both eyes moved right by that many meters (head offset): every post
 moves left by head_x / d * eye_width / 2, disparity unchanged.
+The HUD bar (w == 1) is always measured too: disparity ipd / hud_depth *
+eye_width / 2, 0 without --hud-depth (HUD at infinity).
 
 Prints one line per post; exit 0 if every post is within tolerance, 1 if not,
 2 on usage/parse errors. Needs ImageMagick (`magick`) to decode the PNG.
@@ -38,6 +40,20 @@ def runs(row, x0, x1, bg):
     return out
 
 
+def longest_run(row, x0, x1, bg):
+    """(center, width) of the widest run of non-background pixels in [x0, x1)."""
+    best, start = (0.0, 0), None
+    for x in range(x0, x1 + 1):
+        on = x < x1 and sum(abs(a - b) for a, b in zip(row[x], bg)) > 40
+        if on and start is None:
+            start = x
+        elif not on and start is not None:
+            if x - start > best[1]:
+                best = ((start + x - 1) / 2 - x0, x - start)
+            start = None
+    return best
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("png")
@@ -47,6 +63,7 @@ def main():
     ap.add_argument("--far", type=float, default=5.0)
     ap.add_argument("--anchor", choices=["center", "left", "right"])
     ap.add_argument("--head-x", type=float, default=0.0)
+    ap.add_argument("--hud-depth", type=float, default=0.0)
     ap.add_argument("--tol-rel", type=float, default=0.04)
     ap.add_argument("--tol-px", type=float, default=1.0)
     a = ap.parse_args()
@@ -85,6 +102,21 @@ def main():
             line += f"  left-eye x {l:6.1f} (expected {lwant:6.1f})"
         ok &= good
         print(line + ("  ok" if good else "  FAIL"))
+
+    # HUD bar: lowest row whose widest run spans most of the eye in both halves
+    for hy in range(H - 1, H // 2, -1):
+        hrow = [tuple(raw[(hy * W + x) * 3:(hy * W + x) * 3 + 3]) for x in range(W)]
+        (hl, wl), (hr, wr) = longest_run(hrow, 0, ew, bg), longest_run(hrow, ew, W, bg)
+        if wl > ew * 0.6 and wr > ew * 0.6:
+            break
+    else:
+        print("HUD bar not found", file=sys.stderr)
+        return 2
+    want = a.ipd / a.hud_depth * ew / 2 if a.hud_depth > 0 else 0.0
+    got = hl - hr
+    good = abs(got - want) <= max(a.tol_px, a.tol_rel * want)
+    ok &= good
+    print(f"HUD bar row {hy}  disparity {got:7.1f} px  expected {want:7.1f} px" + ("  ok" if good else "  FAIL"))
     return 0 if ok else 1
 
 

@@ -20,7 +20,8 @@
 // reads a second vec4 h at addr+16 (head offset, vrdual_ctl.hpp EyeParams):
 //     x' += h.x, y' = v.y + h.y, w' = v.w + h.z, z' = v.z * w' / v.w
 // (z scaled with w keeps every vertex's depth z/w: no far-plane clipping,
-// depth order kept; same w == 1 skip).
+// depth order kept; same w == 1 skip). w == 1 vertices (HUD) get x' = v.x + h.w
+// instead: a constant disparity that puts the HUD at hud_depth.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -276,9 +277,15 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 x2 = x3;
             }
             if (o.skip_w1) {
-                uint32_t is1 = fresh(), xs = fresh();
+                uint32_t is1 = fresh(), xs = fresh(), xh = x;
+                if (live) {  // HUD at hud_depth: constant shift h.w
+                    uint32_t hh = fresh();
+                    xh = fresh();
+                    emit(out, OpCompositeExtract, {t_float, hh, hp, 3});
+                    emit(out, OpFAdd, {t_float, xh, x, hh});
+                }
                 emit(out, OpFOrdEqual, {t_bool, is1, wv, c_one});
-                emit(out, OpSelect, {t_float, xs, is1, x, x2});
+                emit(out, OpSelect, {t_float, xs, is1, xh, x2});
                 x2 = xs;
                 if (live) {
                     uint32_t ys = fresh(), ws = fresh(), zs = fresh();

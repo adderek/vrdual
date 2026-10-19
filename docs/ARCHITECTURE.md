@@ -293,6 +293,7 @@ world_scale = 100      # engine works in centimeters
 | `world_scale` | `1` | app units per meter |
 | `hfov` | `90` | assumed horizontal FOV of the app, degrees |
 | `skip_w1` | `1` | leave `w == 1` vertices (HUD/post/ortho) unshifted |
+| `hud_depth` | `0` | show `w == 1` draws (HUD) at this distance in meters, 0 = infinity; live mode only, changeable live (vorpX-style HUD depth) |
 | `live` | `1` | runtime-changeable params (falls back to baked automatically) |
 | `export` | `1` | publish frames to `/dev/shm/vrdual-<session>-<eye>` |
 | `lockstep`, `lockstep_timeout_ms` | `1`, `250` | wait for the other eye at present |

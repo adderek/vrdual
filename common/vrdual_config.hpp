@@ -37,6 +37,7 @@ static const Key kKeys[] = {
     {"world_scale", "1", "app units per meter"},
     {"hfov", "90", "assumed horizontal FOV of the app camera, degrees"},
     {"skip_w1", "1", "leave w == 1 vertices (HUD/post/ortho) unshifted"},
+    {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
     {"export", "1", "publish frames to /dev/shm for the compositor"},
     {"lockstep", "1", "hold each frame until the other eye has it"},

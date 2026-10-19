@@ -10,7 +10,8 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 5. [M5 — real applications](docs/tasks/M5-real-apps.md): after M1 for games, demos earlier
 6. [M6 — single-GPU mode](docs/tasks/M6-single-gpu.md): alternate-eye rendering (2026-10-18); same-frame eyes optional
 7. [Guided IPD calibration](docs/tasks/guided-calibration.md): small, independent
-8. [Backlog: small defects and hardening](docs/tasks/backlog.md)
+8. [Borrowed from vorpX/FlatVR](docs/tasks/borrowed-features.md): HUD depth (done), HUD scale, cinema/curved screen, screen grab, edge peek; depth reprojection (Z3D) = M7 on branch `single-gpu`
+9. [Backlog: small defects and hardening](docs/tasks/backlog.md)
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

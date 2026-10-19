@@ -66,6 +66,8 @@ struct vrdual_ctl {
     // version 2: head offset from vrdual-xr (meters, soft-clamped, in the frame
     // of the start direction: x right, y up, z forward); 0 when no HMD drives it
     float head_x, head_y, head_z;
+    // version 3: HUD (w == 1 draws) shown at this distance, meters; 0 = infinity
+    float hud_depth;
 };
 
 static inline const char* vrdual_anchor_name(int a) {
