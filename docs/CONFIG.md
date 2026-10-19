@@ -70,12 +70,13 @@ map_x = KEY_E
 | `screen_scale_x` | `1` | 0.1..10 | picture width scale (grab changes it; the release log prints the value) |
 | `screen_scale_y` | `1` | 0.1..10 | picture height scale |
 
-Command line: `vrdual xr [--session S] [--lock world|head] [--start-wivrn] [--frames N] [--swap]`.
+Command line: `vrdual xr [--session S] [--lock world|head] [--no-start-wivrn] [--frames N] [--swap]`.
 Start it once, before or after the game; it keeps running across games and
 reloads each new game's settings.
-With WiVRn as the runtime it needs `wivrn-server` (`vrdual wivrn`) and refuses
-to start without it; `vrdual xr --start-wivrn` starts the server in the
-background (log `$XDG_RUNTIME_DIR/vrdual-wivrn.log`).
+With WiVRn as the runtime it needs `wivrn-server`: when none runs it starts
+one in the background (log `$XDG_RUNTIME_DIR/vrdual-wivrn.log`);
+`--no-start-wivrn` refuses instead. `vrdual wivrn` (foreground) and the
+background start share a lock, so vrdual never runs two servers.
 `--lock world` (default) keeps the picture in the room; `--lock head` keeps it
 in front of the face (films). Controls, always on:
 
