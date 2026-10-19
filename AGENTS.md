@@ -48,6 +48,7 @@ automatically.
 | `tools/spvpatch.cpp` | offline patcher driver for `spirv-val` checks |
 | `tools/measure_posts.py` | measures disparity/anchor in a calib snapshot vs theory (±1 px / 4 %) |
 | `_` / `vrdual` | implementation + human menu / machine CLI (sources `_`) |
+| `docs/GAMES.md` | per-game status and settings (update after testing a game) |
 
 ## Commands
 

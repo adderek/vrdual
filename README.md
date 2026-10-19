@@ -38,30 +38,9 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
 * 2x AMD rx 7900 xtx
 * 1x NVIDIA RTX 5070 Ti (single GPU)
 
-## Games (tested with dual GPU)
+## Games
 
-* American McGee Alice Madness Returns
-* LEGO Harry Potter 1-4
-  * Turn off video effects (I have not checked which but with enabled there is a "ghost" - likely DoF could be causing that)
-* Portal 2
-* Zen Bound 2
-* Tomb Raider III: works (set a windowed / 1920x1080 mode, the portrait desktop otherwise gives 2880x5120)
-* Fallout: New Vegas: runs, HUD shown
-* Overlord (native, OpenGL via Zink): runs; green glow at the bottom of the screen
-  is a Zink (Mesa 26) bug, it also shows with Zink alone, without vrdual
-* Tomb Raider II: runs; menu needs keys (`input = mouse`: a = Enter, b = Esc)
-* Tomb Raider I (DOSBox): no stereo (draws a flat 2D image); exits in windowed
-  mode / on alt+tab (not checked without vrdual)
-* Portal (native, OpenGL via Zink): menu works, crashes on level load (NULL GL
-  buffer map in `shaderapidx9.so`); also with Zink alone, without vrdual
-* Skyrim, Mirror's Edge (Proton): run; depth needs `world_scale` (~70, ~50-100)
-* Firewatch: runs; the portrait desktop cuts its menu (needs a landscape mode)
-* Psychonauts (native GL): runs, both eyes identical (not analysed yet)
-* Shadow Warrior, Hospital Tycoon: crashed with SIGBUS in the frame export of
-  2026-10-19 20:35 (reverted in 55c0b81), retest
-
-## Games (tested with single GPU)
-
-* American McGee Alice Madness Returns
-* Overlord (green artifacts at the bottom of the screen: Zink bug, also without vrdual)
-* Zen Bound 2
+Per-game status, settings and tuning steps: [docs/GAMES.md](docs/GAMES.md).
+Works in the HMD: Zen Bound 2, Alice: Madness Returns, Portal 2, LEGO Harry
+Potter 1-4, Tomb Raider III, Psychonauts, Mirror's Edge. Broken: Portal
+(Zink bug), Tomb Raider I (DOSBox, 2D).
