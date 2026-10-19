@@ -358,6 +358,8 @@ vrdual_selftest() {
         label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
             [ \"\$(magick '$tmp/g.png' -crop 50%x100% +repage -format '%#\n' info: | sort -u | wc -l)\" = 2 ]"
+        label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): frame files cost the app 4 KiB of address space each"
+        check bash -c "awk '/vrdual-$sess-[01]\$/ {split(\$1, r, \"-\"); n++; if (strtonum(\"0x\" r[2]) - strtonum(\"0x\" r[1]) > 4096) big++} END {exit !(n == 2 && !big)}' /proc/$!/maps"
         kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     done
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like

@@ -262,10 +262,12 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     if (o.hdr) { munmap(o.hdr, o.bytes); o.hdr = nullptr; }
     if (o.fd < 0) o.fd = open(shm_path(eye).c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
     if (o.fd < 0 || ftruncate(o.fd, bytes) != 0) { logf("shm open/ftruncate %s failed", shm_path(eye).c_str()); return false; }
-    void* p = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, o.fd, 0);
+    // Only the header is mapped, pixels go in with pwrite: a 32-bit game has no
+    // room for 2 eyes x 3 slots of a big frame (2880x5120: 350 MB) next to its own.
+    void* p = mmap(nullptr, VRDUAL_HDR_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, o.fd, 0);
     if (p == MAP_FAILED) { logf("mmap failed"); return false; }
     o.hdr = (vrdual_shm_header*)p;
-    o.bytes = bytes;
+    o.bytes = VRDUAL_HDR_BYTES;
     auto* hd = o.hdr;
     hd->magic = 0;  // invalid while re-initialising
     __sync_synchronize();
@@ -302,7 +304,12 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     s.seq++;  // odd: writing
     __sync_synchronize();
     s.frame = frame;
-    memcpy((char*)hd + VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes, pixels, n);
+    off_t at = off_t(VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes);
+    for (size_t done = 0; done < n;) {
+        ssize_t k = pwrite(g_out[eye].fd, (const char*)pixels + done, n - done, at + off_t(done));
+        if (k <= 0) { if (k < 0 && errno == EINTR) continue; break; }
+        done += size_t(k);
+    }
     s.present_ns = now_ns();
     __sync_synchronize();
     s.seq++;
