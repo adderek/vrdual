@@ -56,6 +56,37 @@ struct Controls {
     bool head_ok = false;
     float head_yaw = 0, head_pitch = 0;     // degrees
     float head_px = 0, head_py = 0, head_pz = 0;  // meters, OpenXR LOCAL space
+    bool hands_ok = false;                  // both grip poses valid
+    float hand_p[2][3] = {};                // left, right grip position, meters, screen space
+};
+
+// Two-hand grab of the cinema screen (vrdual-xr, screen = flat|curved): both
+// grips held -> the hands' midpoint drags the screen, their distance scales
+// its width. Pure, like Mapper. The caller hides both grips from the game
+// while step() returns true.
+struct ScreenGrab {
+    float off[3] = {0, 0, 0};  // screen offset from its configured place, meters
+    float fov = 60;            // current width, degrees
+    bool both = false, moved = false;
+    float m0[3] = {}, off0[3] = {}, s0 = 0, fov0 = 0;
+
+    bool step(const Controls& c) {
+        bool now = c.hands_ok && c.lg > 0.8f && c.rg > 0.8f;
+        const float *l = c.hand_p[0], *r = c.hand_p[1];
+        float m[3] = {(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2};
+        float s = std::sqrt((l[0] - r[0]) * (l[0] - r[0]) + (l[1] - r[1]) * (l[1] - r[1]) + (l[2] - r[2]) * (l[2] - r[2]));
+        if (now && !both) {
+            for (int k = 0; k < 3; ++k) { m0[k] = m[k]; off0[k] = off[k]; }
+            s0 = s;
+            fov0 = fov;
+        } else if (now) {
+            for (int k = 0; k < 3; ++k) off[k] = off0[k] + m[k] - m0[k];
+            if (s0 > 0.05f) fov = std::fmin(170.0f, std::fmax(10.0f, fov0 * s / s0));
+            moved = true;
+        }
+        both = now;
+        return now;
+    }
 };
 
 enum InDev { DEV_PAD, DEV_MOUSE, DEV_TABLET, DEV_KBD };

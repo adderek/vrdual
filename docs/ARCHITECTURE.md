@@ -190,7 +190,11 @@ extension; WiVRn and Monado have it). The game's stereo then reads as a
 window: objects at infinity sit on the screen plane. Base pose: VIEW origin
 (head lock) or the start pose between the eyes (world lock). `aim` mode
 intersects the controller ray with the plane/cylinder (full mode: direction
-only, picture at infinity).
+only, picture at infinity). Both grips held (`ScreenGrab`, pure, in
+`vrdual_input.hpp`): the hands' midpoint drags the screen, their distance
+scales its width; the game sees neither grip meanwhile (the first one pressed
+gets a short press). Release logs the values to put in the profile; menu held
+1 s puts the screen back.
 
 WiVRn (`vrdual wivrn`): Flatpak `io.github.wivrn.wivrn`. Without avahi-daemon
 it must run with `--no-publish-service` (the wrapper adds it) and the headset

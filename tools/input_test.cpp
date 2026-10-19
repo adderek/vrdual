@@ -107,6 +107,26 @@ int main() {
         c.head_yaw = -176; auto ev = m.step(c, 0.01);  // 5 deg left across the wrap
         expect(rel(ev, REL_X) == -50, "head mouse: 5 deg left across +-180 -> -50");
     }
+    {
+        ScreenGrab g;
+        Controls c;
+        c.hands_ok = true;
+        c.lg = 1;
+        float l[3] = {-0.2f, 0, -0.5f}, r[3] = {0.2f, 0, -0.5f};
+        memcpy(c.hand_p[0], l, sizeof l); memcpy(c.hand_p[1], r, sizeof r);
+        expect(!g.step(c), "screen grab: one grip -> no grab");
+        c.rg = 1;
+        expect(g.step(c) && g.off[0] == 0 && g.fov == 60, "screen grab: both grips -> grab, no jump");
+        c.hand_p[0][0] = -0.2f; c.hand_p[1][0] = 0.4f; c.hand_p[0][2] = c.hand_p[1][2] = -0.6f;  // midpoint +0.1 x, -0.1 z; 0.6 apart
+        g.step(c);
+        expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.off[2] + 0.1f) < 1e-5f && fabsf(g.fov - 90) < 1e-3f,
+               "screen grab: midpoint drags, distance scales (0.4 -> 0.6 m: 60 -> 90 deg)");
+        c.lg = c.rg = 0;
+        expect(!g.step(c) && fabsf(g.off[0] - 0.1f) < 1e-5f, "screen grab: release keeps the offset");
+        c.lg = c.rg = 1; c.hand_p[0][0] = 1; c.hand_p[1][0] = 1.6f;
+        g.step(c);
+        expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.fov - 90) < 1e-3f, "screen grab: regrab elsewhere, no jump");
+    }
 
     // uinput round trip with a virtual pad
     {

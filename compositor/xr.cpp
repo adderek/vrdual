@@ -229,9 +229,9 @@ static void yaw_pitch(XrQuaternionf q, float& yaw, float& pitch) {  // degrees, 
 
 struct XrInput {
     XrActionSet set = XR_NULL_HANDLE;
-    XrAction stick, trigger, grip, click, a, b, x, y, menu, aim;
+    XrAction stick, trigger, grip, click, a, b, x, y, menu, aim, grip_pose;
     XrPath hand[2];
-    XrSpace aim_space = XR_NULL_HANDLE;
+    XrSpace aim_space = XR_NULL_HANDLE, grip_space[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
     bool ok = false;
 
     XrAction make(const char* name, XrActionType t, bool both) {
@@ -268,6 +268,7 @@ struct XrInput {
         y = make("y", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
         menu = make("menu", XR_ACTION_TYPE_BOOLEAN_INPUT, false);
         aim = make("aim", XR_ACTION_TYPE_POSE_INPUT, false);
+        grip_pose = make("grip_pose", XR_ACTION_TYPE_POSE_INPUT, true);
         if (!ok) return;
         std::vector<XrActionSuggestedBinding> sb;
         for (const char* h : {"left", "right"}) {
@@ -276,6 +277,7 @@ struct XrInput {
             sb.push_back({trigger, path((p + "trigger/value").c_str())});
             sb.push_back({grip, path((p + "squeeze/value").c_str())});
             sb.push_back({click, path((p + "thumbstick/click").c_str())});
+            sb.push_back({grip_pose, path((p + "grip/pose").c_str())});
         }
         sb.push_back({a, path("/user/hand/right/input/a/click")});
         sb.push_back({b, path("/user/hand/right/input/b/click")});
@@ -290,7 +292,12 @@ struct XrInput {
         XrResult r = xrSuggestInteractionProfileBindings(g_inst, &ipb);
         XrActionSpaceCreateInfo asi{XR_TYPE_ACTION_SPACE_CREATE_INFO, nullptr, aim, XR_NULL_PATH, {{0, 0, 0, 1}, {0, 0, 0}}};
         XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO, nullptr, 1, &set};
-        if (r != XR_SUCCESS || xrCreateActionSpace(s, &asi, &aim_space) != XR_SUCCESS || xrAttachSessionActionSets(s, &at) != XR_SUCCESS) {
+        bool spaces = xrCreateActionSpace(s, &asi, &aim_space) == XR_SUCCESS;
+        for (int h = 0; h < 2; ++h) {
+            XrActionSpaceCreateInfo gsi{XR_TYPE_ACTION_SPACE_CREATE_INFO, nullptr, grip_pose, hand[h], {{0, 0, 0, 1}, {0, 0, 0}}};
+            spaces &= xrCreateActionSpace(s, &gsi, &grip_space[h]) == XR_SUCCESS;
+        }
+        if (r != XR_SUCCESS || !spaces || xrAttachSessionActionSets(s, &at) != XR_SUCCESS) {
             fprintf(stderr, "[xr] controller actions unavailable (%s)\n", xr_str(r));
             ok = false;
             return;
@@ -362,6 +369,12 @@ struct XrInput {
                 }
             }
             c.aim_ok = hit && c.aim_u >= 0 && c.aim_u <= 1 && c.aim_v >= 0 && c.aim_v <= 1;
+        }
+        c.hands_ok = true;
+        for (int h = 0; h < 2; ++h) {
+            loc = {XR_TYPE_SPACE_LOCATION};
+            c.hands_ok &= xrLocateSpace(grip_space[h], screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT);
+            c.hand_p[h][0] = loc.pose.position.x; c.hand_p[h][1] = loc.pose.position.y; c.hand_p[h][2] = loc.pose.position.z;
         }
         loc = {XR_TYPE_SPACE_LOCATION};
         if (xrLocateSpace(view, local, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
@@ -519,6 +532,9 @@ int main(int argc, char** argv) {
     XrPosef world_pose[2], world_base{{0, 0, 0, 1}, {0, 0, 0}};  // base: between the eyes, eye 0's orientation
     bool have_world = false;
     Screen scr;
+    vrdual::ScreenGrab grab;  // both grips: drag / scale the cinema screen
+    float fov_cfg = 60;
+    int grab_recentres = 0;
     bool running = false;
     long submitted = 0, uploads = 0;
     uint64_t shown = 0;
@@ -606,21 +622,38 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "[xr] runtime has no %s: curved screen shown flat\n", XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
                 scr.mode = SCREEN_FLAT;
             }
+            grab = vrdual::ScreenGrab{};
+            grab.fov = fov_cfg = scr.fov;
+            grab_recentres = 0;
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV)\n");
             else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m\n", screen_name(scr.mode), scr.fov, scr.dist);
             lean_ref = false;
             recentres = 0;
         }
         double t_now = vrdual::now_s();
-        if (mapper && xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
+        if ((mapper || scr.mode != SCREEN_FULL) && xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
             if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
             float th = tanf((scr.mode != SCREEN_FULL ? scr.fov : ctl ? vrdual::ctl_read(ctl).hfov : 90.0f) * float(M_PI) / 360.0f);
             float tv = th * float(L.h) / float(L.w ? L.w : 1);
             if (scr.mode == SCREEN_CURVED) tv = scr.fov * float(M_PI) / 360.0f * float(L.h) / float(L.w ? L.w : 1);  // arc: height = r·angle·h/w
             XrPosef sp = world && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+            sp.position = {sp.position.x + grab.off[0], sp.position.y + grab.off[1], sp.position.z + grab.off[2]};
             vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, world ? local_space : view_space, sp, th, tv, scr);
-            uinput.emit(mapper->step(c, t_now - t_input));
-            if (icfg.lean && c.head_ok) {
+            if (scr.mode != SCREEN_FULL) {
+                bool was = grab.both;
+                if (grab.step(c)) c.lg = c.rg = 0;  // grabbing: the game doesn't see the grips
+                scr.fov = grab.fov;
+                if (was && !grab.both)
+                    fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, %.0f deg wide (screen_fov = %.0f to keep)\n", grab.off[0],
+                            grab.off[1], grab.off[2], grab.fov, grab.fov);
+                if (mapper && mapper->recentres != grab_recentres) {  // menu held: screen back to its configured place
+                    grab_recentres = mapper->recentres;
+                    grab = vrdual::ScreenGrab{};
+                    grab.fov = scr.fov = fov_cfg;
+                }
+            }
+            if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
+            if (mapper && icfg.lean && c.head_ok) {
                 if (!lean_ref || mapper->recentres != recentres) {
                     ref_p[0] = c.head_px; ref_p[1] = c.head_py; ref_p[2] = c.head_pz;
                     ref_yaw = c.head_yaw * float(M_PI) / 180.0f;
@@ -764,6 +797,7 @@ int main(int argc, char** argv) {
                 proj.viewCount = 2;
                 proj.views = pv;
                 XrPosef base = world && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+                base.position = {base.position.x + grab.off[0], base.position.y + grab.off[1], base.position.z + grab.off[2]};
                 float aspect = float(out[0].w) / float(out[0].h);
                 for (int e = 0; e < 2; ++e) {  // cinema: same surface for both eyes, each eye sees its own image
                     XrEyeVisibility vis = e ? XR_EYE_VISIBILITY_RIGHT : XR_EYE_VISIBILITY_LEFT;
