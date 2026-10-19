@@ -111,11 +111,11 @@ pick_shm() {
 # see them; prints the Steam launch option (stdout).
 vrdual_steam_install() {
     make -C "$VRDUAL_ROOT" -j"$(nproc)" all lib32 >&2 || return 1
-    local host inside conf
+    local host inside
     if [[ -d $STEAM_FLATPAK ]]; then
-        host=$STEAM_FLATPAK/vrdual; inside=$HOME/vrdual; conf=$STEAM_FLATPAK/.config/vrdual
+        host=$STEAM_FLATPAK/vrdual; inside=$HOME/vrdual
     else
-        host=$HOME/.local/share/vrdual; inside=$host; conf=""
+        host=$HOME/.local/share/vrdual; inside=$host
     fi
     mkdir -p "$host/layer"
     cp "$B/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual64.so"
@@ -139,12 +139,17 @@ export VRDUAL_EYE="${VRDUAL_EYE:-both}"
 export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-zink}"
 # glvnd would pick NVIDIA's own GL (bypasses Vulkan and the layer); force Mesa.
 export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-mesa}"
+# Host config copy (steam-install); Proton log in ~/.var/app/…Steam/steam-<appid>.log
+[ -f "$d/vrdual.conf" ] && export VRDUAL_CONFIG="${VRDUAL_CONFIG:-$d/vrdual.conf}"
+export PROTON_LOG="${PROTON_LOG:-1}"
 exec "$@"
 WRAP
     chmod +x "$host/run"
-    if [[ -n $conf && -f $(vrdual-config-path) ]]; then
-        mkdir -p "$conf" && cp "$(vrdual-config-path)" "$conf/vrdual.conf"
-        say "copied $(vrdual-config-path) -> $conf/vrdual.conf (the game reads that one)"
+    if [[ -f $(vrdual-config-path) ]]; then
+        cp "$(vrdual-config-path)" "$host/vrdual.conf"
+        say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"
+    else
+        rm -f "$host/vrdual.conf"
     fi
     say "installed to $host"
     say "Steam > game > Properties > Launch options:"
@@ -152,12 +157,15 @@ WRAP
 }
 vrdual-config-path() { "$B/vrdual-ctl" path; }
 
-# Warns when the layer copy Steam games load differs from build/ (forgot
-# `vrdual steam-install` after a change: the game runs the old layer).
+# Warns when the layer or config copy Steam games load differs from build/ or
+# the host config (forgot `vrdual steam-install`: the game runs the old one).
 steam_layer_check() {
-    local i
-    for i in "$STEAM_FLATPAK/vrdual/layer/libVkLayer_vrdual64.so" "$HOME/.local/share/vrdual/layer/libVkLayer_vrdual64.so"; do
-        [[ -f $i ]] && ! cmp -s "$i" "$B/libVkLayer_vrdual.so" && say "warning: $i differs from build/ (run: vrdual steam-install)"
+    local d c
+    c=$(vrdual-config-path)
+    for d in "$STEAM_FLATPAK/vrdual" "$HOME/.local/share/vrdual"; do
+        [[ -f $d/layer/libVkLayer_vrdual64.so ]] || continue
+        cmp -s "$d/layer/libVkLayer_vrdual64.so" "$B/libVkLayer_vrdual.so" || say "warning: $d/layer differs from build/ (run: vrdual steam-install)"
+        if [[ -f $c ]] && ! cmp -s "$c" "$d/vrdual.conf"; then say "warning: $d/vrdual.conf differs from $c (run: vrdual steam-install)"; fi
     done
     return 0
 }
@@ -219,6 +227,8 @@ vrdual_selftest() {
         done
     done
     label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+    label="docs/CONFIG.md lists every config key"
+    check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"

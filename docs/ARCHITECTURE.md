@@ -161,7 +161,8 @@ manifests) and a `run` wrapper to `~/.var/app/com.valvesoftware.Steam/vrdual`
 (Flatpak; `~/vrdual` inside the sandbox) or `~/.local/share/vrdual`, and prints
 the launch option `…/vrdual/run %command%`. The wrapper enables the layer in
 mirror mode and sets `MESA_LOADER_DRIVER_OVERRIDE=zink`, so OpenGL games render
-through Vulkan (Zink). Host config is copied into the sandbox config dir.
+through Vulkan (Zink). The host config is copied next to it (`vrdual.conf`,
+`VRDUAL_CONFIG` in the wrapper); the wrapper also sets `PROTON_LOG=1`.
 
 Flatpak Steam has a private `/dev/shm` (host:
 `/run/user/UID/.flatpak/com.valvesoftware.Steam/dev-shm`). Host tools take it
@@ -315,29 +316,7 @@ world_scale = 100      # engine works in centimeters
 ./vrdual save                      # persist live values into the session app's profile (--global for [global])
 ```
 
-| key | default | meaning |
-|---|---|---|
-| `ipd` | `0.064` | meters (far objects) |
-| `ipd_near`, `near_dist`, `far_dist` | `0`, `0.5`, `5` | optional near/far IPD, see above |
-| `anchor` | `center` | `center` / `left` / `right` |
-| `world_scale` | `1` | app units per meter |
-| `hfov` | `90` | assumed horizontal FOV of the app, degrees |
-| `skip_w1` | `1` | leave `w == 1` vertices (HUD/post/ortho) unshifted |
-| `hud_depth` | `0` | show `w == 1` draws (HUD) at this distance in meters, 0 = infinity; live mode only, changeable live (vorpX-style HUD depth) |
-| `live` | `1` | runtime-changeable params (falls back to baked automatically) |
-| `export` | `1` | publish frames to `/dev/shm/vrdual-<session>-<eye>` |
-| `lockstep`, `lockstep_timeout_ms` | `1`, `250` | wait for the other eye at present |
-| `left_gpu`, `right_gpu` | `pci:0000:06:00.0`, `pci:0000:0b:00.0` | `pci:…`, index, or name substring |
-| `log` | `1` | layer logging |
-| `input`, `mouse_mode`, `mouse_speed`, `mouse_curve`, `deadzone`, `lstick` | `off`, `stick`, `1`, `2.5`, `0.15`, `wasd` | controllers (vrdual-xr), see "Input and head motion" |
-| `head_look`, `head_deadzone`, `head_rate`, `head_counts_per_deg` | `off`, `15`, `120`, `10` | head rotation → game camera |
-| `head_lean`, `lean_max`, `lean_y_sign` | `off`, `0.1`, `1` | head translation → rendered viewpoint |
-| `screen`, `screen_dist`, `screen_fov` | `full`, `2.5`, `60` | `vrdual-xr` surface: full game FOV, or a flat/curved cinema screen (m, deg) |
-| `screen_scale_x`, `screen_scale_y` | `1`, `1` | picture width/height scale, all modes (grab changes it live) |
-| `map_<button>` | mode default | `KEY_*`, `BTN_*` or `none` |
-
-These are per-process environment only: `VRDUAL_EYE` (`left`/`right`; unset = GPU
-filter only), `VRDUAL_GPU` (overrides `left_gpu`/`right_gpu`), `VRDUAL_SESSION`.
+All keys, values and environment variables: [CONFIG.md](CONFIG.md).
 
 ### Calibration UI
 

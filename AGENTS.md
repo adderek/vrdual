@@ -40,7 +40,7 @@ automatically.
 | `layer/spirv_patch.hpp` | SPIR-V rewriter (baked or live params, near/far blend, `w==1` skip) |
 | `layer/VkLayer_vrdual.json.in` | layer manifest (`VK_LAYER_VRDUAL_stereo`, explicit) |
 | `common/vrdual_shm.h` | shm frame ring + control block structs (C ABI shared by all processes) |
-| `common/vrdual_config.hpp` | `.conf` parser, precedence, `save_key` |
+| `common/vrdual_config.hpp` | `.conf` parser, precedence, `save_key` (keys documented in `docs/CONFIG.md`; selftest checks) |
 | `common/vrdual_ctl.hpp` | control block open/read/write, eye param math, `ctl_save` |
 | `compositor/main.cpp` | SBS window, frame pairing, calibration overlay + keys, `--snapshot` |
 | `testapp/main.cpp` | stereo-unaware test app; `--scene calib` = static posts at 0.5/1/2/5/20 m |
@@ -124,8 +124,8 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   `vkCreateGraphicsPipelines`. Symptom when missed: identical eyes, no 3D.
 - A second VkDevice on the same GPU cannot replay the first one's device
   addresses (NVIDIA: shared VA) — hence alternate-eye rendering for single GPU.
-- Proton logs: Steam writes none by default. Add `export PROTON_LOG=1` to the
-  installed wrapper (`vrdual steam-install` rewrites it), log lands in
+- Proton logs: Steam writes none by default. The installed wrapper sets
+  `PROTON_LOG=1` (`vrdual steam-install`), log lands in
   `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`. Launch with
   `flatpak run com.valvesoftware.Steam steam://rungameid/<appid>`. gdb cannot
   attach across pressure-vessel's PID namespace; bisect via the wrapper.
