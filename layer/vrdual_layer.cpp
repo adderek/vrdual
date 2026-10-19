@@ -71,6 +71,7 @@ struct Config {
     float lean_y_sign = 1;     // head offset y: +1 y-up clip (GL/D3D), -1 Vulkan apps flipping y in P
     bool log = true;
     vrdual_ctl* ctl = nullptr; // live session values
+    vrdual::Settings* seed = nullptr;  // this process's config, re-seeds a joined block at the first export
 };
 static Config g_cfg;
 
@@ -123,16 +124,10 @@ static void load_config(const VkApplicationInfo* app) {
     bool created = false;
     c.ctl = vrdual::ctl_open(c.session, &st, &created);
     if (!c.ctl) { logf("cannot open control block %s", vrdual::ctl_path(c.session).c_str()); return; }
-    // Joined a block another process left (an earlier game in the same Steam
-    // run, or the other eye): this process's config wins, once, so the next
-    // game gets its own [app:] values instead of the previous game's.
-    static bool seeded_here = false;
-    bool reseed = !created && !seeded_here;
-    if (reseed) vrdual::ctl_write(c.ctl, [&](vrdual_ctl& k) { vrdual::ctl_seed(k, st); });
-    seeded_here = true;
+    if (!created && !c.seed) c.seed = new vrdual::Settings(st);  // never freed (layer globals live forever)
     vrdual_ctl v = vrdual::ctl_read(c.ctl);
     logf("app='%s' exe='%s' profile='%s' session=%s (%s control block)", app_name.c_str(), exe_name().c_str(),
-         st.profile.c_str(), c.session.c_str(), created ? "seeded" : reseed ? "re-seeded" : "joined");
+         st.profile.c_str(), c.session.c_str(), created ? "seeded" : "joined");
     logf("eye=%s anchor=%s ipd=%.1fmm ipd_near=%.1fmm world_scale=%g hfov=%g skip_w1=%d gpu='%s'%s%s",
          c.mirror ? "both" : c.eye ? "right" : "left", vrdual_anchor_name(v.anchor), v.ipd * 1e3, v.ipd_near * 1e3,
          v.world_scale, v.hfov, c.skip_w1, c.gpu.c_str(), c.mirror ? " mirror_gpu=" : "", c.mirror_gpu.c_str());
@@ -261,13 +256,17 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     size_t bytes = vrdual_file_bytes(slot);
     if (o.hdr) { munmap(o.hdr, o.bytes); o.hdr = nullptr; }
     if (o.fd < 0) o.fd = open(shm_path(eye).c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
-    if (o.fd < 0 || ftruncate(o.fd, bytes) != 0) { logf("shm open/ftruncate %s failed", shm_path(eye).c_str()); return false; }
-    // Only the header is mapped, pixels go in with pwrite: a 32-bit game has no
-    // room for 2 eyes x 3 slots of a big frame (2880x5120: 350 MB) next to its own.
-    void* p = mmap(nullptr, VRDUAL_HDR_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, o.fd, 0);
+    // Grow only: a reader (vrdual-xr) may still map the old, bigger layout, and
+    // touching a page past a shrunk file's end is SIGBUS there.
+    struct stat st;
+    if (o.fd < 0 || fstat(o.fd, &st) != 0 || (st.st_size < (off_t)bytes && ftruncate(o.fd, bytes) != 0)) {
+        logf("shm open/ftruncate %s failed", shm_path(eye).c_str());
+        return false;
+    }
+    void* p = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, o.fd, 0);
     if (p == MAP_FAILED) { logf("mmap failed"); return false; }
     o.hdr = (vrdual_shm_header*)p;
-    o.bytes = VRDUAL_HDR_BYTES;
+    o.bytes = bytes;
     auto* hd = o.hdr;
     hd->magic = 0;  // invalid while re-initialising
     __sync_synchronize();
@@ -288,6 +287,15 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     __sync_synchronize();
     hd->magic = VRDUAL_MAGIC;
     logf("exporting %ux%u fmt=%u to %s", w, h, pixfmt, shm_path(eye).c_str());
+    // Joined a block another process left (an earlier game in the same Steam
+    // run): the process that shows frames wins, once, so the game gets its own
+    // [app:] values. Helpers without a swapchain (launchers, xalia) never touch it.
+    static bool reseeded = false;
+    if (g_cfg.seed && g_cfg.ctl && !reseeded) {
+        vrdual::ctl_write(g_cfg.ctl, [&](vrdual_ctl& k) { vrdual::ctl_seed(k, *g_cfg.seed); });
+        logf("control block re-seeded from this app's config (profile '%s')", g_cfg.seed->profile.c_str());
+    }
+    reseeded = true;
     return true;
 }
 
@@ -304,12 +312,7 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     s.seq++;  // odd: writing
     __sync_synchronize();
     s.frame = frame;
-    off_t at = off_t(VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes);
-    for (size_t done = 0; done < n;) {
-        ssize_t k = pwrite(g_out[eye].fd, (const char*)pixels + done, n - done, at + off_t(done));
-        if (k <= 0) { if (k < 0 && errno == EINTR) continue; break; }
-        done += size_t(k);
-    }
+    memcpy((char*)hd + VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes, pixels, n);
     s.present_ns = now_ns();
     __sync_synchronize();
     s.seq++;

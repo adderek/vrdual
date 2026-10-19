@@ -797,6 +797,10 @@ static int run(int argc, char** argv) {
             // newest paired frame (or black once the game is gone) -> swapchain images
             uint64_t F;
             bool blank = !fresh && !blanked;
+            if (fresh && std::min(L.hdr->last_frame, R.hdr->last_frame) < shown) {  // counting from 0 again: new game / swapchain
+                fprintf(stderr, "[xr] new frame sequence (game restarted or resized)\n");
+                shown = 0;
+            }
             bool got = fresh && vrdual::pair_newest(L, R, shown, &F);
             if (blank) {
                 for (EyeOut& o : out) memset(o.map, 0, size_t(o.w) * o.h * 4);

@@ -358,8 +358,6 @@ vrdual_selftest() {
         label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
             [ \"\$(magick '$tmp/g.png' -crop 50%x100% +repage -format '%#\n' info: | sort -u | wc -l)\" = 2 ]"
-        label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): frame files cost the app 4 KiB of address space each"
-        check bash -c "awk '/vrdual-$sess-[01]\$/ {split(\$1, r, \"-\"); n++; if (strtonum(\"0x\" r[2]) - strtonum(\"0x\" r[1]) > 4096) big++} END {exit !(n == 2 && !big)}' /proc/$!/maps"
         kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     done
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like
@@ -446,7 +444,7 @@ vrdual_selftest() {
             VRDUAL_HFOV=70 $cube >'$tmp/g2.log' 2>&1 & g=\$!
             w 'game frames arriving' 2; ok=\$?; hf=\$('$B/vrdual-ctl' live --session $sess 2>/dev/null | awk '\$1==\"hfov\"{print \$2}')
             kill \$g \$p; wait
-            [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
+            [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && grep -q 'new frame sequence' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
                 grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
     else
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"

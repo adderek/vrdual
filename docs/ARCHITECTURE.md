@@ -172,7 +172,8 @@ from `VRDUAL_SHM_DIR`; `vrdual view|live|set|save` set it automatically.
 `vrdual xr` watches both (`VRDUAL_SHM_DIR=/dev/shm:<flatpak>`) and runs across
 games: start it once; a new game process (frame header `producer`, v3)
 reloads its settings. A game joining a control block left by an earlier one
-re-seeds it from its own config (once per process).
+re-seeds it from its own config at its first frame export (helper processes
+without a swapchain, like Proton's xalia, leave it alone).
 
 ## HMD output (`vrdual-xr`, OpenXR)
 

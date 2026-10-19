@@ -45,7 +45,7 @@ map_x = KEY_E
 | `near_dist` | `0.5` | meters | where `ipd_near` applies fully; **live** |
 | `far_dist` | `5` | meters | where `ipd` applies fully; **live** |
 | `anchor` | `center` | `center` `left` `right` | which eye the game's own camera is; **live** |
-| `world_scale` | `1` | game units per meter (Unreal: 100, Source: ~39) | **live** |
+| `world_scale` | `1` | game units per meter: Unreal 100 (some UE3 games 50), Gamebryo/Creation (Skyrim, Fallout 3/NV) ~70, Source ~39. Too small = flat image; tune live | **live** |
 | `hfov` | `90` | degrees | the game's horizontal FOV (sets the eye shift and the HMD picture size); **live** |
 | `skip_w1` | `1` | `0` `1` | leave `w == 1` draws (HUD, post-process, 2D) unshifted |
 | `hud_depth` | `0` | meters, 0 = infinity | show `w == 1` draws (HUD) at this distance; live mode only; **live** |
