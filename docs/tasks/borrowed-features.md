@@ -11,7 +11,7 @@ viewer. Depth reprojection (vorpX Z3D) mainly pays off on one GPU: M7 on the
 | 2 | HUD scale: shrink `w == 1` draws towards the centre (HUD corners outside the comfortable FOV) | vorpX HUD scale | open |
 | 3 | cinema mode in `vrdual-xr`: `screen = flat|curved`, quad / cylinder pair (`eyeVisibility`) `screen_fov` wide at `screen_dist` instead of the full-FOV projection | vorpX virtual cinema, FlatVR curved screen | done 2026-10-19, selftest "screen=flat/curved" (Monado accepts the layers); not yet seen in the Quest |
 | 4 | move/resize the screen with the controllers (both grips: midpoint drags, distance scales) | FlatVR | done 2026-10-19, Mapper-style scenarios in `vrdual-input-test`; not yet in the Quest |
-| 5 | edge peek: render with a wider FOV than shown, head rotation looks into the margin before `head_look` turns the game | vorpX edge peek | open, M4 step 4 |
+| 5 | edge peek: head rotation looks into the margin of a wide picture before the game turns | vorpX edge peek | possible by config: game FOV wider than the headset's (in-game setting, `hfov` to match), `--lock world`, `head_look = edge`, `head_deadzone` ≈ the margin. Latency hiding (clip-space rotation) = M4 step 4 |
 
 ## Notes
 
