@@ -131,9 +131,32 @@ int main() {
         g.step(c, 0.01);
         expect(fabsf(g.rot[1] - 0.70711f) < 1e-3f && fabsf(g.rot[3] - 0.70711f) < 1e-3f && fabsf(g.off[0] - 0.1f) < 1e-5f,
                "screen grab: hands' line turned 90 deg -> picture yawed 90 deg, centre kept");
+        c.hand_p[0][2] = -0.31f; c.hand_p[1][2] = -0.89f; c.hand_p[0][0] = 1.32f;  // ~92 deg, slightly tilted
+        g.step(c, 0.01);
+        expect(fabsf(g.rot[1] - 0.70711f) < 1e-4f && fabsf(g.rot[3] - 0.70711f) < 1e-4f, "screen grab: 92 deg snaps to 90 deg");
+        c.rt = 1;
+        g.step(c, 0.01);
+        expect(fabsf(g.rot[1] - 0.70711f) > 5e-3f, "screen grab: trigger held -> free turn, no snap");
+        c.rt = 0;
+        c.hand_p[0][2] = -0.3f; c.hand_p[1][2] = -0.9f; c.hand_p[0][0] = 1.3f;
+        g.step(c, 0.01);
         c.rx = 1;  // stretch width for 1 s
         for (int i = 0; i < 20; ++i) g.step(c, 0.05);
         expect(g.sx > 1.5f * 1.6f && g.sx < 1.5f * 1.7f && fabsf(g.sy - 1.5f) < 1e-4f, "screen grab: right stick x stretches width only");
+        {  // left stick: orbit 30 deg right about the viewer; base yawed 90 deg left, snap in its frame
+            ScreenGrab o;
+            qaxis(1, 1.5707963f, o.basis);
+            Controls d;
+            d.hands_ok = true; d.lg = d.rg = 1;
+            d.hand_p[0][0] = -0.2f; d.hand_p[1][0] = 0.2f;
+            o.off[0] = 0.5f;
+            o.step(d, 0.01);
+            d.lx = 1;
+            for (int i = 0; i < 10; ++i) o.step(d, 0.05);  // 60 deg/s * 0.5 s
+            float e[3] = {0.5f * cosf(0.5235988f), 0, 0.5f * sinf(0.5235988f)};  // (0.5, 0, 0) yawed 30 deg right
+            expect(fabsf(o.orbit[0] + 0.5235988f) < 1e-4f && fabsf(o.off[0] - e[0]) < 1e-4f && fabsf(o.off[2] - e[2]) < 1e-4f &&
+                   fabsf(o.rot[3] - 1) < 1e-5f, "screen grab: left stick orbits 30 deg, offset turns along, picture still faces the viewer");
+        }
         c = Controls{};
         c.menu = true;
         for (int i = 0; i < 9; ++i) g.step(c, 0.1);

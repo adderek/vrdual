@@ -200,11 +200,14 @@ pose and size for the layers and for aiming.
 **Grab** (all screen modes; `ScreenGrab`, pure, in `vrdual_input.hpp`): both
 grips held → the hands' midpoint drags the picture (not in full mode: at
 infinity), the line between the hands turns it about its centre, their
-distance scales it, the right stick stretches width (x) / height (y) at
-50 %/s. The game sees neither grips nor the right stick meanwhile (the first
-grip pressed gets a short press). Release logs scale values for
-`screen_scale_x/y`; recentring (menu held) resets position and rotation,
-keeps the scale. Quad/cylinder sub-images are inset 1 px: without it a
+distance scales it. The turn snaps to 15° steps of yaw / pitch / roll
+relative to the base (level stays level); a held trigger turns freely. The
+right stick stretches width (x) / height (y) at 50 %/s, the left stick
+orbits the picture around the viewer (yaw / pitch about the base, 60°/s,
+pitch ±80°). The game sees no grips, triggers or sticks meanwhile (the first
+grip pressed gets a short press). Release logs offset, orbit and scale
+(`screen_scale_x/y`); recentring (menu held) resets position, rotation and
+orbit, keeps the scale. Quad/cylinder sub-images are inset 1 px: without it a
 runtime sampling past the edge showed a seam at the cylinder's left/right
 edge.
 

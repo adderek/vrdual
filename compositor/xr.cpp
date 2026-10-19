@@ -250,6 +250,9 @@ static ScreenGeom screen_geom(const Screen& sc, XrPosef base, const vrdual::Scre
     ScreenGeom G;
     G.mode = sc.mode;
     G.dist = sc.dist;
+    float o[4];
+    g.orbit_q(o);
+    base.orientation = qmul(base.orientation, {o[0], o[1], o[2], o[3]});  // left stick while grabbing
     XrQuaternionf q = qmul({g.rot[0], g.rot[1], g.rot[2], g.rot[3]}, base.orientation);
     XrVector3f off{g.off[0], g.off[1], g.off[2]};
     XrVector3f centre = vadd(vadd(base.position, qrot(base.orientation, {0, 0, -sc.dist})), off);
@@ -693,16 +696,16 @@ int main(int argc, char** argv) {
             ScreenGeom G = screen_geom(scr, base, grab, hfov_now, aspect);
             vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G);
             bool was = grab.both;
-            if (grab.step(c, t_now - t_input)) c.lg = c.rg = c.rx = c.ry = 0;  // grabbing: the game doesn't see grips / right stick
+            memcpy(grab.basis, &base.orientation, sizeof grab.basis);
+            if (grab.step(c, t_now - t_input)) c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;  // grabbing: the game doesn't see them
             if (was && !grab.both)
-                fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, scale %.2f x %.2f (screen_scale_x/y to keep)\n", grab.off[0],
-                        grab.off[1], grab.off[2], grab.sx, grab.sy);
+                fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, orbit %+.0f %+.0f deg, scale %.2f x %.2f (screen_scale_x/y to keep)\n",
+                        grab.off[0], grab.off[1], grab.off[2], grab.orbit[0] * 57.29578f, grab.orbit[1] * 57.29578f, grab.sx, grab.sy);
             if (grab.recentres != grab_recentres) {  // menu held 1 s
                 grab_recentres = grab.recentres;
                 if (world) {
                     have_world = false;  // in front of the current gaze
-                    memset(grab.off, 0, sizeof grab.off);
-                    grab.rot[0] = grab.rot[1] = grab.rot[2] = 0; grab.rot[3] = 1;
+                    grab.reset_pose();
                     fprintf(stderr, "[xr] screen recentred to the current gaze\n");
                 } else {
                     frozen = !frozen;
@@ -846,9 +849,11 @@ int main(int argc, char** argv) {
                 ScreenGeom G = screen_geom(scr, at, grab, hfov, float(out[0].w) / float(out[0].h));
                 float h = atanf(G.tan_h), v = atanf(G.tan_v);
                 XrQuaternionf r{grab.rot[0], grab.rot[1], grab.rot[2], grab.rot[3]};
+                float o[4];
+                grab.orbit_q(o);
                 for (int e = 0; e < 2; ++e) {
                     // anchored: level picture orientation, current eye positions (picture at infinity)
-                    pv[e].pose = {anchored ? G.frame.orientation : qmul(r, views[e].pose.orientation), views[e].pose.position};
+                    pv[e].pose = {anchored ? G.frame.orientation : qmul(r, qmul(views[e].pose.orientation, {o[0], o[1], o[2], o[3]})), views[e].pose.position};
                     pv[e].fov = {-h, h, v, -v};
                     pv[e].subImage.swapchain = out[e].sc;
                     pv[e].subImage.imageRect = {{0, 0}, {int32_t(out[e].w), int32_t(out[e].h)}};

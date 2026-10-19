@@ -78,22 +78,72 @@ inline void qarc(const float u[3], const float v[3], float o[4]) {
     o[0] = c[0] / n; o[1] = c[1] / n; o[2] = c[2] / n; o[3] = w / n;
 }
 
+// Rotation by angle (rad) about axis k (0 = x, 1 = y, 2 = z).
+inline void qaxis(int k, float a, float o[4]) {
+    o[0] = o[1] = o[2] = 0;
+    o[k] = std::sin(a / 2);
+    o[3] = std::cos(a / 2);
+}
+inline void qinv(const float q[4], float o[4]) { o[0] = -q[0]; o[1] = -q[1]; o[2] = -q[2]; o[3] = q[3]; }
+inline void qrotv(const float q[4], const float v[3], float o[3]) {
+    float p[4] = {v[0], v[1], v[2], 0}, qi[4], t[4];
+    qinv(q, qi);
+    qmul(q, p, t);
+    qmul(t, qi, t);
+    o[0] = t[0]; o[1] = t[1]; o[2] = t[2];
+}
+// Round q's yaw (y), pitch (x) and roll (z), applied in that order, to step rad.
+inline void qsnap(float q[4], float step) {
+    float x = q[0], y = q[1], z = q[2], w = q[3];
+    float yaw = std::atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y));
+    float pitch = std::asin(std::fmax(-1.f, std::fmin(1.f, -2 * (y * z - w * x))));
+    float roll = std::atan2(2 * (x * y + w * z), 1 - 2 * (x * x + z * z));
+    auto r = [&](float a) { return std::round(a / step) * step; };
+    float a[4], b[4];
+    qaxis(1, r(yaw), a);
+    qaxis(0, r(pitch), b);
+    qmul(a, b, a);
+    qaxis(2, r(roll), b);
+    qmul(a, b, q);
+}
+
 // Screen placement from the controllers (vrdual-xr). Pure, like Mapper.
 //   both grips held: the hands' midpoint drags the screen, the line between
-//   them turns it (about its centre), their distance scales it; the right
-//   stick meanwhile stretches width (x) and height (y) separately. The caller
-//   hides grips and the right stick from the game while step() returns true.
+//   them turns it (about its centre), their distance scales it; the turn
+//   snaps to 15 deg steps (yaw / pitch / roll relative to the base, so level
+//   stays level) unless a trigger is held. Meanwhile the right stick
+//   stretches width (x) and height (y) separately and the left stick orbits
+//   the screen around the viewer (yaw / pitch about the base). The caller
+//   sets basis (the base orientation in the hands' space), adds orbit_q() to
+//   it and hides grips, triggers and sticks from the game while step()
+//   returns true.
 //   menu held 1 s: ++recentres (vrdual-xr: world lock -> screen in front of
 //   the current gaze; head lock -> freeze the screen in place / follow again)
 struct ScreenGrab {
     float off[3] = {0, 0, 0};    // centre offset, meters, in the screen's space
     float rot[4] = {0, 0, 0, 1}; // extra rotation about the centre
     float sx = 1, sy = 1;        // width / height scale
+    float orbit[2] = {0, 0};     // yaw (left +), pitch (up +) about the viewer, rad
+    float basis[4] = {0, 0, 0, 1};
     bool both = false;
     int recentres = 0;
     double menu_t = 0;
     float m0[3] = {}, off0[3] = {}, v0[3] = {}, rot0[4] = {0, 0, 0, 1}, s0 = 0, sx0 = 1, sy0 = 1;
 
+    static constexpr float kSnap = 0.2617994f;  // 15 deg
+    static constexpr float kOrbitRate = 1.0471976f;  // 60 deg/s at full deflection
+
+    void orbit_q(float o[4]) const {
+        float p[4];
+        qaxis(1, orbit[0], o);
+        qaxis(0, orbit[1], p);
+        qmul(o, p, o);
+    }
+    void reset_pose() {
+        memset(off, 0, sizeof off);
+        rot[0] = rot[1] = rot[2] = 0; rot[3] = 1;
+        orbit[0] = orbit[1] = 0;
+    }
     bool step(const Controls& c, double dt) {
         if (c.menu) {
             if (menu_t < 1 && menu_t + dt >= 1) ++recentres;
@@ -106,17 +156,39 @@ struct ScreenGrab {
         float m[3] = {(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2};
         float v[3] = {r[0] - l[0], r[1] - l[1], r[2] - l[2]};
         float s = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-        if (now && !both) {
+        auto regrab = [&] {
             for (int k = 0; k < 3; ++k) { m0[k] = m[k]; off0[k] = off[k]; v0[k] = v[k]; }
             memcpy(rot0, rot, sizeof rot);
             s0 = s;
             sx0 = sx;
             sy0 = sy;
+        };
+        if (now && !both) {
+            regrab();
         } else if (now) {
+            float b[4], bi[4], q[4];
+            float dz = 0.2f;
+            float oy = std::fabs(c.lx) > dz ? -c.lx * kOrbitRate * float(dt) : 0, op = std::fabs(c.ly) > dz ? c.ly * kOrbitRate * float(dt) : 0;
+            if (oy != 0 || op != 0) {  // R = B' B^-1 about the viewer: off -> R off, rot -> R rot R^-1
+                float B[4], B1[4], R[4], Ri[4];
+                orbit_q(q); qmul(basis, q, B); qinv(B, bi);
+                orbit[0] += oy;
+                orbit[1] = std::fmax(-1.4f, std::fmin(1.4f, orbit[1] + op));
+                orbit_q(q); qmul(basis, q, B1);
+                qmul(B1, bi, R); qinv(R, Ri);
+                qrotv(R, off, off);
+                qmul(R, rot, rot); qmul(rot, Ri, rot);
+                regrab();  // hand motion keeps working from here
+            }
             for (int k = 0; k < 3; ++k) off[k] = off0[k] + m[k] - m0[k];
-            float q[4];
             qarc(v0, v, q);
             qmul(q, rot0, rot);
+            if (c.lt < 0.5f && c.rt < 0.5f) {  // snap in the base frame: B^-1 rot B
+                orbit_q(q); qmul(basis, q, b); qinv(b, bi);
+                qmul(bi, rot, q); qmul(q, b, q);
+                qsnap(q, kSnap);
+                qmul(b, q, q); qmul(q, bi, rot);
+            }
             auto stretch = [&](float a) { return std::fabs(a) > 0.2f ? 1 + 0.5f * a * float(dt) : 1.0f; };  // 50 %/s at full deflection
             sx0 *= stretch(c.rx);
             sy0 *= stretch(c.ry);
