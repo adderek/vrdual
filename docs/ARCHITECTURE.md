@@ -181,6 +181,17 @@ black: submitting no layer is not enough, WiVRn's headset keeps the last
 streamed image. Resumes when frames return. No layer while the view
 orientation is invalid (headset off: zero quaternions fail `xrEndFrame`).
 
+**Cinema screen** (`screen = flat | curved`, per game, from vorpX/FlatVR):
+instead of the full-FOV projection, two layers on one surface `screen_fov`
+wide at `screen_dist`, `eyeVisibility` LEFT/RIGHT, each with its eye's image:
+`XrCompositionLayerQuad` (flat) or `XrCompositionLayerCylinderKHR` (curved,
+radius = `screen_dist`; falls back to flat when the runtime lacks the
+extension; WiVRn and Monado have it). The game's stereo then reads as a
+window: objects at infinity sit on the screen plane. Base pose: VIEW origin
+(head lock) or the start pose between the eyes (world lock). `aim` mode
+intersects the controller ray with the plane/cylinder (full mode: direction
+only, picture at infinity).
+
 WiVRn (`vrdual wivrn`): Flatpak `io.github.wivrn.wivrn`. Without avahi-daemon
 it must run with `--no-publish-service` (the wrapper adds it) and the headset
 connects by IP; port 9757 TCP+UDP. `xrCreateInstance` blocks until a headset
@@ -302,6 +313,7 @@ world_scale = 100      # engine works in centimeters
 | `input`, `mouse_mode`, `mouse_speed`, `mouse_curve`, `deadzone`, `lstick` | `off`, `stick`, `1`, `2.5`, `0.15`, `wasd` | controllers (vrdual-xr), see "Input and head motion" |
 | `head_look`, `head_deadzone`, `head_rate`, `head_counts_per_deg` | `off`, `15`, `120`, `10` | head rotation → game camera |
 | `head_lean`, `lean_max`, `lean_y_sign` | `off`, `0.1`, `1` | head translation → rendered viewpoint |
+| `screen`, `screen_dist`, `screen_fov` | `full`, `2.5`, `60` | `vrdual-xr` surface: full game FOV, or a flat/curved cinema screen (m, deg) |
 | `map_<button>` | mode default | `KEY_*`, `BTN_*` or `none` |
 
 These are per-process environment only: `VRDUAL_EYE` (`left`/`right`; unset = GPU

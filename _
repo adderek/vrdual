@@ -350,6 +350,12 @@ vrdual_selftest() {
             grep -q 'session state 5' '$tmp/xr.log' && grep -q '60 frames submitted' '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
         label="openxr: controller actions, input profile from the frame file"
         check bash -c "grep -q 'controller actions attached' '$tmp/xr.log' && grep -q \"app 'vrdual-cube': input=off .*head_lean=on\" '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
+        local sm  # cinema screen: quad / cylinder pair accepted by the runtime
+        for sm in flat curved; do
+            label="openxr: screen=$sm, 30 frames submitted"
+            check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SCREEN=$sm timeout 30 '$B/vrdual-xr' --session $sess --frames 30 --lock world >'$tmp/xr-$sm.log' 2>&1;
+                grep -q 'screen: $sm, 60 deg wide at 2.5 m' '$tmp/xr-$sm.log' && grep -q '30 frames submitted' '$tmp/xr-$sm.log' || { cat '$tmp/xr-$sm.log'; false; }"
+        done
         # game exits while streaming: WiVRn keeps the last image unless we send black
         label="openxr: black frame after the game exits"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!

@@ -7,6 +7,9 @@
 //   --lock head   (default) the image follows the head: a stereo "screen"
 //                 filling the game's FOV — no head tracking in the game yet
 //   --lock world  the image stays where it was when the session started
+// Config `screen` (per game) picks the surface: full (above), or flat/curved:
+// a virtual cinema screen `screen_fov` wide at `screen_dist`, one quad (or
+// cylinder, XR_KHR_composition_layer_cylinder) per eye with that eye's image.
 //
 // No OpenXR loader needed: the active runtime (XR_RUNTIME_JSON, else
 // ~/.config/openxr/1/active_runtime.json, /etc/xdg/..., /etc/...) is opened
@@ -46,7 +49,7 @@ static PFN_xrGetInstanceProcAddr g_gipa;
 static XrInstance g_inst = XR_NULL_HANDLE;
 
 #define XRFN(n) static PFN_##n n
-XRFN(xrCreateInstance); XRFN(xrDestroyInstance); XRFN(xrGetInstanceProperties); XRFN(xrGetSystem); XRFN(xrGetSystemProperties);
+XRFN(xrCreateInstance); XRFN(xrEnumerateInstanceExtensionProperties); XRFN(xrDestroyInstance); XRFN(xrGetInstanceProperties); XRFN(xrGetSystem); XRFN(xrGetSystemProperties);
 XRFN(xrPollEvent); XRFN(xrResultToString); XRFN(xrCreateSession); XRFN(xrDestroySession); XRFN(xrBeginSession); XRFN(xrEndSession);
 XRFN(xrRequestExitSession); XRFN(xrEnumerateViewConfigurationViews); XRFN(xrCreateReferenceSpace); XRFN(xrEnumerateSwapchainFormats);
 XRFN(xrCreateSwapchain); XRFN(xrDestroySwapchain); XRFN(xrEnumerateSwapchainImages); XRFN(xrAcquireSwapchainImage);
@@ -137,6 +140,7 @@ static bool open_runtime() {
     if (XR_FAILED(neg(&li, &rr)) || !rr.getInstanceProcAddr) { fprintf(stderr, "[xr] runtime negotiation failed\n"); return false; }
     g_gipa = rr.getInstanceProcAddr;
     g_gipa(XR_NULL_HANDLE, "xrCreateInstance", (PFN_xrVoidFunction*)&xrCreateInstance);
+    g_gipa(XR_NULL_HANDLE, "xrEnumerateInstanceExtensionProperties", (PFN_xrVoidFunction*)&xrEnumerateInstanceExtensionProperties);
     fprintf(stderr, "[xr] runtime %s (%s), API %u.%u\n", lib.c_str(), js.c_str(), XR_VERSION_MAJOR(rr.runtimeApiVersion),
             XR_VERSION_MINOR(rr.runtimeApiVersion));
     return xrCreateInstance != nullptr;
@@ -208,6 +212,15 @@ static XrVector3f qrot(XrQuaternionf q, XrVector3f v) {  // rotate v by q
     XrVector3f c = cross(u, t);
     return {v.x + q.w * t.x + c.x, v.y + q.w * t.y + c.y, v.z + q.w * t.z + c.z};
 }
+// Surface the picture is shown on (config `screen`).
+enum { SCREEN_FULL, SCREEN_FLAT, SCREEN_CURVED };
+struct Screen {
+    int mode = SCREEN_FULL;
+    float dist = 2.5f, fov = 60;  // meters, degrees (flat/curved)
+};
+static int screen_parse(const std::string& s) { return s == "flat" ? SCREEN_FLAT : s == "curved" ? SCREEN_CURVED : SCREEN_FULL; }
+static const char* screen_name(int m) { return m == SCREEN_FLAT ? "flat" : m == SCREEN_CURVED ? "curved" : "full"; }
+
 static void yaw_pitch(XrQuaternionf q, float& yaw, float& pitch) {  // degrees, yaw positive = left
     XrVector3f f = qrot(q, {0, 0, -1});
     yaw = atan2f(-f.x, -f.z) * 57.29578f;
@@ -299,9 +312,11 @@ struct XrInput {
         XrActionStateVector2f st{XR_TYPE_ACTION_STATE_VECTOR2F};
         return xrGetActionStateVector2f(s, &gi, &st) == XR_SUCCESS && st.isActive ? st.currentState : XrVector2f{0, 0};
     }
-    // screen: the space the game picture is shown in, screen_q its orientation
-    // there; tan_h/tan_v: half-FOV tangents of the picture.
-    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, XrQuaternionf screen_q, float tan_h, float tan_v) {
+    // screen: the space the game picture is shown in, sp the picture's base
+    // pose there (viewer position, looking along -z); tan_h/tan_v: half-FOV
+    // tangents of the picture; sc: full (at infinity) or flat/curved at sc.dist.
+    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, XrPosef sp, float tan_h, float tan_v,
+                          const Screen& sc) {
         vrdual::Controls c;
         XrActiveActionSet aas{set, XR_NULL_PATH};
         XrActionsSyncInfo sy{XR_TYPE_ACTIONS_SYNC_INFO, nullptr, 1, &aas};
@@ -320,13 +335,33 @@ struct XrInput {
         }
         loc = {XR_TYPE_SPACE_LOCATION};
         if (xrLocateSpace(aim_space, screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
-            XrQuaternionf inv{-screen_q.x, -screen_q.y, -screen_q.z, screen_q.w};
-            XrVector3f d = qrot(inv, qrot(loc.pose.orientation, {0, 0, -1}));  // picture at infinity: direction only
-            if (d.z < -1e-3f) {
+            XrQuaternionf inv{-sp.orientation.x, -sp.orientation.y, -sp.orientation.z, sp.orientation.w};
+            XrVector3f d = qrot(inv, qrot(loc.pose.orientation, {0, 0, -1}));
+            XrVector3f p = qrot(inv, {loc.pose.position.x - sp.position.x, loc.pose.position.y - sp.position.y,
+                                      loc.pose.position.z - sp.position.z});
+            bool hit = false;
+            if (sc.mode == SCREEN_FULL && d.z < -1e-3f) {  // picture at infinity: direction only
                 c.aim_u = 0.5f + 0.5f * (d.x / -d.z) / tan_h;
                 c.aim_v = 0.5f - 0.5f * (d.y / -d.z) / tan_v;
-                c.aim_ok = c.aim_u >= 0 && c.aim_u <= 1 && c.aim_v >= 0 && c.aim_v <= 1;
+                hit = true;
+            } else if (sc.mode == SCREEN_FLAT && d.z < -1e-3f) {  // ray ∩ plane z = -dist
+                float k = (-sc.dist - p.z) / d.z;
+                c.aim_u = 0.5f + 0.5f * (p.x + k * d.x) / (sc.dist * tan_h);
+                c.aim_v = 0.5f - 0.5f * (p.y + k * d.y) / (sc.dist * tan_v);
+                hit = k > 0;
+            } else if (sc.mode == SCREEN_CURVED) {  // ray ∩ cylinder x² + z² = dist² (far root: hand inside)
+                float a = d.x * d.x + d.z * d.z, b = 2 * (p.x * d.x + p.z * d.z), cc = p.x * p.x + p.z * p.z - sc.dist * sc.dist;
+                float disc = b * b - 4 * a * cc;
+                if (a > 1e-6f && disc >= 0) {
+                    float k = (-b + sqrtf(disc)) / (2 * a);
+                    float x = p.x + k * d.x, y = p.y + k * d.y, z = p.z + k * d.z;
+                    float ang = sc.fov * float(M_PI) / 180;
+                    c.aim_u = 0.5f + atan2f(x, -z) / ang;
+                    c.aim_v = 0.5f - 0.5f * y / (sc.dist * tan_v);
+                    hit = k > 0;
+                }
             }
+            c.aim_ok = hit && c.aim_u >= 0 && c.aim_u <= 1 && c.aim_v >= 0 && c.aim_v <= 1;
         }
         loc = {XR_TYPE_SPACE_LOCATION};
         if (xrLocateSpace(view, local, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
@@ -356,13 +391,22 @@ int main(int argc, char** argv) {
     if (!open_runtime()) return 1;
 
     // instance + system
-    const char* exts[] = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
+    std::vector<const char*> exts{XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
+    bool has_cyl = false;
+    if (xrEnumerateInstanceExtensionProperties) {
+        uint32_t ne = 0;
+        xrEnumerateInstanceExtensionProperties(nullptr, 0, &ne, nullptr);
+        std::vector<XrExtensionProperties> ep(ne, {XR_TYPE_EXTENSION_PROPERTIES});
+        xrEnumerateInstanceExtensionProperties(nullptr, ne, &ne, ep.data());
+        for (auto& e : ep) has_cyl |= !strcmp(e.extensionName, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
+    }
+    if (has_cyl) exts.push_back(XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
     XrInstanceCreateInfo ici{XR_TYPE_INSTANCE_CREATE_INFO};
     snprintf(ici.applicationInfo.applicationName, XR_MAX_APPLICATION_NAME_SIZE, "vrdual");
     snprintf(ici.applicationInfo.engineName, XR_MAX_ENGINE_NAME_SIZE, "vrdual");
     ici.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
-    ici.enabledExtensionCount = 1;
-    ici.enabledExtensionNames = exts;
+    ici.enabledExtensionCount = uint32_t(exts.size());
+    ici.enabledExtensionNames = exts.data();
     fprintf(stderr, "[xr] connecting to the runtime (WiVRn answers once a headset is connected)...\n");
     XR_CHECK(xrCreateInstance(&ici, &g_inst));
     load_fns();
@@ -472,8 +516,9 @@ int main(int argc, char** argv) {
     vrdual::Eye L{0, vrdual::shm_dir() + "/vrdual-" + session + "-0"}, R{1, vrdual::shm_dir() + "/vrdual-" + session + "-1"};
     EyeOut out[2];
     vrdual_ctl* ctl = nullptr;
-    XrPosef world_pose[2];
+    XrPosef world_pose[2], world_base{{0, 0, 0, 1}, {0, 0, 0}};  // base: between the eyes, eye 0's orientation
     bool have_world = false;
+    Screen scr;
     bool running = false;
     long submitted = 0, uploads = 0;
     uint64_t shown = 0;
@@ -537,6 +582,8 @@ int main(int argc, char** argv) {
         std::vector<XrCompositionLayerBaseHeader*> layers;
         XrCompositionLayerProjection proj{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
         XrCompositionLayerProjectionView pv[2] = {{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
+        XrCompositionLayerQuad quad[2] = {{XR_TYPE_COMPOSITION_LAYER_QUAD}, {XR_TYPE_COMPOSITION_LAYER_QUAD}};
+        XrCompositionLayerCylinderKHR cyl[2] = {{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR}, {XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR}};
         // No new game frame for 1 s (game exited or hung): show black. Submitting
         // no layer is not enough, WiVRn's headset keeps the last streamed image.
         bool fresh = vrdual::eye_map(L) && vrdual::eye_map(R) && std::max(vrdual::eye_age_s(L), vrdual::eye_age_s(R)) < 1.0;
@@ -551,16 +598,27 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s\n", input_app.c_str(), ic.input.c_str(),
                     ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off");
             icfg = ic;
+            vrdual::Settings st = vrdual::load_settings({input_app});
+            scr.mode = screen_parse(st.s("screen"));
+            scr.dist = std::max(0.2f, st.f("screen_dist"));
+            scr.fov = std::clamp(st.f("screen_fov"), 10.0f, 170.0f);
+            if (scr.mode == SCREEN_CURVED && !has_cyl) {
+                fprintf(stderr, "[xr] runtime has no %s: curved screen shown flat\n", XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
+                scr.mode = SCREEN_FLAT;
+            }
+            if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV)\n");
+            else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m\n", screen_name(scr.mode), scr.fov, scr.dist);
             lean_ref = false;
             recentres = 0;
         }
         double t_now = vrdual::now_s();
         if (mapper && xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
             if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
-            float th = tanf((ctl ? vrdual::ctl_read(ctl).hfov : 90.0f) * float(M_PI) / 360.0f);
+            float th = tanf((scr.mode != SCREEN_FULL ? scr.fov : ctl ? vrdual::ctl_read(ctl).hfov : 90.0f) * float(M_PI) / 360.0f);
             float tv = th * float(L.h) / float(L.w ? L.w : 1);
-            XrQuaternionf sq = world && have_world ? world_pose[0].orientation : XrQuaternionf{0, 0, 0, 1};
-            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, world ? local_space : view_space, sq, th, tv);
+            if (scr.mode == SCREEN_CURVED) tv = scr.fov * float(M_PI) / 360.0f * float(L.h) / float(L.w ? L.w : 1);  // arc: height = r·angle·h/w
+            XrPosef sp = world && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, world ? local_space : view_space, sp, th, tv, scr);
             uinput.emit(mapper->step(c, t_now - t_input));
             if (icfg.lean && c.head_ok) {
                 if (!lean_ref || mapper->recentres != recentres) {
@@ -688,6 +746,8 @@ int main(int argc, char** argv) {
                 if (world && valid && !have_world) {
                     world_pose[0] = views[0].pose;
                     world_pose[1] = views[1].pose;
+                    const XrVector3f &a = views[0].pose.position, &b = views[1].pose.position;
+                    world_base = {views[0].pose.orientation, {(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2}};
                     have_world = true;
                 }
                 if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
@@ -703,7 +763,29 @@ int main(int argc, char** argv) {
                 proj.space = world ? local_space : view_space;
                 proj.viewCount = 2;
                 proj.views = pv;
-                layers.push_back((XrCompositionLayerBaseHeader*)&proj);
+                XrPosef base = world && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+                float aspect = float(out[0].w) / float(out[0].h);
+                for (int e = 0; e < 2; ++e) {  // cinema: same surface for both eyes, each eye sees its own image
+                    XrEyeVisibility vis = e ? XR_EYE_VISIBILITY_RIGHT : XR_EYE_VISIBILITY_LEFT;
+                    XrSwapchainSubImage si{out[e].sc, {{0, 0}, {int32_t(out[e].w), int32_t(out[e].h)}}, 0};
+                    float wq = 2 * scr.dist * tanf(scr.fov * float(M_PI) / 360.0f);
+                    XrVector3f fwd = qrot(base.orientation, {0, 0, -scr.dist});
+                    quad[e].space = proj.space;
+                    quad[e].eyeVisibility = vis;
+                    quad[e].subImage = si;
+                    quad[e].pose = {base.orientation, {base.position.x + fwd.x, base.position.y + fwd.y, base.position.z + fwd.z}};
+                    quad[e].size = {wq, wq / aspect};
+                    cyl[e].space = proj.space;
+                    cyl[e].eyeVisibility = vis;
+                    cyl[e].subImage = si;
+                    cyl[e].pose = base;
+                    cyl[e].radius = scr.dist;
+                    cyl[e].centralAngle = scr.fov * float(M_PI) / 180.0f;
+                    cyl[e].aspectRatio = aspect;
+                    if (scr.mode == SCREEN_FLAT) layers.push_back((XrCompositionLayerBaseHeader*)&quad[e]);
+                    if (scr.mode == SCREEN_CURVED) layers.push_back((XrCompositionLayerBaseHeader*)&cyl[e]);
+                }
+                if (scr.mode == SCREEN_FULL) layers.push_back((XrCompositionLayerBaseHeader*)&proj);
                 if (submitted == 0)
                     fprintf(stderr, "[xr] first frame: eye offset L %+.4f R %+.4f m, game hfov %g deg\n", views[0].pose.position.x,
                             views[1].pose.position.x, hfov);

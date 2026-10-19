@@ -58,6 +58,9 @@ static const Key kKeys[] = {
     {"head_counts_per_deg", "10", "mouse counts per degree of game camera turn (calibrate per game)"},
     {"head_lean", "off", "head translation moves the rendered viewpoint: off | on"},
     {"lean_max", "0.1", "head offset soft limit, meters (L in L*tanh(d/L))"},
+    {"screen", "full", "vrdual-xr picture: full (game FOV) | flat | curved (virtual cinema screen)"},
+    {"screen_dist", "2.5", "flat/curved screen distance, meters"},
+    {"screen_fov", "60", "flat/curved screen width as seen from the centre, degrees"},
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };
 
