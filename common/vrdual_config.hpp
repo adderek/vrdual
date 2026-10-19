@@ -66,6 +66,20 @@ static const Key kKeys[] = {
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };
 
+// Built-in per-game values (user tested unless noted). Precedence:
+// defaults < [global] < these < [app:NAME] < env. Matched like [app:NAME].
+struct AppValue {
+    const char* app;
+    const char* key;
+    const char* value;
+};
+static const AppValue kAppProfiles[] = {
+    {"psychonauts", "skip_w1", "0"},          // draws the scene with w == 1: unshifted = no stereo
+    {"mirrorsedge.exe", "world_scale", "50"},
+    {"tesv.exe", "world_scale", "70"},        // Skyrim: 1 unit = 1.43 cm (not tuned yet)
+    {"falloutnv.exe", "world_scale", "70"},   // same engine family (not tuned yet)
+};
+
 inline std::string trim(std::string s) {
     size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n");
     return a == std::string::npos ? "" : s.substr(a, b - a + 1);
@@ -125,6 +139,13 @@ inline Settings load_settings(const std::vector<std::string>& app_names) {
             if (st.val.count(kv.first)) { st.val[kv.first] = kv.second; st.src[kv.first] = label; }
     };
     apply("global", path + " [global]");
+    for (auto& n : app_names) {
+        if (n.empty()) continue;
+        bool hit = false;
+        for (auto& a : kAppProfiles)
+            if (lower(n) == a.app) { st.val[a.key] = a.value; st.src[a.key] = std::string("built-in [app:") + a.app + "]"; hit = true; }
+        if (hit) break;
+    }
     for (auto& n : app_names) {
         if (n.empty()) continue;
         if (st.app.empty()) st.app = n;

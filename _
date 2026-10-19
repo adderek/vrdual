@@ -251,6 +251,8 @@ vrdual_selftest() {
         done
     done
     label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+    label="built-in game profile: Psychonauts gets skip_w1 = 0"
+    check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# built-in'"
     label="docs/CONFIG.md lists every config key"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
 
