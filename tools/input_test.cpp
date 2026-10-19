@@ -138,6 +138,12 @@ int main() {
         g.step(c, 0.01);
         expect(fabsf(g.rot[1] - 0.70711f) > 5e-3f, "screen grab: trigger held -> free turn, no snap");
         c.rt = 0;
+        g.step(c, 0.01);
+        expect(fabsf(g.rot[1] - 0.70711f) > 5e-3f, "screen grab: trigger let go, still grabbing -> stays free");
+        c.lg = c.rg = 0; g.step(c, 0.01);
+        c.lg = c.rg = 1; g.step(c, 0.01);
+        c.hand_p[0][0] = 1.31f; g.step(c, 0.01);
+        expect(fabsf(g.rot[1] - 0.70711f) < 1e-4f && fabsf(g.rot[3] - 0.70711f) < 1e-4f, "screen grab: regrab -> snaps again");
         c.hand_p[0][2] = -0.3f; c.hand_p[1][2] = -0.9f; c.hand_p[0][0] = 1.3f;
         g.step(c, 0.01);
         c.rx = 1;  // stretch width for 1 s

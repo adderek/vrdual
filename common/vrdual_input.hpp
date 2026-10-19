@@ -111,7 +111,7 @@ inline void qsnap(float q[4], float step) {
 //   both grips held: the hands' midpoint drags the screen, the line between
 //   them turns it (about its centre), their distance scales it; the turn
 //   snaps to 15 deg steps (yaw / pitch / roll relative to the base, so level
-//   stays level) unless a trigger is held. Meanwhile the right stick
+//   stays level) unless a trigger was pressed during this grab. Meanwhile the right stick
 //   stretches width (x) and height (y) separately and the left stick orbits
 //   the screen around the viewer (yaw / pitch about the base). The caller
 //   sets basis (the base orientation in the hands' space), adds orbit_q() to
@@ -125,7 +125,7 @@ struct ScreenGrab {
     float sx = 1, sy = 1;        // width / height scale
     float orbit[2] = {0, 0};     // yaw (left +), pitch (up +) about the viewer, rad
     float basis[4] = {0, 0, 0, 1};
-    bool both = false;
+    bool both = false, fine = false;  // fine: trigger pressed during this grab -> no snap until release
     int recentres = 0;
     double menu_t = 0;
     float m0[3] = {}, off0[3] = {}, v0[3] = {}, rot0[4] = {0, 0, 0, 1}, s0 = 0, sx0 = 1, sy0 = 1;
@@ -165,6 +165,7 @@ struct ScreenGrab {
         };
         if (now && !both) {
             regrab();
+            fine = false;
         } else if (now) {
             float b[4], bi[4], q[4];
             float dz = 0.2f;
@@ -183,7 +184,8 @@ struct ScreenGrab {
             for (int k = 0; k < 3; ++k) off[k] = off0[k] + m[k] - m0[k];
             qarc(v0, v, q);
             qmul(q, rot0, rot);
-            if (c.lt < 0.5f && c.rt < 0.5f) {  // snap in the base frame: B^-1 rot B
+            fine |= c.lt > 0.5f || c.rt > 0.5f;
+            if (!fine) {  // snap in the base frame: B^-1 rot B
                 orbit_q(q); qmul(basis, q, b); qinv(b, bi);
                 qmul(bi, rot, q); qmul(q, b, q);
                 qsnap(q, kSnap);

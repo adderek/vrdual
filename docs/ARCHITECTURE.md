@@ -201,7 +201,7 @@ pose and size for the layers and for aiming.
 grips held → the hands' midpoint drags the picture (not in full mode: at
 infinity), the line between the hands turns it about its centre, their
 distance scales it. The turn snaps to 15° steps of yaw / pitch / roll
-relative to the base (level stays level); a held trigger turns freely. The
+relative to the base (level stays level); a trigger pressed during the grab turns freely until release. The
 right stick stretches width (x) / height (y) at 50 %/s, the left stick
 orbits the picture around the viewer (yaw / pitch about the base, 60°/s,
 pitch ±80°). The game sees no grips, triggers or sticks meanwhile (the first
