@@ -53,7 +53,12 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
 * Tomb Raider I (DOSBox): no stereo (draws a flat 2D image); exits in windowed
   mode / on alt+tab (not checked without vrdual)
 * Portal (native, OpenGL via Zink): menu works, crashes on level load (NULL GL
-  buffer map in `shaderapidx9.so`), under investigation (2026-10-19)
+  buffer map in `shaderapidx9.so`); also with Zink alone, without vrdual
+* Skyrim, Mirror's Edge (Proton): run; depth needs `world_scale` (~70, ~50-100)
+* Firewatch: runs; the portrait desktop cuts its menu (needs a landscape mode)
+* Psychonauts (native GL): runs, both eyes identical (not analysed yet)
+* Shadow Warrior, Hospital Tycoon: crashed with SIGBUS in the frame export of
+  2026-10-19 20:35 (reverted in 55c0b81), retest
 
 ## Games (tested with single GPU)
 
