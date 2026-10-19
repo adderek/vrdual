@@ -114,18 +114,32 @@ int main() {
         c.lg = 1;
         float l[3] = {-0.2f, 0, -0.5f}, r[3] = {0.2f, 0, -0.5f};
         memcpy(c.hand_p[0], l, sizeof l); memcpy(c.hand_p[1], r, sizeof r);
-        expect(!g.step(c), "screen grab: one grip -> no grab");
+        expect(!g.step(c, 0.01), "screen grab: one grip -> no grab");
         c.rg = 1;
-        expect(g.step(c) && g.off[0] == 0 && g.fov == 60, "screen grab: both grips -> grab, no jump");
+        expect(g.step(c, 0.01) && g.off[0] == 0 && g.sx == 1 && g.rot[3] == 1, "screen grab: both grips -> grab, no jump");
         c.hand_p[0][0] = -0.2f; c.hand_p[1][0] = 0.4f; c.hand_p[0][2] = c.hand_p[1][2] = -0.6f;  // midpoint +0.1 x, -0.1 z; 0.6 apart
-        g.step(c);
-        expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.off[2] + 0.1f) < 1e-5f && fabsf(g.fov - 90) < 1e-3f,
-               "screen grab: midpoint drags, distance scales (0.4 -> 0.6 m: 60 -> 90 deg)");
+        g.step(c, 0.01);
+        expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.off[2] + 0.1f) < 1e-5f && fabsf(g.sx - 1.5f) < 1e-4f && fabsf(g.sy - 1.5f) < 1e-4f,
+               "screen grab: midpoint drags, distance scales (0.4 -> 0.6 m: x1.5)");
         c.lg = c.rg = 0;
-        expect(!g.step(c) && fabsf(g.off[0] - 0.1f) < 1e-5f, "screen grab: release keeps the offset");
+        expect(!g.step(c, 0.01) && fabsf(g.off[0] - 0.1f) < 1e-5f, "screen grab: release keeps the offset");
         c.lg = c.rg = 1; c.hand_p[0][0] = 1; c.hand_p[1][0] = 1.6f;
-        g.step(c);
-        expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.fov - 90) < 1e-3f, "screen grab: regrab elsewhere, no jump");
+        g.step(c, 0.01);
+        expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.sx - 1.5f) < 1e-4f, "screen grab: regrab elsewhere, no jump");
+        // turn the hands' line 90 deg about the midpoint (x axis -> -z axis): yaw left 90 deg
+        c.hand_p[0][0] = 1.3f; c.hand_p[1][0] = 1.3f; c.hand_p[0][2] = -0.3f; c.hand_p[1][2] = -0.9f;
+        g.step(c, 0.01);
+        expect(fabsf(g.rot[1] - 0.70711f) < 1e-3f && fabsf(g.rot[3] - 0.70711f) < 1e-3f && fabsf(g.off[0] - 0.1f) < 1e-5f,
+               "screen grab: hands' line turned 90 deg -> picture yawed 90 deg, centre kept");
+        c.rx = 1;  // stretch width for 1 s
+        for (int i = 0; i < 20; ++i) g.step(c, 0.05);
+        expect(g.sx > 1.5f * 1.6f && g.sx < 1.5f * 1.7f && fabsf(g.sy - 1.5f) < 1e-4f, "screen grab: right stick x stretches width only");
+        c = Controls{};
+        c.menu = true;
+        for (int i = 0; i < 9; ++i) g.step(c, 0.1);
+        int before = g.recentres;
+        for (int i = 0; i < 20; ++i) g.step(c, 0.1);
+        expect(before == 0 && g.recentres == 1, "screen: menu held 1 s -> one recentre");
     }
 
     // uinput round trip with a virtual pad

@@ -4,9 +4,10 @@
 // Each eye's frame is submitted as one view of an XrCompositionLayerProjection
 // whose FOV is the game camera's FOV (hfov from the session, vertical from
 // the aspect ratio), so the image covers exactly the angle it was rendered for.
-//   --lock head   (default) the image follows the head: a stereo "screen"
-//                 filling the game's FOV — no head tracking in the game yet
-//   --lock world  the image stays where it was when the session started
+//   --lock world  (default) the image stays where it was put (session start,
+//                 or menu held 1 s: in front of the current gaze, level)
+//   --lock head   the image follows the head (films); menu held 1 s freezes
+//                 it in place, again: follows again
 // Config `screen` (per game) picks the surface: full (above), or flat/curved:
 // a virtual cinema screen `screen_fov` wide at `screen_dist`, one quad (or
 // cylinder, XR_KHR_composition_layer_cylinder) per eye with that eye's image.
@@ -15,7 +16,7 @@
 // ~/.config/openxr/1/active_runtime.json, /etc/xdg/..., /etc/...) is opened
 // directly and negotiated with like the loader would.
 //
-//   vrdual-xr [--session S] [--lock head|world] [--frames N] [--swap]
+//   vrdual-xr [--session S] [--lock world|head] [--frames N] [--swap]
 #define XR_NO_PROTOTYPES
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <vulkan/vulkan.h>
@@ -212,12 +213,64 @@ static XrVector3f qrot(XrQuaternionf q, XrVector3f v) {  // rotate v by q
     XrVector3f c = cross(u, t);
     return {v.x + q.w * t.x + c.x, v.y + q.w * t.y + c.y, v.z + q.w * t.z + c.z};
 }
+static XrQuaternionf qmul(XrQuaternionf a, XrQuaternionf b) {
+    float o[4], fa[4] = {a.x, a.y, a.z, a.w}, fb[4] = {b.x, b.y, b.z, b.w};
+    vrdual::qmul(fa, fb, o);
+    return {o[0], o[1], o[2], o[3]};
+}
+static XrVector3f vadd(XrVector3f a, XrVector3f b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+static XrVector3f vsub(XrVector3f a, XrVector3f b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+// Head orientation without roll (yaw, then pitch): a screen placed with it is
+// level even if the head was tilted; looking straight up/down (lying) the yaw
+// comes from the head's up vector.
+static XrQuaternionf level(XrQuaternionf q) {
+    XrVector3f f = qrot(q, {0, 0, -1}), u = qrot(q, {0, 1, 0});
+    float pitch = asinf(std::fmax(-1.f, std::fmin(1.f, f.y)));
+    float yaw = cosf(pitch) > 0.1f ? atan2f(-f.x, -f.z) : pitch > 0 ? atan2f(u.x, u.z) : atan2f(-u.x, -u.z);
+    return qmul({0, sinf(yaw / 2), 0, cosf(yaw / 2)}, {sinf(pitch / 2), 0, 0, cosf(pitch / 2)});
+}
+
 // Surface the picture is shown on (config `screen`).
 enum { SCREEN_FULL, SCREEN_FLAT, SCREEN_CURVED };
 struct Screen {
     int mode = SCREEN_FULL;
     float dist = 2.5f, fov = 60;  // meters, degrees (flat/curved)
+    float sx = 1, sy = 1;         // screen_scale_x/y: start scale (grab changes it)
 };
+// The picture this frame, in the layer's space. frame: picture centre (flat),
+// viewer (full: picture at infinity; curved: cylinder axis), oriented like
+// the picture (-z = forward). Full: tan_h/tan_v half-FOV tangents; flat:
+// w x h meters; curved: angle (rad) wide, h meters high.
+struct ScreenGeom {
+    int mode = SCREEN_FULL;
+    XrPosef frame{{0, 0, 0, 1}, {0, 0, 0}};
+    float dist = 1, tan_h = 1, tan_v = 1, w = 1, h = 1, angle = 1;
+};
+static ScreenGeom screen_geom(const Screen& sc, XrPosef base, const vrdual::ScreenGrab& g, float hfov, float aspect) {
+    ScreenGeom G;
+    G.mode = sc.mode;
+    G.dist = sc.dist;
+    XrQuaternionf q = qmul({g.rot[0], g.rot[1], g.rot[2], g.rot[3]}, base.orientation);
+    XrVector3f off{g.off[0], g.off[1], g.off[2]};
+    XrVector3f centre = vadd(vadd(base.position, qrot(base.orientation, {0, 0, -sc.dist})), off);
+    float t = tanf(sc.fov * float(M_PI) / 360.0f);
+    if (sc.mode == SCREEN_FULL) {
+        float th = tanf(hfov * float(M_PI) / 360.0f);
+        G.tan_h = th * g.sx;
+        G.tan_v = th / aspect * g.sy;
+        G.frame = {q, base.position};
+    } else if (sc.mode == SCREEN_FLAT) {
+        G.w = 2 * sc.dist * t * g.sx;
+        G.h = 2 * sc.dist * t / aspect * g.sy;
+        G.frame = {q, centre};
+    } else {
+        float a = sc.fov * float(M_PI) / 180.0f;
+        G.angle = std::fmin(a * g.sx, 6.2f);
+        G.h = sc.dist * a / aspect * g.sy;
+        G.frame = {q, vsub(centre, qrot(q, {0, 0, -sc.dist}))};
+    }
+    return G;
+}
 static int screen_parse(const std::string& s) { return s == "flat" ? SCREEN_FLAT : s == "curved" ? SCREEN_CURVED : SCREEN_FULL; }
 static const char* screen_name(int m) { return m == SCREEN_FLAT ? "flat" : m == SCREEN_CURVED ? "curved" : "full"; }
 
@@ -319,11 +372,8 @@ struct XrInput {
         XrActionStateVector2f st{XR_TYPE_ACTION_STATE_VECTOR2F};
         return xrGetActionStateVector2f(s, &gi, &st) == XR_SUCCESS && st.isActive ? st.currentState : XrVector2f{0, 0};
     }
-    // screen: the space the game picture is shown in, sp the picture's base
-    // pose there (viewer position, looking along -z); tan_h/tan_v: half-FOV
-    // tangents of the picture; sc: full (at infinity) or flat/curved at sc.dist.
-    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, XrPosef sp, float tan_h, float tan_v,
-                          const Screen& sc) {
+    // screen: the space the game picture is shown in (layer space), G where it is.
+    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, const ScreenGeom& G) {
         vrdual::Controls c;
         XrActiveActionSet aas{set, XR_NULL_PATH};
         XrActionsSyncInfo sy{XR_TYPE_ACTIONS_SYNC_INFO, nullptr, 1, &aas};
@@ -342,29 +392,28 @@ struct XrInput {
         }
         loc = {XR_TYPE_SPACE_LOCATION};
         if (xrLocateSpace(aim_space, screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
-            XrQuaternionf inv{-sp.orientation.x, -sp.orientation.y, -sp.orientation.z, sp.orientation.w};
+            const XrQuaternionf& fq = G.frame.orientation;
+            XrQuaternionf inv{-fq.x, -fq.y, -fq.z, fq.w};
             XrVector3f d = qrot(inv, qrot(loc.pose.orientation, {0, 0, -1}));
-            XrVector3f p = qrot(inv, {loc.pose.position.x - sp.position.x, loc.pose.position.y - sp.position.y,
-                                      loc.pose.position.z - sp.position.z});
+            XrVector3f p = qrot(inv, vsub(loc.pose.position, G.frame.position));
             bool hit = false;
-            if (sc.mode == SCREEN_FULL && d.z < -1e-3f) {  // picture at infinity: direction only
-                c.aim_u = 0.5f + 0.5f * (d.x / -d.z) / tan_h;
-                c.aim_v = 0.5f - 0.5f * (d.y / -d.z) / tan_v;
+            if (G.mode == SCREEN_FULL && d.z < -1e-3f) {  // picture at infinity: direction only
+                c.aim_u = 0.5f + 0.5f * (d.x / -d.z) / G.tan_h;
+                c.aim_v = 0.5f - 0.5f * (d.y / -d.z) / G.tan_v;
                 hit = true;
-            } else if (sc.mode == SCREEN_FLAT && d.z < -1e-3f) {  // ray ∩ plane z = -dist
-                float k = (-sc.dist - p.z) / d.z;
-                c.aim_u = 0.5f + 0.5f * (p.x + k * d.x) / (sc.dist * tan_h);
-                c.aim_v = 0.5f - 0.5f * (p.y + k * d.y) / (sc.dist * tan_v);
+            } else if (G.mode == SCREEN_FLAT && d.z < -1e-3f) {  // ray ∩ plane z = 0 of the frame
+                float k = -p.z / d.z;
+                c.aim_u = 0.5f + (p.x + k * d.x) / G.w;
+                c.aim_v = 0.5f - (p.y + k * d.y) / G.h;
                 hit = k > 0;
-            } else if (sc.mode == SCREEN_CURVED) {  // ray ∩ cylinder x² + z² = dist² (far root: hand inside)
-                float a = d.x * d.x + d.z * d.z, b = 2 * (p.x * d.x + p.z * d.z), cc = p.x * p.x + p.z * p.z - sc.dist * sc.dist;
+            } else if (G.mode == SCREEN_CURVED) {  // ray ∩ cylinder x² + z² = dist² (far root: hand inside)
+                float a = d.x * d.x + d.z * d.z, b = 2 * (p.x * d.x + p.z * d.z), cc = p.x * p.x + p.z * p.z - G.dist * G.dist;
                 float disc = b * b - 4 * a * cc;
                 if (a > 1e-6f && disc >= 0) {
                     float k = (-b + sqrtf(disc)) / (2 * a);
                     float x = p.x + k * d.x, y = p.y + k * d.y, z = p.z + k * d.z;
-                    float ang = sc.fov * float(M_PI) / 180;
-                    c.aim_u = 0.5f + atan2f(x, -z) / ang;
-                    c.aim_v = 0.5f - 0.5f * y / (sc.dist * tan_v);
+                    c.aim_u = 0.5f + atan2f(x, -z) / G.angle;
+                    c.aim_v = 0.5f - y / G.h;
                     hit = k > 0;
                 }
             }
@@ -391,7 +440,7 @@ struct XrInput {
 // ----------------------------------------------------------------- main ----
 int main(int argc, char** argv) {
     std::string session = getenv("VRDUAL_SESSION") ? getenv("VRDUAL_SESSION") : "default";
-    bool world = false, swap = false;
+    bool world = true, swap = false;
     long max_frames = -1;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -399,7 +448,7 @@ int main(int argc, char** argv) {
         else if (a == "--lock" && i + 1 < argc) world = std::string(argv[++i]) == "world";
         else if (a == "--frames" && i + 1 < argc) max_frames = atol(argv[++i]);
         else if (a == "--swap") swap = true;
-        else { fprintf(stderr, "usage: %s [--session S] [--lock head|world] [--frames N] [--swap]\n", argv[0]); return 2; }
+        else { fprintf(stderr, "usage: %s [--session S] [--lock world|head] [--frames N] [--swap]\n", argv[0]); return 2; }
     }
     if (!open_runtime()) return 1;
 
@@ -529,12 +578,15 @@ int main(int argc, char** argv) {
     vrdual::Eye L{0, vrdual::shm_dir() + "/vrdual-" + session + "-0"}, R{1, vrdual::shm_dir() + "/vrdual-" + session + "-1"};
     EyeOut out[2];
     vrdual_ctl* ctl = nullptr;
-    XrPosef world_pose[2], world_base{{0, 0, 0, 1}, {0, 0, 0}};  // base: between the eyes, eye 0's orientation
-    bool have_world = false;
+    // anchored (world lock, or head lock frozen): the picture lives in LOCAL
+    // space at world_base (between the eyes, level), captured on the next
+    // valid view after have_world is cleared
+    XrPosef world_base{{0, 0, 0, 1}, {0, 0, 0}};
+    bool have_world = false, frozen = false;
     Screen scr;
-    vrdual::ScreenGrab grab;  // both grips: drag / scale the cinema screen
-    float fov_cfg = 60;
+    vrdual::ScreenGrab grab;  // both grips: drag / turn / scale the picture
     int grab_recentres = 0;
+    float hfov_now = 90;
     bool running = false;
     long submitted = 0, uploads = 0;
     uint64_t shown = 0;
@@ -622,34 +674,40 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "[xr] runtime has no %s: curved screen shown flat\n", XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
                 scr.mode = SCREEN_FLAT;
             }
+            scr.sx = std::clamp(st.f("screen_scale_x"), 0.1f, 10.0f);
+            scr.sy = std::clamp(st.f("screen_scale_y"), 0.1f, 10.0f);
             grab = vrdual::ScreenGrab{};
-            grab.fov = fov_cfg = scr.fov;
+            grab.sx = scr.sx;
+            grab.sy = scr.sy;
             grab_recentres = 0;
-            if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV)\n");
-            else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m\n", screen_name(scr.mode), scr.fov, scr.dist);
+            if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
+            else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m, scale %g x %g\n", screen_name(scr.mode), scr.fov, scr.dist, scr.sx, scr.sy);
             lean_ref = false;
             recentres = 0;
         }
         double t_now = vrdual::now_s();
-        if ((mapper || scr.mode != SCREEN_FULL) && xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
-            if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
-            float th = tanf((scr.mode != SCREEN_FULL ? scr.fov : ctl ? vrdual::ctl_read(ctl).hfov : 90.0f) * float(M_PI) / 360.0f);
-            float tv = th * float(L.h) / float(L.w ? L.w : 1);
-            if (scr.mode == SCREEN_CURVED) tv = scr.fov * float(M_PI) / 360.0f * float(L.h) / float(L.w ? L.w : 1);  // arc: height = r·angle·h/w
-            XrPosef sp = world && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
-            sp.position = {sp.position.x + grab.off[0], sp.position.y + grab.off[1], sp.position.z + grab.off[2]};
-            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, world ? local_space : view_space, sp, th, tv, scr);
-            if (scr.mode != SCREEN_FULL) {
-                bool was = grab.both;
-                if (grab.step(c)) c.lg = c.rg = 0;  // grabbing: the game doesn't see the grips
-                scr.fov = grab.fov;
-                if (was && !grab.both)
-                    fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, %.0f deg wide (screen_fov = %.0f to keep)\n", grab.off[0],
-                            grab.off[1], grab.off[2], grab.fov, grab.fov);
-                if (mapper && mapper->recentres != grab_recentres) {  // menu held: screen back to its configured place
-                    grab_recentres = mapper->recentres;
-                    grab = vrdual::ScreenGrab{};
-                    grab.fov = scr.fov = fov_cfg;
+        bool anchored = world || frozen;
+        float aspect = float(L.w ? L.w : 16) / float(L.h ? L.h : 9);
+        XrPosef base = anchored && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+        if (xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
+            ScreenGeom G = screen_geom(scr, base, grab, hfov_now, aspect);
+            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G);
+            bool was = grab.both;
+            if (grab.step(c, t_now - t_input)) c.lg = c.rg = c.rx = c.ry = 0;  // grabbing: the game doesn't see grips / right stick
+            if (was && !grab.both)
+                fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, scale %.2f x %.2f (screen_scale_x/y to keep)\n", grab.off[0],
+                        grab.off[1], grab.off[2], grab.sx, grab.sy);
+            if (grab.recentres != grab_recentres) {  // menu held 1 s
+                grab_recentres = grab.recentres;
+                if (world) {
+                    have_world = false;  // in front of the current gaze
+                    memset(grab.off, 0, sizeof grab.off);
+                    grab.rot[0] = grab.rot[1] = grab.rot[2] = 0; grab.rot[3] = 1;
+                    fprintf(stderr, "[xr] screen recentred to the current gaze\n");
+                } else {
+                    frozen = !frozen;
+                    have_world = false;
+                    fprintf(stderr, frozen ? "[xr] screen frozen in place\n" : "[xr] screen follows the head\n");
                 }
             }
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
@@ -766,8 +824,9 @@ int main(int argc, char** argv) {
             }
 
             if (out[0].released && out[1].released) {
-                XrViewLocateInfo vli{XR_TYPE_VIEW_LOCATE_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, fs.predictedDisplayTime,
-                                     world ? local_space : view_space};
+                anchored = world || frozen;
+                XrSpace space = anchored ? local_space : view_space;
+                XrViewLocateInfo vli{XR_TYPE_VIEW_LOCATE_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, fs.predictedDisplayTime, space};
                 XrViewState vs{XR_TYPE_VIEW_STATE};
                 XrView views[2] = {{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
                 uint32_t nv = 0;
@@ -776,46 +835,44 @@ int main(int argc, char** argv) {
                 // Headset off / tracking lost: runtimes may return zero quaternions,
                 // which xrEndFrame rejects. Submit nothing this frame.
                 if (!(vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) goto end_frame;
-                if (world && valid && !have_world) {
-                    world_pose[0] = views[0].pose;
-                    world_pose[1] = views[1].pose;
+                if (anchored && valid && !have_world) {
                     const XrVector3f &a = views[0].pose.position, &b = views[1].pose.position;
-                    world_base = {views[0].pose.orientation, {(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2}};
+                    world_base = {level(views[0].pose.orientation), {(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2}};
                     have_world = true;
                 }
                 if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
-                float hfov = ctl ? vrdual::ctl_read(ctl).hfov : 90.0f;
-                float h = hfov * float(M_PI) / 360.0f;
-                float v = atanf(tanf(h) * float(out[0].h) / float(out[0].w));
+                float hfov = hfov_now = ctl ? vrdual::ctl_read(ctl).hfov : 90.0f;
+                XrPosef at = anchored && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+                ScreenGeom G = screen_geom(scr, at, grab, hfov, float(out[0].w) / float(out[0].h));
+                float h = atanf(G.tan_h), v = atanf(G.tan_v);
+                XrQuaternionf r{grab.rot[0], grab.rot[1], grab.rot[2], grab.rot[3]};
                 for (int e = 0; e < 2; ++e) {
-                    pv[e].pose = world ? (have_world ? world_pose[e] : views[e].pose) : views[e].pose;
+                    // anchored: level picture orientation, current eye positions (picture at infinity)
+                    pv[e].pose = {anchored ? G.frame.orientation : qmul(r, views[e].pose.orientation), views[e].pose.position};
                     pv[e].fov = {-h, h, v, -v};
                     pv[e].subImage.swapchain = out[e].sc;
                     pv[e].subImage.imageRect = {{0, 0}, {int32_t(out[e].w), int32_t(out[e].h)}};
                 }
-                proj.space = world ? local_space : view_space;
+                proj.space = space;
                 proj.viewCount = 2;
                 proj.views = pv;
-                XrPosef base = world && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
-                base.position = {base.position.x + grab.off[0], base.position.y + grab.off[1], base.position.z + grab.off[2]};
-                float aspect = float(out[0].w) / float(out[0].h);
                 for (int e = 0; e < 2; ++e) {  // cinema: same surface for both eyes, each eye sees its own image
                     XrEyeVisibility vis = e ? XR_EYE_VISIBILITY_RIGHT : XR_EYE_VISIBILITY_LEFT;
-                    XrSwapchainSubImage si{out[e].sc, {{0, 0}, {int32_t(out[e].w), int32_t(out[e].h)}}, 0};
-                    float wq = 2 * scr.dist * tanf(scr.fov * float(M_PI) / 360.0f);
-                    XrVector3f fwd = qrot(base.orientation, {0, 0, -scr.dist});
-                    quad[e].space = proj.space;
+                    // 1 px inset: the runtime's sampler would otherwise blend the edge columns with
+                    // the opposite edge / border (seam at the cylinder's left and right edge)
+                    XrSwapchainSubImage si{out[e].sc, {{1, 1}, {int32_t(out[e].w) - 2, int32_t(out[e].h) - 2}}, 0};
+                    quad[e].space = space;
                     quad[e].eyeVisibility = vis;
                     quad[e].subImage = si;
-                    quad[e].pose = {base.orientation, {base.position.x + fwd.x, base.position.y + fwd.y, base.position.z + fwd.z}};
-                    quad[e].size = {wq, wq / aspect};
-                    cyl[e].space = proj.space;
+                    quad[e].pose = G.frame;
+                    quad[e].size = {G.w, G.h};
+                    cyl[e].space = space;
                     cyl[e].eyeVisibility = vis;
                     cyl[e].subImage = si;
-                    cyl[e].pose = base;
-                    cyl[e].radius = scr.dist;
-                    cyl[e].centralAngle = scr.fov * float(M_PI) / 180.0f;
-                    cyl[e].aspectRatio = aspect;
+                    cyl[e].pose = G.frame;
+                    cyl[e].radius = G.dist;
+                    cyl[e].centralAngle = G.angle;
+                    cyl[e].aspectRatio = G.dist * G.angle / G.h;
                     if (scr.mode == SCREEN_FLAT) layers.push_back((XrCompositionLayerBaseHeader*)&quad[e]);
                     if (scr.mode == SCREEN_CURVED) layers.push_back((XrCompositionLayerBaseHeader*)&cyl[e]);
                 }

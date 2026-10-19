@@ -20,7 +20,7 @@ frame index. Near cube shifts ~25 px between eyes, far cubes ~0, the HUD bar
 ./vrdual steam-install                         # layer + wrapper for Steam; prints the launch option
 ./vrdual view [--session S]                    # SBS window (finds games inside Flatpak Steam)
 ./vrdual wivrn                                 # WiVRn streaming server (Flatpak, user install)
-./vrdual xr [--session S] [--lock head|world]  # game in the HMD via OpenXR
+./vrdual xr [--session S] [--lock world|head]  # game in the HMD via OpenXR
 ```
 
 `vrdual` is the non-interactive CLI (stdout = data, prose on stderr, exit code =
@@ -170,10 +170,14 @@ from `VRDUAL_SHM_DIR`; `vrdual view|xr|live|set|save` set it automatically.
 ## HMD output (`vrdual-xr`, OpenXR)
 
 One XrCompositionLayerProjection; each eye's frame is one view, with the FOV
-the game rendered for (live `hfov`, vertical from the aspect). `--lock head`
-(default): poses from the VIEW space, the picture follows the head (no head
-tracking reaches the game yet, M4). `--lock world`: poses frozen at start in
-LOCAL space. Swapchains are 8-bit sRGB, filled by a buffer copy of the frame
+the game rendered for (live `hfov`, vertical from the aspect).
+`--lock world` (default): the picture is anchored in LOCAL space at a base
+pose captured from the first valid view (between the eyes, roll removed, so
+a tilted head at start doesn't tilt the screen; looking straight up/down the
+yaw comes from the head's up vector, so lying down works). Menu held 1 s
+re-captures the base from the current gaze. `--lock head` (films): VIEW
+space, the picture follows the head; menu held 1 s freezes it in place
+(anchored at the current gaze), again: follows again. Swapchains are 8-bit sRGB, filled by a buffer copy of the frame
 bytes. The runtime is the active one (`~/.config/openxr/1/active_runtime.json`,
 `XR_RUNTIME_JSON`), else `vrdual xr` uses WiVRn's Flatpak json.
 When the newest game frame is older than 1 s (game exited) the eyes turn
@@ -190,11 +194,19 @@ extension; WiVRn and Monado have it). The game's stereo then reads as a
 window: objects at infinity sit on the screen plane. Base pose: VIEW origin
 (head lock) or the start pose between the eyes (world lock). `aim` mode
 intersects the controller ray with the plane/cylinder (full mode: direction
-only, picture at infinity). Both grips held (`ScreenGrab`, pure, in
-`vrdual_input.hpp`): the hands' midpoint drags the screen, their distance
-scales its width; the game sees neither grip meanwhile (the first one pressed
-gets a short press). Release logs the values to put in the profile; menu held
-1 s puts the screen back.
+only, picture at infinity). One function (`screen_geom`) gives the picture's
+pose and size for the layers and for aiming.
+
+**Grab** (all screen modes; `ScreenGrab`, pure, in `vrdual_input.hpp`): both
+grips held → the hands' midpoint drags the picture (not in full mode: at
+infinity), the line between the hands turns it about its centre, their
+distance scales it, the right stick stretches width (x) / height (y) at
+50 %/s. The game sees neither grips nor the right stick meanwhile (the first
+grip pressed gets a short press). Release logs scale values for
+`screen_scale_x/y`; recentring (menu held) resets position and rotation,
+keeps the scale. Quad/cylinder sub-images are inset 1 px: without it a
+runtime sampling past the edge showed a seam at the cylinder's left/right
+edge.
 
 WiVRn (`vrdual wivrn`): Flatpak `io.github.wivrn.wivrn`. Without avahi-daemon
 it must run with `--no-publish-service` (the wrapper adds it) and the headset
@@ -318,6 +330,7 @@ world_scale = 100      # engine works in centimeters
 | `head_look`, `head_deadzone`, `head_rate`, `head_counts_per_deg` | `off`, `15`, `120`, `10` | head rotation → game camera |
 | `head_lean`, `lean_max`, `lean_y_sign` | `off`, `0.1`, `1` | head translation → rendered viewpoint |
 | `screen`, `screen_dist`, `screen_fov` | `full`, `2.5`, `60` | `vrdual-xr` surface: full game FOV, or a flat/curved cinema screen (m, deg) |
+| `screen_scale_x`, `screen_scale_y` | `1`, `1` | picture width/height scale, all modes (grab changes it live) |
 | `map_<button>` | mode default | `KEY_*`, `BTN_*` or `none` |
 
 These are per-process environment only: `VRDUAL_EYE` (`left`/`right`; unset = GPU

@@ -61,6 +61,8 @@ static const Key kKeys[] = {
     {"screen", "full", "vrdual-xr picture: full (game FOV) | flat | curved (virtual cinema screen)"},
     {"screen_dist", "2.5", "flat/curved screen distance, meters"},
     {"screen_fov", "60", "flat/curved screen width as seen from the centre, degrees"},
+    {"screen_scale_x", "1", "picture width scale (all screen modes; two-hand grab changes it live)"},
+    {"screen_scale_y", "1", "picture height scale"},
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };
 

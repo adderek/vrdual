@@ -60,29 +60,69 @@ struct Controls {
     float hand_p[2][3] = {};                // left, right grip position, meters, screen space
 };
 
-// Two-hand grab of the cinema screen (vrdual-xr, screen = flat|curved): both
-// grips held -> the hands' midpoint drags the screen, their distance scales
-// its width. Pure, like Mapper. The caller hides both grips from the game
-// while step() returns true.
-struct ScreenGrab {
-    float off[3] = {0, 0, 0};  // screen offset from its configured place, meters
-    float fov = 60;            // current width, degrees
-    bool both = false, moved = false;
-    float m0[3] = {}, off0[3] = {}, s0 = 0, fov0 = 0;
+// Quaternions as float[4] = x, y, z, w (OpenXR order).
+inline void qmul(const float a[4], const float b[4], float o[4]) {
+    float r[4] = {a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+                  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]};
+    memcpy(o, r, sizeof r);
+}
+// Shortest rotation taking direction u to direction v.
+inline void qarc(const float u[3], const float v[3], float o[4]) {
+    float lu = std::sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]), lv = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    o[0] = o[1] = o[2] = 0; o[3] = 1;
+    if (lu < 1e-6f || lv < 1e-6f) return;
+    float d = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (lu * lv);
+    if (d < -0.9999f) return;  // opposite: ambiguous axis, keep
+    float c[3] = {(u[1] * v[2] - u[2] * v[1]) / (lu * lv), (u[2] * v[0] - u[0] * v[2]) / (lu * lv), (u[0] * v[1] - u[1] * v[0]) / (lu * lv)};
+    float w = 1 + d, n = std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2] + w * w);
+    o[0] = c[0] / n; o[1] = c[1] / n; o[2] = c[2] / n; o[3] = w / n;
+}
 
-    bool step(const Controls& c) {
+// Screen placement from the controllers (vrdual-xr). Pure, like Mapper.
+//   both grips held: the hands' midpoint drags the screen, the line between
+//   them turns it (about its centre), their distance scales it; the right
+//   stick meanwhile stretches width (x) and height (y) separately. The caller
+//   hides grips and the right stick from the game while step() returns true.
+//   menu held 1 s: ++recentres (vrdual-xr: world lock -> screen in front of
+//   the current gaze; head lock -> freeze the screen in place / follow again)
+struct ScreenGrab {
+    float off[3] = {0, 0, 0};    // centre offset, meters, in the screen's space
+    float rot[4] = {0, 0, 0, 1}; // extra rotation about the centre
+    float sx = 1, sy = 1;        // width / height scale
+    bool both = false;
+    int recentres = 0;
+    double menu_t = 0;
+    float m0[3] = {}, off0[3] = {}, v0[3] = {}, rot0[4] = {0, 0, 0, 1}, s0 = 0, sx0 = 1, sy0 = 1;
+
+    bool step(const Controls& c, double dt) {
+        if (c.menu) {
+            if (menu_t < 1 && menu_t + dt >= 1) ++recentres;
+            menu_t += dt;
+        } else {
+            menu_t = 0;
+        }
         bool now = c.hands_ok && c.lg > 0.8f && c.rg > 0.8f;
         const float *l = c.hand_p[0], *r = c.hand_p[1];
         float m[3] = {(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2};
-        float s = std::sqrt((l[0] - r[0]) * (l[0] - r[0]) + (l[1] - r[1]) * (l[1] - r[1]) + (l[2] - r[2]) * (l[2] - r[2]));
+        float v[3] = {r[0] - l[0], r[1] - l[1], r[2] - l[2]};
+        float s = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
         if (now && !both) {
-            for (int k = 0; k < 3; ++k) { m0[k] = m[k]; off0[k] = off[k]; }
+            for (int k = 0; k < 3; ++k) { m0[k] = m[k]; off0[k] = off[k]; v0[k] = v[k]; }
+            memcpy(rot0, rot, sizeof rot);
             s0 = s;
-            fov0 = fov;
+            sx0 = sx;
+            sy0 = sy;
         } else if (now) {
             for (int k = 0; k < 3; ++k) off[k] = off0[k] + m[k] - m0[k];
-            if (s0 > 0.05f) fov = std::fmin(170.0f, std::fmax(10.0f, fov0 * s / s0));
-            moved = true;
+            float q[4];
+            qarc(v0, v, q);
+            qmul(q, rot0, rot);
+            auto stretch = [&](float a) { return std::fabs(a) > 0.2f ? 1 + 0.5f * a * float(dt) : 1.0f; };  // 50 %/s at full deflection
+            sx0 *= stretch(c.rx);
+            sy0 *= stretch(c.ry);
+            float k = s0 > 0.05f ? s / s0 : 1;
+            sx = std::fmin(10.0f, std::fmax(0.1f, sx0 * k));
+            sy = std::fmin(10.0f, std::fmax(0.1f, sy0 * k));
         }
         both = now;
         return now;
