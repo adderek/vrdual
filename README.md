@@ -45,9 +45,18 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
   * Turn off video effects (I have not checked which but with enabled there is a "ghost" - likely DoF could be causing that)
 * Portal 2
 * Zen Bound 2
+* Tomb Raider III: works (set a windowed / 1920x1080 mode, the portrait desktop otherwise gives 2880x5120)
+* Fallout: New Vegas: runs, HUD shown
+* Overlord (native, OpenGL via Zink): runs; green glow at the bottom of the screen
+  is a Zink (Mesa 26) bug, it also shows with Zink alone, without vrdual
+* Tomb Raider II: runs; menu needs keys (`input = mouse`: a = Enter, b = Esc)
+* Tomb Raider I (DOSBox): no stereo (draws a flat 2D image); exits in windowed
+  mode / on alt+tab (not checked without vrdual)
+* Portal (native, OpenGL via Zink): menu works, crashes on level load (NULL GL
+  buffer map in `shaderapidx9.so`), under investigation (2026-10-19)
 
 ## Games (tested with single GPU)
 
 * American McGee Alice Madness Returns
-* Overlord (green artifacts at the bottom of the screen)
+* Overlord (green artifacts at the bottom of the screen: Zink bug, also without vrdual)
 * Zen Bound 2

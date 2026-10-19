@@ -20,6 +20,7 @@
 // may list several dirs (a:b, `vrdual xr` passes /dev/shm and Flatpak Steam's);
 // while no frames arrive it follows the dir where the session's frames are
 // fresh. A new game process (frame header `producer`) reloads its settings.
+// Session lost (headset off, WiVRn restarted): re-execs itself and waits.
 //
 //   vrdual-xr [--session S] [--lock world|head] [--frames N] [--swap]
 #define XR_NO_PROTOTYPES
@@ -51,6 +52,8 @@
 #include "../common/vrdual_input.hpp"
 
 static volatile sig_atomic_t g_quit = 0;
+static volatile sig_atomic_t g_user_quit = 0;  // Ctrl-C / --frames: no reconnect
+static const int kLost = 3;                    // runtime / session gone: main() reconnects
 static PFN_xrGetInstanceProcAddr g_gipa;
 static XrInstance g_inst = XR_NULL_HANDLE;
 
@@ -93,7 +96,7 @@ static const char* xr_str(XrResult r) {
         XrResult r_ = (x);                                                       \
         if (XR_FAILED(r_)) {                                                     \
             fprintf(stderr, "[xr] %s failed: %s\n", #x, xr_str(r_));             \
-            return 1;                                                            \
+            return kLost;                                                        \
         }                                                                        \
     } while (0)
 
@@ -446,10 +449,11 @@ struct XrInput {
 };
 
 // ----------------------------------------------------------------- main ----
-int main(int argc, char** argv) {
+static int run(int argc, char** argv) {
     std::string session = getenv("VRDUAL_SESSION") ? getenv("VRDUAL_SESSION") : "default";
     bool world = true, swap = false;
     long max_frames = -1;
+    long lose_at = getenv("VRDUAL_XR_LOSE_AT") ? atol(getenv("VRDUAL_XR_LOSE_AT")) : 0;  // selftest
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--session" && i + 1 < argc) session = argv[++i];
@@ -478,9 +482,16 @@ int main(int argc, char** argv) {
     ici.enabledExtensionCount = uint32_t(exts.size());
     ici.enabledExtensionNames = exts.data();
     fprintf(stderr, "[xr] connecting to the runtime (WiVRn answers once a headset is connected)...\n");
-    if (XrResult r = xrCreateInstance(&ici, &g_inst); XR_FAILED(r)) {
-        fprintf(stderr, "[xr] xrCreateInstance failed: %s — is the runtime's server running? (WiVRn: start `vrdual wivrn` first)\n", xr_str(r));
-        return 1;
+    for (int tries = 0;; ++tries) {
+        XrResult r = xrCreateInstance(&ici, &g_inst);
+        if (XR_SUCCEEDED(r)) break;
+        if (!getenv("VRDUAL_XR_RECONNECT")) {
+            fprintf(stderr, "[xr] xrCreateInstance failed: %s — is the runtime's server running? (WiVRn: start `vrdual wivrn` first)\n", xr_str(r));
+            return 1;
+        }
+        if (tries == 0) fprintf(stderr, "[xr] runtime not answering (%s); waiting for it...\n", xr_str(r));
+        if (g_user_quit) return 130;
+        sleep(2);
     }
     load_fns();
     XrInstanceProperties ip{XR_TYPE_INSTANCE_PROPERTIES};
@@ -493,7 +504,7 @@ int main(int argc, char** argv) {
     static volatile sig_atomic_t signals = 0;
     auto on_sig = [](int) {
         if (signals++) _exit(130);
-        g_quit = 1;
+        g_quit = g_user_quit = 1;
         alarm(3);
     };
     signal(SIGINT, on_sig);
@@ -508,7 +519,8 @@ int main(int argc, char** argv) {
     for (int tries = 0;; ++tries) {
         XrResult r = xrGetSystem(g_inst, &sgi, &sys);
         if (r == XR_SUCCESS) break;
-        if (r != XR_ERROR_FORM_FACTOR_UNAVAILABLE || g_quit) { fprintf(stderr, "[xr] xrGetSystem: %s\n", xr_str(r)); return 1; }
+        if (g_quit) return 130;
+        if (r != XR_ERROR_FORM_FACTOR_UNAVAILABLE) { fprintf(stderr, "[xr] xrGetSystem: %s\n", xr_str(r)); return kLost; }
         if (tries == 0) fprintf(stderr, "[xr] no headset yet — put it on / start the client app; waiting...\n");
         usleep(500000);
     }
@@ -671,6 +683,7 @@ int main(int argc, char** argv) {
             ev = {XR_TYPE_EVENT_DATA_BUFFER};
         }
         if (exit_loop) break;
+        if (lose_at && submitted >= lose_at) { fprintf(stderr, "[xr] VRDUAL_XR_LOSE_AT: pretending the session is lost\n"); break; }
         if (!running) {
             if (g_quit) break;
             usleep(10000);
@@ -950,7 +963,7 @@ int main(int argc, char** argv) {
             uploads = 0;
             t_report = t;
         }
-        if (max_frames >= 0 && submitted >= max_frames) { fprintf(stderr, "[xr] %ld frames submitted\n", submitted); g_quit = 1; }
+        if (max_frames >= 0 && submitted >= max_frames) { fprintf(stderr, "[xr] %ld frames submitted\n", submitted); g_quit = g_user_quit = 1; }
     }
     vkDeviceWaitIdle(g.dev);
     for (auto& o : out)
@@ -958,5 +971,21 @@ int main(int argc, char** argv) {
     send_head(0, 0, 0);
     xrDestroySession(s);
     xrDestroyInstance(g_inst);
-    return 0;
+    return g_user_quit ? 0 : kLost;
+}
+
+// Headset gone, WiVRn restarted, session lost: start over in a fresh process
+// (re-exec: no runtime state survives), waiting for the runtime meanwhile.
+int main(int argc, char** argv) {
+    int rc = run(argc, argv);
+    if (rc != kLost || g_user_quit) return rc == kLost ? 0 : rc;
+    alarm(0);
+    fprintf(stderr, "[xr] session lost; reconnecting in 2 s (Ctrl-C to stop)\n");
+    sleep(2);
+    if (g_user_quit) return 0;
+    setenv("VRDUAL_XR_RECONNECT", "1", 1);
+    unsetenv("VRDUAL_XR_LOSE_AT");  // selftest: lose once
+    execv("/proc/self/exe", argv);
+    perror("[xr] re-exec");
+    return 1;
 }
