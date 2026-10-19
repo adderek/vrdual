@@ -161,5 +161,7 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   games pick 2880x5120: the HMD shows a tall screen, and Portal 2 (Source)
   renders only part of it correctly. Use `-windowed -w 1920 -h 1080` or the
   game's resolution setting.
+- Steam games load a copy of the layer (`vrdual steam-install`). After a layer
+  change, re-run it, or the game silently runs the old layer (`vrdual xr` warns).
 - Debug crashes inside the Flatpak: `coredumpctl dump` + gdb with a sysroot of
   symlinks to `/var/lib/flatpak/{app,runtime}/…/files`.

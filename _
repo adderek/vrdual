@@ -152,12 +152,23 @@ WRAP
 }
 vrdual-config-path() { "$B/vrdual-ctl" path; }
 
+# Warns when the layer copy Steam games load differs from build/ (forgot
+# `vrdual steam-install` after a change: the game runs the old layer).
+steam_layer_check() {
+    local i
+    for i in "$STEAM_FLATPAK/vrdual/layer/libVkLayer_vrdual64.so" "$HOME/.local/share/vrdual/layer/libVkLayer_vrdual64.so"; do
+        [[ -f $i ]] && ! cmp -s "$i" "$B/libVkLayer_vrdual.so" && say "warning: $i differs from build/ (run: vrdual steam-install)"
+    done
+    return 0
+}
+
 # SBS window for a running session (also finds games inside Flatpak Steam).
 vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 
 # HMD output through OpenXR. Without an active runtime, uses WiVRn's Flatpak.
 vrdual_xr() {
     pick_shm "$@"
+    steam_layer_check
     if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
         local w
         w=$(flatpak info --show-location io.github.wivrn.wivrn 2>/dev/null) && export XR_RUNTIME_JSON=$w/files/share/openxr/1/openxr_wivrn.json
