@@ -175,13 +175,31 @@ steam_layer_check() {
 vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 
 # HMD output through OpenXR. Without an active runtime, uses WiVRn's Flatpak.
+# WiVRn as runtime needs wivrn-server: refuses without it, or starts it in the
+# background with --start-wivrn (log: $XDG_RUNTIME_DIR/vrdual-wivrn.log).
 vrdual_xr() {
+    local a start=0 args=()
+    for a in "$@"; do [[ $a == --start-wivrn ]] && start=1 || args+=("$a"); done
+    set -- "${args[@]}"
     # follows the game between host /dev/shm and Flatpak Steam's, across games
     if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM"; fi
     steam_layer_check
     if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
         local w
         w=$(flatpak info --show-location io.github.wivrn.wivrn 2>/dev/null) && export XR_RUNTIME_JSON=$w/files/share/openxr/1/openxr_wivrn.json
+    fi
+    local rt=${XR_RUNTIME_JSON:-$(readlink -f "${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json" 2>/dev/null)}
+    if [[ $rt == *wivrn* ]] && ! pgrep -x wivrn-server >/dev/null; then
+        if ((!start)); then
+            say "error: wivrn-server is not running. Start it first: 'vrdual wivrn' in another terminal, or 'vrdual xr --start-wivrn'"
+            return 1
+        fi
+        local log=${XDG_RUNTIME_DIR:-/tmp}/vrdual-wivrn.log i
+        say "starting wivrn-server in the background (log: $log)"
+        (vrdual_wivrn >"$log" 2>&1 &)
+        for i in $(seq 20); do pgrep -x wivrn-server >/dev/null && break; sleep 0.5; done
+        pgrep -x wivrn-server >/dev/null || { say "error: wivrn-server did not start, see $log"; tail -5 "$log" >&2; return 1; }
+        sleep 1  # IPC socket
     fi
     "$B/vrdual-xr" "$@"
 }
@@ -361,6 +379,11 @@ vrdual_selftest() {
     label="input: mapper scenarios$( "$B/vrdual-input-test" 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped: module not loaded)' || echo ', uinput pad read back')"
     check "$B/vrdual-input-test"
 
+    label="vrdual xr: refuses to start without wivrn-server"
+    mkdir -p "$tmp/nopgrep" && printf '#!/bin/sh\nexit 1\n' >"$tmp/nopgrep/pgrep" && chmod +x "$tmp/nopgrep/pgrep"
+    check bash -c "out=\$(PATH='$tmp/nopgrep':\$PATH XR_RUNTIME_JSON=/x/openxr_wivrn.json '$VRDUAL_ROOT/vrdual' xr --session none 2>&1); rc=\$?
+        [[ \$rc != 0 ]] && grep -q 'wivrn-server is not running' <<<\"\$out\" || { echo \"rc=\$rc \$out\"; false; }"
+
     # 5. OpenXR output against Monado's simulated HMD (null compositor, no window).
     local xrj="${VRDUAL_XR_TEST_RUNTIME:-$B/monado/openxr_monado.json}"
     if [[ -f $xrj ]]; then
@@ -435,7 +458,9 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
                                   the launch option:  .../vrdual/run %command%
   view [--session S]            SBS window of a running game (finds Flatpak Steam sessions)
-  xr [--session S] [--lock head|world]   game in the HMD via OpenXR (WiVRn -> Quest)
+  xr [--session S] [--lock world|head] [--start-wivrn]
+                                game in the HMD via OpenXR (WiVRn -> Quest); runs across
+                                games; needs wivrn-server (--start-wivrn: start it in the background)
   wivrn                         start the WiVRn streaming server (Flatpak)
   run [opts] -- APP ARGS...     any Vulkan app, one copy per eye
                                   --left-gpu G --right-gpu G (pci:BBBB:BB:DD.F | index | name)

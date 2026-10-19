@@ -478,7 +478,10 @@ int main(int argc, char** argv) {
     ici.enabledExtensionCount = uint32_t(exts.size());
     ici.enabledExtensionNames = exts.data();
     fprintf(stderr, "[xr] connecting to the runtime (WiVRn answers once a headset is connected)...\n");
-    XR_CHECK(xrCreateInstance(&ici, &g_inst));
+    if (XrResult r = xrCreateInstance(&ici, &g_inst); XR_FAILED(r)) {
+        fprintf(stderr, "[xr] xrCreateInstance failed: %s — is the runtime's server running? (WiVRn: start `vrdual wivrn` first)\n", xr_str(r));
+        return 1;
+    }
     load_fns();
     XrInstanceProperties ip{XR_TYPE_INSTANCE_PROPERTIES};
     xrGetInstanceProperties(g_inst, &ip);
