@@ -73,7 +73,12 @@ Tycoon. Broken: Portal (Zink bug), Tomb Raider I (DOSBox, 2D).
 ## Support
 
 vrdual is developed in spare time. If it lets you play something in VR,
-consider [sponsoring on GitHub](https://github.com/sponsors/adderek).
+consider supporting it: [GitHub Sponsors](https://github.com/sponsors/adderek),
+[Liberapay](https://liberapay.com/adderek/) or [Ko-fi](https://ko-fi.com/adderek).
+
+Hardware helps too: the only headset here is a Meta Quest 3S, so other
+headsets (and their OpenXR runtimes) are untested. If you can lend or
+donate one, please open an issue.
 
 ## License
 
