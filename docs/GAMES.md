@@ -16,7 +16,7 @@ not confirmed or weak; **broken** = crash or no picture.
 | LEGO Harry Potter 1-4 (21130) | Proton | works | turn off video effects | a "ghost" with effects on (likely DoF) |
 | Tomb Raider III (225320) | Proton | works | windowed / 1920x1080 | |
 | Psychonauts (3830) | native GL → Zink | works | `skip_w1 = 0` (built-in) | draws the scene with `w == 1`; one SIGSEGV seen, not analysed |
-| Mirror's Edge (17410) | Proton, D3D9 (UE3) | works | `world_scale = 50`, `hud_depth = 1` (built-in) | crosshair single at `hud_depth` 1 (values below 1 not tried) |
+| Mirror's Edge (17410) | Proton, D3D9 (UE3) | works | `world_scale = 50`, `hud_depth = 1` (built-in); launch in a 1920x1080 gamescope window (below) | confirmed 2026-10-20 |
 | Firewatch (383870) | Unity | runs | landscape resolution | the portrait desktop cuts the menu |
 | Skyrim (72850) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | weak depth at scale 1; long loading |
 | Fallout: New Vegas (22380) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | HUD shown; `hud_depth` not confirmed yet |
@@ -29,6 +29,16 @@ not confirmed or weak; **broken** = crash or no picture.
 
 Single GPU (RTX 5070 Ti, host "sharkoon", alternate-eye): Alice: Madness
 Returns, Zen Bound 2, Overlord (same Zink glow).
+
+Gamescope keeps a game at 1920x1080 whatever the (portrait) desktop is, e.g.
+Mirror's Edge launch option. `gamescope-pv-display` is a local helper
+(`~/.var/app/com.valvesoftware.Steam/bin/`, the Flatpak's `~/bin`): Flatpak
+Steam's container start resets `DISPLAY` to the desktop's, the helper puts
+gamescope's `DISPLAY` back inside the container.
+
+```
+gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%
+```
 
 ## Tuning a new game
 
