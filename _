@@ -288,6 +288,10 @@ vrdual_selftest() {
     label="anchor right";        check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/d.png' && $M '$tmp/d.png' --ipd 0.064 --anchor right"
     set_live anchor=center ipd_near=0.2 near_dist=1 far_dist=5
     label="near/far blend";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/e.png' && $M '$tmp/e.png' --ipd 0.064 --ipd-near 0.2 --near 1 --far 5"
+    label="save: profile without ipd keys, --global with them"
+    check bash -c "export VRDUAL_CONFIG='$tmp/save.conf'; c='$B/vrdual-ctl --session $sess'; \$c save >/dev/null 2>&1 && \$c save --global >/dev/null 2>&1 &&
+        awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | sort -u | grep -qx '\[global\]' &&
+        ! awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | grep -q app: && grep -q '^\[app:' '$tmp/save.conf'"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 
     # 3. Mirror mode: ONE process, the app sees one GPU, the layer replays on the other.

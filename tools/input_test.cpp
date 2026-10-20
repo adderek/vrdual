@@ -170,6 +170,37 @@ int main() {
         for (int i = 0; i < 20; ++i) g.step(c, 0.1);
         expect(before == 0 && g.recentres == 1, "screen: menu held 1 s -> one recentre");
     }
+    {
+        Tuner t;
+        t.v[0] = t.start[0] = 50; t.v[1] = t.start[1] = 0; t.v[2] = t.start[2] = 90;
+        Controls c;
+        c.ly = 1;
+        int r = 0;
+        for (int i = 0; i < 10; ++i) r |= t.step(c, 0.1);
+        expect(std::fabs(t.v[0] - 100) < 0.5f && (r & TUNE_CHANGED), "tune: left stick up 1 s -> world_scale x2");
+        c.ly = 0;
+        expect(t.step(c, 0.1) & TUNE_SETTLED, "tune: stick released -> settled");
+        c.ry = -1;
+        t.step(c, 0.1);
+        expect(t.v[1] > 90 && t.v[1] <= 100, "tune: right stick down from infinity -> hud_depth 100 m");
+        for (int i = 0; i < 120; ++i) t.step(c, 0.1);
+        expect(std::fabs(t.v[1] - 0.1f) < 1e-3f, "tune: hud_depth stops at 0.1 m");
+        c.ry = 1;
+        for (int i = 0; i < 120; ++i) t.step(c, 0.1);
+        expect(t.v[1] == 0, "tune: hud_depth past 100 m -> 0 (infinity)");
+        c.ry = 0; c.rx = 1; c.rg = 1;
+        float h = t.v[2];
+        t.step(c, 0.5);
+        expect(t.v[2] == h, "tune: grip held -> sticks ignored");
+        c.rg = 0;
+        t.step(c, 0.5);
+        expect(std::fabs(t.v[2] - 100) < 0.01f, "tune: right stick x -> hfov 20 deg/s");
+        c.rx = 0; c.a = true;
+        expect((t.step(c, 0.1) & TUNE_SAVE) && !(t.step(c, 0.1) & TUNE_SAVE), "tune: a -> one save");
+        c.a = false; c.b = true;
+        r = t.step(c, 0.1);
+        expect((r & TUNE_RESET) && t.v[0] == 50 && t.v[1] == 0 && t.v[2] == 90, "tune: b -> start values");
+    }
 
     // uinput round trip with a virtual pad
     {

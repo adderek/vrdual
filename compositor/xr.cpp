@@ -238,6 +238,28 @@ static XrQuaternionf level(XrQuaternionf q) {
     return qmul({0, sinf(yaw / 2), 0, cosf(yaw / 2)}, {sinf(pitch / 2), 0, 0, cosf(pitch / 2)});
 }
 
+// input = tune, a: keep world_scale / hud_depth / hfov for this game. Steam
+// games read a copy of the config (vrdual steam-install): refresh it too.
+static void tune_save(const char* app, const float v[3]) {
+    std::string sec = app[0] ? std::string("app:") + app : "global", path = vrdual::config_path();
+    const char* keys[3] = {"world_scale", "hud_depth", "hfov"};
+    for (int i = 0; i < 3; ++i) {
+        char b[32];
+        snprintf(b, sizeof b, "%g", v[i]);
+        if (!vrdual::save_key(path, sec, keys[i], b)) { fprintf(stderr, "[xr] tune: cannot write %s\n", path.c_str()); return; }
+    }
+    fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g into [%s] of %s\n", v[0], v[1], v[2], sec.c_str(), path.c_str());
+    const char* h = getenv("HOME");
+    for (const char* d : {"/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf", "/.local/share/vrdual/vrdual.conf"}) {
+        std::string c = std::string(h ? h : "") + d;
+        if (access(c.c_str(), F_OK) != 0) continue;
+        std::ifstream in(path, std::ios::binary);
+        std::ofstream out(c, std::ios::binary | std::ios::trunc);
+        out << in.rdbuf();
+        fprintf(stderr, "[xr] tune: copied to %s\n", c.c_str());
+    }
+}
+
 // Surface the picture is shown on (config `screen`).
 enum { SCREEN_FULL, SCREEN_FLAT, SCREEN_CURVED };
 struct Screen {
@@ -631,6 +653,8 @@ static int run(int argc, char** argv) {
     Screen scr;
     vrdual::ScreenGrab grab;  // both grips: drag / turn / scale the picture
     int grab_recentres = 0;
+    vrdual::Tuner tune;  // input = tune: sticks change world_scale / hud_depth / hfov
+    bool tune_on = false, tune_seeded = false;
     float hfov_now = 90;
     bool running = false;
     long submitted = 0, uploads = 0;
@@ -745,6 +769,11 @@ static int run(int argc, char** argv) {
             grab.sx = scr.sx;
             grab.sy = scr.sy;
             grab_recentres = 0;
+            tune = vrdual::Tuner{};
+            tune.dz = ic.deadzone;
+            tune_on = ic.input == "tune";
+            tune_seeded = false;
+            if (tune_on) fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo\n");
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
             else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m, scale %g x %g\n", screen_name(scr.mode), scr.fov, scr.dist, scr.sx, scr.sy);
             lean_ref = false;
@@ -774,6 +803,18 @@ static int run(int argc, char** argv) {
                     have_world = false;
                     fprintf(stderr, frozen ? "[xr] screen frozen in place\n" : "[xr] screen follows the head\n");
                 }
+            }
+            if (tune_on && !ctl) ctl = vrdual::ctl_open(session, nullptr);
+            if (tune_on && ctl) {
+                vrdual_ctl k = vrdual::ctl_read(ctl);
+                if (!tune.moving) { tune.v[0] = k.world_scale; tune.v[1] = k.hud_depth; tune.v[2] = k.hfov; }  // `vrdual set` counts too
+                if (!tune_seeded) { memcpy(tune.start, tune.v, sizeof tune.v); tune_seeded = true; }
+                int r = tune.step(c, t_now - t_input);
+                if (r & vrdual::TUNE_CHANGED)
+                    vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = tune.v[0]; w.hud_depth = tune.v[1]; w.hfov = tune.v[2]; });
+                if (r & (vrdual::TUNE_SETTLED | vrdual::TUNE_RESET))
+                    fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g\n", r & vrdual::TUNE_RESET ? " (undo)" : "", tune.v[0], tune.v[1], tune.v[2]);
+                if (r & vrdual::TUNE_SAVE) tune_save(k.app, tune.v);
             }
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && icfg.lean && c.head_ok) {

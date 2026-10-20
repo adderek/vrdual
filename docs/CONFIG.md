@@ -14,7 +14,8 @@ found for specific games, e.g. Psychonauts `skip_w1 = 0`, Mirror's Edge
   (case-insensitive). `./vrdual live` prints it as `app` while a game runs.
 - Keys marked **live** can also be changed while the game runs:
   `./vrdual set KEY VALUE`, read back with `./vrdual live`, kept with
-  `./vrdual save` (`--global` for `[global]`).
+  `./vrdual save` (`--global` for `[global]`; `ipd`, `ipd_near`, `near_dist`,
+  `far_dist` are personal and only saved with `--global`).
 
 ## Where the file is
 
@@ -95,7 +96,7 @@ in front of the face (films). Controls, always on:
 
 | key | default | values | meaning |
 |---|---|---|---|
-| `input` | `off` | `off` `gamepad` `mouse` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard |
+| `input` | `off` | `off` `gamepad` `mouse` `tune` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings (below), the game gets nothing |
 | `mouse_mode` | `stick` | `stick` `motion` `aim` | right stick moves the pointer / right controller rotation / controller ray = absolute pointer. A short menu press cycles them |
 | `mouse_speed` | `1` | factor | pointer speed |
 | `mouse_curve` | `2.5` | exponent | stick response (stick mode) |
@@ -106,6 +107,16 @@ in front of the face (films). Controls, always on:
 | `head_deadzone` | `15` | degrees | edge mode dead zone |
 | `head_rate` | `120` | deg/s | edge mode turn rate at 45° past the dead zone |
 | `head_counts_per_deg` | `10` | mouse counts | per degree of game camera turn; calibrate per game |
+
+`input = tune` (no grip or trigger held; values print in the `vrdual xr` log):
+
+| control | changes |
+|---|---|
+| left stick up / down | `world_scale` ×2 / ÷2 per second at full deflection |
+| right stick up / down | `hud_depth` farther / nearer, ×2 per second (from infinity: down starts at 100 m; past 100 m back to infinity) |
+| right stick left / right | `hfov` ±20°/s |
+| a | save the three into `[app:NAME]` (and the Steam copy of the config) |
+| b | back to the values the game started with |
 
 Default buttons in mouse mode: a = Enter, b = Esc, x = Space, y = Tab,
 l3 = Alt, r3 = middle click, lt = Shift, rt = left click, lg = Ctrl,

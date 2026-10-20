@@ -46,7 +46,7 @@ static const Key kKeys[] = {
     {"right_gpu", "pci:0000:0b:00.0", "GPU for the right eye"},
     {"log", "1", "layer logging to stderr"},
     // input (vrdual-xr): VR controllers -> virtual pad / mouse / keys; map_<button> = KEY_*|BTN_*
-    {"input", "off", "controllers as: off | gamepad | mouse"},
+    {"input", "off", "controllers as: off | gamepad | mouse | tune (sticks change world_scale/hud_depth/hfov)"},
     {"mouse_mode", "stick", "mouse from controllers: stick | motion | aim (menu button cycles)"},
     {"mouse_speed", "1", "pointer speed factor"},
     {"mouse_curve", "2.5", "stick response exponent (stick mode)"},

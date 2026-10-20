@@ -203,6 +203,52 @@ struct ScreenGrab {
     }
 };
 
+// input = tune: the controllers change the live stereo settings instead of
+// driving the game (vrdual-xr, while no grip or trigger is held):
+//   left stick y   world_scale  x2 per second at full deflection (up = more depth)
+//   right stick y  hud_depth    x2 per second (up = farther; past 100 m = 0 = infinity)
+//   right stick x  hfov         20 deg/s
+//   a              save the three into [app:NAME]     b  back to the start values
+// step() returns TUNE_* bits; the caller seeds v[] from the control block.
+enum { TUNE_CHANGED = 1, TUNE_SETTLED = 2, TUNE_SAVE = 4, TUNE_RESET = 8 };
+struct Tuner {
+    enum { WORLD_SCALE, HUD_DEPTH, HFOV };
+    float v[3] = {1, 0, 90};
+    float start[3] = {1, 0, 90};
+    bool moving = false, a = false, b = false;
+    float dz = 0.15f;
+
+    int step(const Controls& c, double dt) {
+        int r = 0;
+        bool idle = c.lg < 0.5f && c.rg < 0.5f && c.lt < 0.5f && c.rt < 0.5f;
+        auto rate = [&](float s) {  // signed, 0..1, quadratic past the dead zone: fine near the centre
+            float m = (std::fabs(s) - dz) / (1 - dz);
+            return idle && m > 0 ? std::copysign(m * m, s) : 0.0f;
+        };
+        float ws = rate(c.ly), hd = rate(c.ry), fv = rate(c.rx);
+        float old[3] = {v[0], v[1], v[2]};
+        if (ws != 0) v[WORLD_SCALE] = std::fmin(10000.0f, std::fmax(0.01f, v[WORLD_SCALE] * std::exp2(ws * float(dt))));
+        if (hd < 0 && v[HUD_DEPTH] <= 0) v[HUD_DEPTH] = 100;  // in from infinity
+        if (hd != 0 && v[HUD_DEPTH] > 0) {
+            v[HUD_DEPTH] = std::fmax(0.1f, v[HUD_DEPTH] * std::exp2(hd * float(dt)));
+            if (v[HUD_DEPTH] > 100) v[HUD_DEPTH] = 0;
+        }
+        if (fv != 0) v[HFOV] = std::fmin(170.0f, std::fmax(20.0f, v[HFOV] + 20 * fv * float(dt)));
+        bool now = ws != 0 || hd != 0 || fv != 0;
+        if (memcmp(old, v, sizeof v)) r |= TUNE_CHANGED;
+        if (moving && !now) r |= TUNE_SETTLED;
+        moving = now;
+        if (idle && c.a && !a) r |= TUNE_SAVE;
+        if (idle && c.b && !b) {
+            memcpy(v, start, sizeof v);
+            r |= TUNE_RESET | TUNE_CHANGED;
+        }
+        a = c.a;
+        b = c.b;
+        return r;
+    }
+};
+
 enum InDev { DEV_PAD, DEV_MOUSE, DEV_TABLET, DEV_KBD };
 struct InEvent {
     int dev, type, code, value;

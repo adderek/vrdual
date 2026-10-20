@@ -108,10 +108,14 @@ inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
 }
 
 // Writes the live values into [app:NAME] (or [global]); returns the section, "" on error.
+// The eye keys (ipd, ipd_near, near/far_dist) belong to the person, not the
+// game: only a [global] save writes them, so a profile never pins an old IPD.
 inline std::string ctl_save(const vrdual_ctl& v, bool global) {
     std::string sec = global || !v.app[0] ? "global" : std::string("app:") + v.app;
-    for (auto k : kLiveKeys)
+    for (auto k : kLiveKeys) {
+        if (sec != "global" && (!strcmp(k, "ipd") || !strcmp(k, "ipd_near") || !strcmp(k, "near_dist") || !strcmp(k, "far_dist"))) continue;
         if (!save_key(config_path(), sec, k, live_value(v, k))) return "";
+    }
     return sec;
 }
 
