@@ -12,6 +12,13 @@ eye in parallel, so each eye gets the full frame rate.
 Status: early, but games run in the headset (list below). Headset: Quest 3/3S
 via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should work.
 
+## Pictures
+
+![Hospital tycoon](screenshots/HospitalTycoon-3.gif)
+![Hospital tycoon](screenshots/HospitalTycoon-4.gif)
+![Lego Harry Potter 1-4](screenshots/LegoHarry.gif)
+![Mafia I](screenshots/Mafia.gif)
+
 ## Requirements
 
 - Linux with a Vulkan driver (Mesa RADV, NVIDIA proprietary, …)
