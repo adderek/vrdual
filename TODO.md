@@ -12,6 +12,11 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 7. [Guided IPD calibration](docs/tasks/guided-calibration.md): small, independent
 8. [Borrowed from vorpX/FlatVR](docs/tasks/borrowed-features.md): HUD depth, cinema/curved screen, screen grab (done), HUD scale (needs HUD vs post-process distinction), edge peek; depth reprojection (Z3D) = M7 on branch `single-gpu`
 9. [Backlog: small defects and hardening](docs/tasks/backlog.md)
+10. Game profiles for sponsors (owner's decision 2026-10-20): curated per-game
+    settings (`kAppProfiles` today: built into the binary) become a sponsor
+    feature. Needs a separate data source the code loads (e.g. a profiles file
+    from a private repository, which GitHub Sponsors tiers can grant access to)
+    and a decision on the licence of the public code (no LICENSE file yet).
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
