@@ -56,6 +56,8 @@ map_x = KEY_E
 | `hud_depth` | `0` | meters, 0 = infinity | show `w == 1` draws (HUD) at this distance; live mode only; **live** |
 | `live` | `1` | `0` `1` | live params (shader reads a GPU buffer); falls back to baked automatically |
 | `export` | `1` | `0` `1` | publish frames to `/dev/shm` |
+| `cursor` | `1` | `0` `1` | export the X11 cursor (position over the game window + image) with the frames; `vrdual xr` draws it (games using the system / hardware cursor, which the swapchain never contains) |
+| `cursor_depth` | `auto` | `auto` `hud` | auto = at the depth of the scene under the pointer (both eye images matched there; kept on flat areas); hud = at `hud_depth` |
 | `lockstep` | `1` | `0` `1` | hold each frame until the other eye has it |
 | `lockstep_timeout_ms` | `250` | ms | give up waiting after this |
 | `left_gpu` | `pci:0000:06:00.0` | `pci:…`, index, name substring | GPU for the left eye (and the game in mirror mode) |
@@ -74,8 +76,10 @@ map_x = KEY_E
 | `screen_fov` | `60` | degrees | flat/curved screen width seen from the centre |
 | `screen_scale_x` | `1` | 0.1..10 | picture width scale (grab changes it; the release log prints the value) |
 | `screen_scale_y` | `1` | 0.1..10 | picture height scale |
+| `overlay_time` | `4` | seconds, 0 = off | notice panel 1.5 m in front of the eyes on events (headset connected, game started / stopped, screen recentred or moved, tune changes): the event, the game, screen and input mode, ipd, world_scale, hud_depth, hfov |
 
-Command line: `vrdual xr [--session S] [--lock world|head] [--no-start-wivrn] [--frames N] [--swap]`.
+Command line: `vrdual xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn] [--frames N] [--swap]`.
+`vrdual wivrn-restart` restarts the server alone (a running `vrdual xr` reconnects).
 Start it once, before or after the game; it keeps running across games and
 reloads each new game's settings.
 With WiVRn as the runtime it needs `wivrn-server`: when none runs it starts

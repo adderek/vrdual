@@ -7,7 +7,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -48,6 +50,15 @@ inline bool eye_map(Eye& e) {
     if (p == MAP_FAILED) return false;
     auto* h = (vrdual_shm_header*)p;
     if (h->magic != VRDUAL_MAGIC || vrdual_file_bytes(h->slot_bytes) > (uint64_t)st.st_size) { munmap(p, st.st_size); return false; }
+    if (h->version != VRDUAL_VERSION) {  // other header layout: an old layer copy (Steam) or an old reader
+        static uint32_t told = 0;
+        if (told != h->version)
+            fprintf(stderr, "[compositor] %s: frame file version %u, this build reads %u (game runs an old layer? vrdual steam-install)\n",
+                    e.name.c_str(), h->version, VRDUAL_VERSION);
+        told = h->version;
+        munmap(p, st.st_size);
+        return false;
+    }
     e.hdr = h;
     e.bytes = st.st_size;
     e.ino = st.st_ino;
@@ -95,6 +106,94 @@ inline bool pair_newest(Eye& L, Eye& R, uint64_t after, uint64_t* out) {
         }
     }
     return false;
+}
+
+// The game's X11 cursor (header v4), read under its seqlock. The image is
+// copied only when its serial or size changes.
+struct Cursor {
+    int32_t x = 0, y = 0;
+    uint32_t w = 0, h = 0, hot_x = 0, hot_y = 0, serial = 0;
+    std::vector<uint32_t> px;  // premultiplied ARGB32
+};
+inline bool cursor_read(const Eye& e, Cursor& c) {
+    const vrdual_shm_header* h = e.hdr;
+    if (!h) return false;
+    for (int t = 0; t < 3; ++t) {
+        uint32_t s0 = h->cursor_seq;
+        if (s0 & 1) continue;
+        __sync_synchronize();
+        Cursor n;
+        n.x = h->cursor_x; n.y = h->cursor_y;
+        n.w = h->cursor_w < VRDUAL_CURSOR_MAX ? h->cursor_w : VRDUAL_CURSOR_MAX;
+        n.h = h->cursor_h < VRDUAL_CURSOR_MAX ? h->cursor_h : VRDUAL_CURSOR_MAX;
+        n.hot_x = h->cursor_hot_x; n.hot_y = h->cursor_hot_y; n.serial = h->cursor_serial;
+        const uint32_t* src = (const uint32_t*)((const char*)h + VRDUAL_CURSOR_OFF);
+        if (n.serial == c.serial && n.w == c.w && n.h == c.h) n.px = c.px;
+        else n.px.assign(src, src + n.w * n.h);
+        __sync_synchronize();
+        if (h->cursor_seq != s0) continue;
+        c = std::move(n);
+        return c.w && c.h;
+    }
+    return false;
+}
+
+// Disparity of the scene under the cursor: the patch around (cx, cy) is found
+// in both eye images (4-byte pixels, any channel order) by block matching. A
+// point of the game's own view at x appears at x + D * kl in the left image
+// and x + D * kr in the right one (kl, kr: the eyes' shift factors, kl - kr = 1;
+// anchor center: +0.5 / -0.5). Returns false when the patch has no texture or
+// the match is ambiguous; *d = D in pixels (0 = infinity, > 0 nearer).
+inline bool scene_disparity(const uint8_t* L, const uint8_t* R, uint32_t w, uint32_t h, int cx, int cy, float kl, float kr, int dmax, int* d) {
+    const int P = 12;  // patch half size
+    if (cy - P < 0 || cy + P >= int(h)) return false;
+    auto lum = [](const uint8_t* p) { return int(p[0]) + 2 * int(p[1]) + int(p[2]); };
+    std::vector<std::pair<int, long>> sads;
+    long sum = 0;
+    for (int D = -4; D <= dmax; ++D) {
+        int xl = cx + int(lroundf(D * kl)), xr = cx + int(lroundf(D * kr));
+        if (xl - P < 0 || xr - P < 0 || xl + P >= int(w) || xr + P >= int(w)) continue;
+        long sad = 0;
+        for (int y = -P; y <= P; ++y) {
+            const uint8_t* a = L + (size_t(cy + y) * w + xl - P) * 4;
+            const uint8_t* b = R + (size_t(cy + y) * w + xr - P) * 4;
+            for (int x = 0; x <= 2 * P; ++x) sad += std::abs(lum(a + x * 4) - lum(b + x * 4));
+        }
+        sads.push_back({D, sad});
+        sum += sad;
+    }
+    if (sads.size() < 3) return false;
+    long best = -1, second = -1;
+    int bd = 0;
+    for (auto& s : sads) if (best < 0 || s.second < best) { best = s.second; bd = s.first; }
+    for (auto& s : sads) if (std::abs(s.first - bd) > 2 && (second < 0 || s.second < second)) second = s.second;
+    long mean = sum / long(sads.size());
+    // flat patch (everything matches) or a repeating texture (two minima)
+    if (mean < long(2 * P + 1) * (2 * P + 1) * 8 || best * 2 > mean || (second >= 0 && best * 10 > second * 8)) return false;
+    *d = bd;
+    return true;
+}
+
+// Blends the cursor over a w x h image (BGRA or RGBA bytes), hotspot at its
+// position shifted right by dx pixels.
+inline void cursor_draw(uint8_t* img, uint32_t w, uint32_t h, bool bgra, const Cursor& c, int dx) {
+    int x0 = c.x + dx - int(c.hot_x), y0 = c.y - int(c.hot_y);
+    for (uint32_t y = 0; y < c.h; ++y) {
+        int yy = y0 + int(y);
+        if (yy < 0 || yy >= int(h)) continue;
+        for (uint32_t x = 0; x < c.w; ++x) {
+            int xx = x0 + int(x);
+            if (xx < 0 || xx >= int(w)) continue;
+            uint32_t p = c.px[y * c.w + x], a = p >> 24;
+            if (!a) continue;
+            uint8_t* d = img + (size_t(yy) * w + xx) * 4;
+            uint32_t b = p & 255, g = (p >> 8) & 255, r = (p >> 16) & 255;  // premultiplied
+            uint32_t s0 = bgra ? b : r, s2 = bgra ? r : b;
+            d[0] = uint8_t(s0 + d[0] * (255 - a) / 255);
+            d[1] = uint8_t(g + d[1] * (255 - a) / 255);
+            d[2] = uint8_t(s2 + d[2] * (255 - a) / 255);
+        }
+    }
 }
 
 }  // namespace vrdual

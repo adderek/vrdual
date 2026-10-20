@@ -4,10 +4,12 @@
 // Exit 0 = all good. Never creates a mouse or keyboard (would move the desktop).
 #include <dirent.h>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <thread>
 
+#include "../common/vrdual_frames.hpp"
 #include "../common/vrdual_input.hpp"
 
 using namespace vrdual;
@@ -200,6 +202,27 @@ int main() {
         c.a = false; c.b = true;
         r = t.step(c, 0.1);
         expect((r & TUNE_RESET) && t.v[0] == 50 && t.v[1] == 0 && t.v[2] == 90, "tune: b -> start values");
+    }
+
+    {  // cursor depth: the scene's disparity under the pointer (block matching)
+        const uint32_t W = 320, H = 64;
+        std::vector<uint8_t> base(W * H), L(W * H * 4), R(W * H * 4);
+        uint32_t r = 12345;
+        for (auto& v : base) { r = r * 1103515245 + 12345; v = uint8_t(r >> 24); }
+        auto make = [&](std::vector<uint8_t>& img, int shift) {  // view x shown at x + shift
+            for (uint32_t y = 0; y < H; ++y)
+                for (uint32_t x = 0; x < W; ++x) {
+                    int sx = std::clamp(int(x) - shift, 0, int(W) - 1);
+                    uint8_t v = base[y * W + sx];
+                    for (int c = 0; c < 4; ++c) img[(y * W + x) * 4 + c] = v;
+                }
+        };
+        make(L, 7); make(R, -7);
+        int d = -99;
+        bool ok = scene_disparity(L.data(), R.data(), W, H, 160, 32, 0.5f, -0.5f, 40, &d);
+        expect(ok && std::abs(d - 14) <= 1, "cursor: textured scene, disparity 14 px found (13 = same shifts)");
+        std::fill(L.begin(), L.end(), 128); std::fill(R.begin(), R.end(), 128);
+        expect(!scene_disparity(L.data(), R.data(), W, H, 160, 32, 0.5f, -0.5f, 40, &d), "cursor: flat patch -> no depth");
     }
 
     // uinput round trip with a virtual pad

@@ -219,10 +219,35 @@ orbit, keeps the scale. Quad/cylinder sub-images are inset 1 px: without it a
 runtime sampling past the edge showed a seam at the cylinder's left/right
 edge.
 
+**Overlay** (`overlay_time` s, 0 = off): on events (headset connected,
+game started / stopped, screen recentred or moved, `input = tune` changes) a
+head-locked `XrCompositionLayerQuad` 1.5 m ahead shows the event, the game,
+screen and input mode, ipd, world_scale, hud_depth and hfov. Drawn on the CPU
+from a baked font (`common/vrdual_font.hpp`, `tools/gen_font.py`), uploaded
+only when the text changes; after it expires one transparent image is sent
+(WiVRn would keep showing the last one when no game layer follows).
+
+**Cursor** (`cursor`, `cursor_depth`): games using the system (hardware)
+cursor have none in their swapchain. The layer remembers the X11 window of
+each `vkCreateXlibSurfaceKHR` / `vkCreateXcbSurfaceKHR` surface and, per
+exported frame, asks the X server (its own xcb connection, libxcb +
+libxcb-xfixes via dlopen: xcb reports errors per request, an Xlib error
+handler would replace Wine's) for the pointer over that window, the window
+size and the XFixes cursor image; three pipelined requests, one round trip.
+Position (scaled to the swapchain), hotspot and image (≤ 64×64) go into the
+frame header (v4, own seqlock). Under gamescope this is gamescope's
+Xwayland. `vrdual-xr` blends the cursor into both eyes: `cursor_depth = auto`
+finds the scene's disparity under the pointer by block matching a 25×25
+patch between the two eye images (search along the eyes' shift factors,
+rejects flat and repeating patches, smoothed, kept while no match), so the
+cursor lies on the surface below it; `hud` puts it at `hud_depth`.
+
 WiVRn (`vrdual wivrn`): Flatpak `io.github.wivrn.wivrn`. Without avahi-daemon
 it must run with `--no-publish-service` (the wrapper adds it) and the headset
 connects by IP; port 9757 TCP+UDP. `xrCreateInstance` blocks until a headset
-is connected.
+is connected. `vrdual wivrn-restart` (or `vrdual xr --restart-wivrn`) stops
+the server, waits for its lock and starts it in the background; a running
+`vrdual xr` reconnects.
 
 ### Input and head motion (in `vrdual-xr`)
 

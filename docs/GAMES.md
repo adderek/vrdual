@@ -25,7 +25,7 @@ not confirmed or weak; **broken** = crash or no picture.
 | Tomb Raider I (224960) | DOSBox | broken | | flat 2D image, no stereo; exits in windowed mode / on alt+tab |
 | Portal (400) | native GL → Zink | broken | | crash on level load (NULL GL buffer map), also with Zink alone |
 | Shadow Warrior (233130) | native GL → Zink | retest | | SIGBUS in the 2026-10-19 frame export (reverted 55c0b81); window scaling issues |
-| Hospital Tycoon (11590) | Proton | retest | | SIGBUS, same cause as Shadow Warrior |
+| Hospital Tycoon (11590) | Proton | works | gamescope 1920x1080 (below) | crashes (NULL read in the game) on the portrait desktop; system cursor drawn by `vrdual xr` at the scene's depth (`cursor_depth = auto`), confirmed 2026-10-20 |
 
 Single GPU (RTX 5070 Ti, host "sharkoon", alternate-eye): Alice: Madness
 Returns, Zen Bound 2, Overlord (same Zink glow).

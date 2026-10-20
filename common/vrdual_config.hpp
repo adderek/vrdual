@@ -40,6 +40,8 @@ static const Key kKeys[] = {
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
     {"export", "1", "publish frames to /dev/shm for the compositor"},
+    {"cursor", "1", "export the X11 cursor (position + image) with the frames; vrdual-xr draws it"},
+    {"cursor_depth", "auto", "vrdual-xr cursor depth: auto (the scene under it) | hud (at hud_depth)"},
     {"lockstep", "1", "hold each frame until the other eye has it"},
     {"lockstep_timeout_ms", "250", "give up waiting for the other eye after this"},
     {"left_gpu", "pci:0000:06:00.0", "GPU for the left eye (pci:..., index or name)"},
@@ -63,6 +65,7 @@ static const Key kKeys[] = {
     {"screen_fov", "60", "flat/curved screen width as seen from the centre, degrees"},
     {"screen_scale_x", "1", "picture width scale (all screen modes; two-hand grab changes it live)"},
     {"screen_scale_y", "1", "picture height scale"},
+    {"overlay_time", "4", "vrdual-xr notice (event, current settings) shown this long, seconds (0 = off)"},
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };
 

@@ -42,5 +42,5 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Â· plan: [TODO.md](TODO.md) Â
 
 Per-game status, settings and tuning steps: [docs/GAMES.md](docs/GAMES.md).
 Works in the HMD: Zen Bound 2, Alice: Madness Returns, Portal 2, LEGO Harry
-Potter 1-4, Tomb Raider III, Psychonauts, Mirror's Edge. Broken: Portal
+Potter 1-4, Tomb Raider III, Psychonauts, Mirror's Edge, Hospital Tycoon. Broken: Portal
 (Zink bug), Tomb Raider I (DOSBox, 2D).

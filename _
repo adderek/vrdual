@@ -176,10 +176,13 @@ vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 
 # HMD output through OpenXR. Without an active runtime, uses WiVRn's Flatpak.
 # WiVRn as runtime needs wivrn-server: started in the background when none
-# runs (log: $XDG_RUNTIME_DIR/vrdual-wivrn.log); --no-start-wivrn refuses instead.
+# runs (log: $XDG_RUNTIME_DIR/vrdual-wivrn.log); --no-start-wivrn refuses instead,
+# --restart-wivrn stops a running one first (headset stuck on WiVRn's app list).
 vrdual_xr() {
-    local a start=1 args=()
-    for a in "$@"; do [[ $a == --no-start-wivrn ]] && start=0 || args+=("$a"); done
+    local a start=1 restart=0 args=()
+    for a in "$@"; do
+        case $a in --no-start-wivrn) start=0 ;; --restart-wivrn) restart=1 ;; *) args+=("$a") ;; esac
+    done
     set -- "${args[@]}"
     # follows the game between host /dev/shm and Flatpak Steam's, across games
     if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM"; fi
@@ -189,19 +192,40 @@ vrdual_xr() {
         w=$(flatpak info --show-location io.github.wivrn.wivrn 2>/dev/null) && export XR_RUNTIME_JSON=$w/files/share/openxr/1/openxr_wivrn.json
     fi
     local rt=${XR_RUNTIME_JSON:-$(readlink -f "${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json" 2>/dev/null)}
-    if [[ $rt == *wivrn* ]] && ! pgrep -x wivrn-server >/dev/null; then
+    if [[ $rt == *wivrn* ]] && ((restart)); then
+        vrdual_wivrn-restart || return 1
+    elif [[ $rt == *wivrn* ]] && ! pgrep -x wivrn-server >/dev/null; then
         if ((!start)); then
             say "error: wivrn-server is not running. Start it first: 'vrdual wivrn' in another terminal, or drop --no-start-wivrn"
             return 1
         fi
-        local log=${XDG_RUNTIME_DIR:-/tmp}/vrdual-wivrn.log i
-        say "starting wivrn-server in the background (log: $log)"
-        (vrdual_wivrn >"$log" 2>&1 &)  # its lock: a parallel start loses and exits, we wait for the winner
-        for i in $(seq 20); do pgrep -x wivrn-server >/dev/null && break; sleep 0.5; done
-        pgrep -x wivrn-server >/dev/null || { say "error: wivrn-server did not start, see $log"; tail -5 "$log" >&2; return 1; }
-        sleep 1  # IPC socket
+        wivrn_bg_start || return 1
     fi
     "$B/vrdual-xr" "$@"
+}
+
+wivrn_bg_start() {
+    local log=${XDG_RUNTIME_DIR:-/tmp}/vrdual-wivrn.log i
+    say "starting wivrn-server in the background (log: $log)"
+    (vrdual_wivrn >"$log" 2>&1 &)  # its lock: a parallel start loses and exits, we wait for the winner
+    for i in $(seq 20); do pgrep -x wivrn-server >/dev/null && break; sleep 0.5; done
+    pgrep -x wivrn-server >/dev/null || { say "error: wivrn-server did not start, see $log"; tail -5 "$log" >&2; return 1; }
+    sleep 1  # IPC socket
+}
+
+# Stops wivrn-server (ours or not) and starts it again in the background. A
+# running `vrdual xr` loses its session and reconnects by itself; the headset
+# app has to connect again (its "Connect" button, or autoconnect).
+vrdual_wivrn-restart() {
+    local i lock=${XDG_RUNTIME_DIR:-/tmp}/vrdual-wivrn.lock
+    if pgrep -x wivrn-server >/dev/null; then
+        say "stopping wivrn-server (pid $(pgrep -x wivrn-server | paste -sd' '))"
+        pkill -x wivrn-server
+        for i in $(seq 20); do pgrep -x wivrn-server >/dev/null || break; sleep 0.5; done
+        if pgrep -x wivrn-server >/dev/null; then say "still running after 10 s: SIGKILL"; pkill -KILL -x wivrn-server; sleep 1; fi
+        flock -w 10 "$lock" true || { say "error: $lock still held"; return 1; }  # the old start's flatpak exited
+    fi
+    wivrn_bg_start
 }
 
 # WiVRn streaming server (Flatpak) for the Quest. Runs in the foreground and
@@ -364,6 +388,10 @@ vrdual_selftest() {
         label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
             [ \"\$(magick '$tmp/g.png' -crop 50%x100% +repage -format '%#\n' info: | sort -u | wc -l)\" = 2 ]"
+        # the X11 cursor goes out with the frames (games with a hardware cursor)
+        label="cursor $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): X11 cursor image in the frame header"
+        check bash -c "grep -q 'cursor: X11 cursor exported' '$tmp/gl.log' && c=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --cursor /dev/shm/vrdual-$sess-0) &&
+            set -- \$c && [[ \$3 -gt 0 && \$4 -gt 0 ]] || { echo \"cursor: \$c\"; grep cursor '$tmp/gl.log'; false; }"
         kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     done
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like
@@ -394,6 +422,14 @@ vrdual_selftest() {
     printf '#!/bin/sh\nsleep 3\n' >"$tmp/nopgrep/flatpak" && chmod +x "$tmp/nopgrep/flatpak"  # fake server
     check bash -c "out=\$(PATH='$tmp/nopgrep':\$PATH XR_RUNTIME_JSON=/x/openxr_wivrn.json '$VRDUAL_ROOT/vrdual' xr --no-start-wivrn --session none 2>&1); rc=\$?
         [[ \$rc != 0 ]] && grep -q 'wivrn-server is not running' <<<\"\$out\" || { echo \"rc=\$rc \$out\"; false; }"
+    label="vrdual wivrn-restart: stops the server, waits for the lock, starts it again"
+    mkdir -p "$tmp/fakew" && printf '#!/bin/sh\n[ -f %s/fakew/running ] && echo 4242\n' "$tmp" >"$tmp/fakew/pgrep"
+    printf '#!/bin/sh\necho "$*" >>%s/fakew/killed; rm -f %s/fakew/running\n' "$tmp" "$tmp" >"$tmp/fakew/pkill"
+    printf '#!/bin/sh\ntouch %s/fakew/running; sleep 2\n' "$tmp" >"$tmp/fakew/flatpak"
+    chmod +x "$tmp/fakew/"*
+    check bash -c "export PATH='$tmp/fakew':\$PATH XDG_RUNTIME_DIR='$tmp/fakew'; '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1 & sleep 0.5
+        out=\$('$VRDUAL_ROOT/vrdual' wivrn-restart 2>&1); rc=\$?; wait
+        [[ \$rc == 0 ]] && grep -q stopping <<<\"\$out\" && grep -q 'starting wivrn-server' <<<\"\$out\" && grep -qx -- '-x wivrn-server' '$tmp/fakew/killed' || { echo \"rc=\$rc \$out\"; false; }"
     label="vrdual wivrn: a second start loses the lock"
     check bash -c "export PATH='$tmp/nopgrep':\$PATH XDG_RUNTIME_DIR='$tmp'; '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1 & p=\$!; sleep 0.5
         '$VRDUAL_ROOT/vrdual' wivrn 2>&1 | tee '$tmp/w2.log'; rc=\${PIPESTATUS[0]}; wait \$p
@@ -407,8 +443,11 @@ vrdual_selftest() {
             "$B/vrdual-cube" --scene calib --title "selftest xr" >"$tmp/xrsrc.log" 2>&1 &
         local src=$!
         label="openxr: focused session, 60 frames submitted"
-        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LEAN=on timeout 30 '$B/vrdual-xr' --session $sess --frames 60 >'$tmp/xr.log' 2>&1;
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LEAN=on VRDUAL_XR_OVERLAY_DUMP='$tmp/ov.pam' timeout 30 '$B/vrdual-xr' --session $sess --frames 60 >'$tmp/xr.log' 2>&1;
             grep -q 'session state 5' '$tmp/xr.log' && grep -q '60 frames submitted' '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
+        label="openxr: overlay notice (game started, settings) accepted by the runtime"
+        check bash -c "grep -q 'overlay: game started' '$tmp/xr.log' && ! grep -q 'overlay unavailable' '$tmp/xr.log' && head -c 200 '$tmp/ov.pam' | grep -q 'WIDTH 1024' &&
+            [[ \$(stat -c %s '$tmp/ov.pam') -gt 524288 ]] || { grep overlay '$tmp/xr.log'; false; }"
         label="openxr: controller actions, input profile from the frame file"
         check bash -c "grep -q 'controller actions attached' '$tmp/xr.log' && grep -q \"app 'vrdual-cube': input=off .*head_lean=on\" '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
         local sm  # cinema screen: quad / cylinder pair accepted by the runtime
@@ -438,6 +477,18 @@ vrdual_selftest() {
             for i in \$(seq 40); do grep -q 'session state 5' '$tmp/xr4.log' && break; sleep 0.5; done; kill -INT \$p
             for i in \$(seq 8); do kill -0 \$p 2>/dev/null || break; sleep 0.5; done
             if kill -0 \$p 2>/dev/null; then kill -9 \$p; cat '$tmp/xr4.log'; false; fi"
+        # X11 game (gltest via Zink): its cursor reaches vrdual-xr, which draws it
+        if [[ -x $B/vrdual-gltest ]]; then
+            rm -f /dev/shm/vrdual-$sess-*
+            env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+                VRDUAL_SESSION=$sess VRDUAL_EYE=both "$B/vrdual-gltest" --title "selftest xr cursor" >"$tmp/xrgl.log" 2>&1 &
+            local gp=$!
+            for i in $(seq 100); do grep -q exporting "$tmp/xrgl.log" && break; sleep 0.1; done
+            label="openxr: game's X11 cursor drawn"
+            check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr7.log' 2>&1;
+                grep -q 'cursor [0-9]*x[0-9]* from the game' '$tmp/xr7.log' && grep -q '30 frames submitted' '$tmp/xr7.log' || { grep '\\[xr\\]' '$tmp/xr7.log'; false; }"
+            kill $gp 2>/dev/null || true; wait $gp 2>/dev/null || true
+        fi
         # xr first, then two games one after another: it finds the session in the
         # second dir, reloads on the new process; the new game re-seeds the block
         rm -f /dev/shm/vrdual-$sess-*
@@ -476,10 +527,12 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
                                   the launch option:  .../vrdual/run %command%
   view [--session S]            SBS window of a running game (finds Flatpak Steam sessions)
-  xr [--session S] [--lock world|head] [--no-start-wivrn]
+  xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn]
                                 game in the HMD via OpenXR (WiVRn -> Quest); runs across
                                 games; starts wivrn-server in the background if none runs
-  wivrn                         start the WiVRn streaming server (Flatpak)
+  wivrn                         start the WiVRn streaming server (Flatpak, foreground)
+  wivrn-restart                 stop wivrn-server, start it in the background (a running
+                                  xr reconnects; reconnect the headset app)
   run [opts] -- APP ARGS...     any Vulkan app, one copy per eye
                                   --left-gpu G --right-gpu G (pci:BBBB:BB:DD.F | index | name)
                                   --session S --scale F --snapshot PNG --at N
@@ -493,7 +546,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart) "vrdual_$cmd" "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
     esac

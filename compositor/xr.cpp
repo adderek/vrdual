@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "../common/vrdual_ctl.hpp"
+#include "../common/vrdual_font.hpp"
 #include "../common/vrdual_frames.hpp"
 #include "../common/vrdual_input.hpp"
 
@@ -209,6 +210,123 @@ static void barrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImage
     b.image = img;
     b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     vkCmdPipelineBarrier(cb, ss, ds, 0, 0, nullptr, 0, nullptr, 1, &b);
+}
+
+// -------------------------------------------------------------- overlay ----
+// A short notice in front of the eyes (config overlay_time, seconds): what
+// happened (headset connected, game started, tune values, ...) and that the
+// picture is vrdual's stereo. Head-locked quad at 1.5 m, drawn on the CPU with
+// the baked font (common/vrdual_font.hpp), uploaded only when the text changes.
+struct Overlay {
+    static constexpr uint32_t kW = 1024, kH = 128;
+    static constexpr int kLines = 3;
+    EyeOut o;
+    bool rgba = true;                 // swapchain byte order
+    std::string text[kLines], shown;  // shown: text of the uploaded image, "" = transparent
+    double until = 0;                 // visible while now < until
+};
+
+// Lines -> pixels: dark translucent panel, line 0 in the accent colour; all
+// lines empty = fully transparent.
+static void overlay_draw(uint8_t* px, const std::string* text, bool rgba) {
+    const uint32_t W = Overlay::kW, H = Overlay::kH;
+    bool empty = true;
+    for (int l = 0; l < Overlay::kLines; ++l) empty &= text[l].empty();
+    const float bg[4] = {16, 18, 24, empty ? 0.f : 210}, fg[2][3] = {{120, 200, 255}, {235, 235, 235}};
+    std::vector<float> c(size_t(W) * H * 4);
+    for (uint32_t y = 0; y < H; ++y)
+        for (uint32_t x = 0; x < W; ++x) {
+            float* p = &c[(size_t(y) * W + x) * 4];
+            bool edge = !empty && (x < 2 || y < 2 || x >= W - 2 || y >= H - 2);
+            for (int k = 0; k < 3; ++k) p[k] = edge ? fg[0][k] : bg[k];
+            p[3] = edge ? 255 : bg[3];
+        }
+    for (int l = 0; l < Overlay::kLines; ++l)
+        for (size_t k = 0; k < text[l].size() && 16 + (k + 1) * vrdual::kFontW <= W - 16; ++k) {
+            unsigned ch = (unsigned char)text[l][k];
+            const char* gl = vrdual::kFont[ch < 32 || ch > 126 ? '?' - 32 : ch - 32];
+            uint32_t x0 = 16 + uint32_t(k) * vrdual::kFontW, y0 = 8 + uint32_t(l) * (vrdual::kFontH + 10);
+            for (int y = 0; y < vrdual::kFontH; ++y)
+                for (int x = 0; x < vrdual::kFontW; ++x) {
+                    char h = gl[y * vrdual::kFontW + x];
+                    float a = float(h <= '9' ? h - '0' : h - 'a' + 10) / 15;
+                    float* p = &c[(size_t(y0 + y) * W + x0 + x) * 4];
+                    for (int j = 0; j < 3; ++j) p[j] += (fg[l ? 1 : 0][j] - p[j]) * a;
+                    p[3] += (255 - p[3]) * a;
+                }
+        }
+    for (size_t i = 0; i < size_t(W) * H; ++i) {
+        const float* p = &c[i * 4];
+        px[i * 4 + 0] = uint8_t(p[rgba ? 0 : 2]);
+        px[i * 4 + 1] = uint8_t(p[1]);
+        px[i * 4 + 2] = uint8_t(p[rgba ? 2 : 0]);
+        px[i * 4 + 3] = uint8_t(p[3]);
+    }
+}
+
+static bool overlay_init(XrSession s, Gpu& g, const std::vector<int64_t>& formats, Overlay& ov) {
+    int64_t fmt = 0;
+    for (int64_t f : formats) if (f == VK_FORMAT_B8G8R8A8_SRGB) fmt = f;
+    for (int64_t f : formats) if (f == VK_FORMAT_R8G8B8A8_SRGB) fmt = f;
+    if (!fmt) return false;
+    ov.rgba = fmt == VK_FORMAT_R8G8B8A8_SRGB;
+    ov.o.w = Overlay::kW;
+    ov.o.h = Overlay::kH;
+    XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+    ci.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+    ci.format = fmt;
+    ci.sampleCount = 1;
+    ci.width = ov.o.w;
+    ci.height = ov.o.h;
+    ci.faceCount = ci.arraySize = ci.mipCount = 1;
+    if (XR_FAILED(xrCreateSwapchain(s, &ci, &ov.o.sc))) return false;
+    uint32_t ni = 0;
+    xrEnumerateSwapchainImages(ov.o.sc, 0, &ni, nullptr);
+    ov.o.images.assign(ni, {XR_TYPE_SWAPCHAIN_IMAGE_VULKAN2_KHR});
+    xrEnumerateSwapchainImages(ov.o.sc, ni, &ni, (XrSwapchainImageBaseHeader*)ov.o.images.data());
+    return make_staging(g, ov.o);
+}
+
+// Draws ov.text into the next swapchain image. VRDUAL_XR_OVERLAY_DUMP=file.pam
+// also writes it there (RGBA, for checks).
+static bool overlay_upload(Gpu& g, Overlay& ov) {
+    overlay_draw(ov.o.map, ov.text, ov.rgba);
+    if (const char* d = getenv("VRDUAL_XR_OVERLAY_DUMP")) {
+        if (FILE* f = fopen(d, "wb")) {
+            fprintf(f, "P7\nWIDTH %u\nHEIGHT %u\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n", ov.o.w, ov.o.h);
+            std::vector<uint8_t> t(ov.o.map, ov.o.map + size_t(ov.o.w) * ov.o.h * 4);
+            if (!ov.rgba) for (size_t i = 0; i < t.size(); i += 4) std::swap(t[i], t[i + 2]);
+            fwrite(t.data(), 1, t.size(), f);
+            fclose(f);
+        }
+    }
+    uint32_t idx;
+    XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, nullptr, XR_INFINITE_DURATION};
+    if (XR_FAILED(xrAcquireSwapchainImage(ov.o.sc, &ai, &idx)) || XR_FAILED(xrWaitSwapchainImage(ov.o.sc, &wi))) return false;
+    VkImage img = ov.o.images[idx].image;
+    vkResetCommandBuffer(g.cmd, 0);
+    VkCommandBufferBeginInfo cbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    vkBeginCommandBuffer(g.cmd, &cbi);
+    barrier(g.cmd, img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkBufferImageCopy reg{};
+    reg.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    reg.imageExtent = {ov.o.w, ov.o.h, 1};
+    vkCmdCopyBufferToImage(g.cmd, ov.o.buf, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
+    barrier(g.cmd, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_COLOR_ATTACHMENT_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    vkEndCommandBuffer(g.cmd);
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &g.cmd;
+    vkResetFences(g.dev, 1, &g.fence);
+    vkQueueSubmit(g.queue, 1, &si, g.fence);
+    vkWaitForFences(g.dev, 1, &g.fence, VK_TRUE, UINT64_MAX);
+    XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    if (XR_FAILED(xrReleaseSwapchainImage(ov.o.sc, &ri))) return false;
+    ov.o.released = true;
+    return true;
 }
 
 // ---------------------------------------------------------------- input ----
@@ -656,6 +774,19 @@ static int run(int argc, char** argv) {
     vrdual::Tuner tune;  // input = tune: sticks change world_scale / hud_depth / hfov
     bool tune_on = false, tune_seeded = false;
     float hfov_now = 90;
+    vrdual::Cursor cur;
+    uint32_t cur_logged = 0;
+    bool cur_auto = true, cur_d_ok = false;  // cursor_depth auto; disparity known
+    float cur_d = 0;                          // smoothed scene disparity under the cursor, px
+    Overlay ov;
+    float overlay_time = vrdual::load_settings({}).f("overlay_time");
+    std::string ov_event;  // line 0 after "vrdual stereo VR | "
+    auto notify = [&](const std::string& what, bool log = true) {
+        if (overlay_time <= 0) return;
+        ov_event = what;
+        ov.until = vrdual::now_s() + overlay_time;
+        if (log) fprintf(stderr, "[xr] overlay: %s\n", what.c_str());
+    };
     bool running = false;
     long submitted = 0, uploads = 0;
     uint64_t shown = 0;
@@ -695,6 +826,7 @@ static int run(int argc, char** argv) {
                     XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO, nullptr, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO};
                     XR_CHECK(xrBeginSession(s, &bi));
                     running = true;
+                    notify("headset connected");
                 } else if (sc->state == XR_SESSION_STATE_STOPPING) {
                     xrEndSession(s);
                     running = false;
@@ -718,10 +850,12 @@ static int run(int argc, char** argv) {
         XR_CHECK(xrWaitFrame(s, nullptr, &fs));
         XR_CHECK(xrBeginFrame(s, nullptr));
         std::vector<XrCompositionLayerBaseHeader*> layers;
+        bool game_layer = false;
         XrCompositionLayerProjection proj{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
         XrCompositionLayerProjectionView pv[2] = {{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
         XrCompositionLayerQuad quad[2] = {{XR_TYPE_COMPOSITION_LAYER_QUAD}, {XR_TYPE_COMPOSITION_LAYER_QUAD}};
         XrCompositionLayerCylinderKHR cyl[2] = {{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR}, {XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR}};
+        XrCompositionLayerQuad ovq{XR_TYPE_COMPOSITION_LAYER_QUAD};
         // No new game frame for 1 s (game exited or hung): show black. Submitting
         // no layer is not enough, WiVRn's headset keeps the last streamed image.
         bool fresh = vrdual::eye_map(L) && vrdual::eye_map(R) && std::max(vrdual::eye_age_s(L), vrdual::eye_age_s(R)) < 1.0;
@@ -743,6 +877,7 @@ static int run(int argc, char** argv) {
         }
         if (int(fresh) != live) {
             fprintf(stderr, fresh ? "[xr] game frames arriving\n" : "[xr] no game frames: showing nothing\n");
+            notify(fresh ? "game frames arriving" : live < 0 ? "headset connected, waiting for a game" : "no game frames (game exited or loading)", false);
             live = fresh;
         }
         if (fresh && (L.hdr->app != input_app || L.hdr->producer != producer)) {  // other game, or the same one restarted
@@ -765,6 +900,10 @@ static int run(int argc, char** argv) {
             }
             scr.sx = std::clamp(st.f("screen_scale_x"), 0.1f, 10.0f);
             scr.sy = std::clamp(st.f("screen_scale_y"), 0.1f, 10.0f);
+            overlay_time = st.f("overlay_time");
+            cur_auto = st.s("cursor_depth") != "hud";
+            cur_d_ok = false;
+            notify("game started");
             grab = vrdual::ScreenGrab{};
             grab.sx = scr.sx;
             grab.sy = scr.sy;
@@ -792,16 +931,23 @@ static int run(int argc, char** argv) {
             if (was && !grab.both)
                 fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, orbit %+.0f %+.0f deg, scale %.2f x %.2f (screen_scale_x/y to keep)\n",
                         grab.off[0], grab.off[1], grab.off[2], grab.orbit[0] * 57.29578f, grab.orbit[1] * 57.29578f, grab.sx, grab.sy);
+            if (was && !grab.both) {
+                char b[96];
+                snprintf(b, sizeof b, "screen moved, scale %.2f x %.2f", grab.sx, grab.sy);
+                notify(b, false);
+            }
             if (grab.recentres != grab_recentres) {  // menu held 1 s
                 grab_recentres = grab.recentres;
                 if (world) {
                     have_world = false;  // in front of the current gaze
                     grab.reset_pose();
                     fprintf(stderr, "[xr] screen recentred to the current gaze\n");
+                    notify("screen recentred", false);
                 } else {
                     frozen = !frozen;
                     have_world = false;
                     fprintf(stderr, frozen ? "[xr] screen frozen in place\n" : "[xr] screen follows the head\n");
+                    notify(frozen ? "screen frozen in place" : "screen follows the head", false);
                 }
             }
             if (tune_on && !ctl) ctl = vrdual::ctl_open(session, nullptr);
@@ -814,7 +960,11 @@ static int run(int argc, char** argv) {
                     vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = tune.v[0]; w.hud_depth = tune.v[1]; w.hfov = tune.v[2]; });
                 if (r & (vrdual::TUNE_SETTLED | vrdual::TUNE_RESET))
                     fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g\n", r & vrdual::TUNE_RESET ? " (undo)" : "", tune.v[0], tune.v[1], tune.v[2]);
-                if (r & vrdual::TUNE_SAVE) tune_save(k.app, tune.v);
+                if (r & vrdual::TUNE_CHANGED) notify(r & vrdual::TUNE_RESET ? "tune: back to the start values" : "tune", false);
+                if (r & vrdual::TUNE_SAVE) {
+                    tune_save(k.app, tune.v);
+                    notify(std::string("tune: saved into [app:") + k.app + "]", false);
+                }
             }
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && icfg.lean && c.head_ok) {
@@ -893,6 +1043,31 @@ static int run(int argc, char** argv) {
                     } else {
                         const uint8_t* p = src[e]->px.data();
                         for (size_t i = 0; i < n; i += 4) { o.map[i] = p[i + 2]; o.map[i + 1] = p[i + 1]; o.map[i + 2] = p[i]; o.map[i + 3] = p[i + 3]; }
+                    }
+                }
+                // the game's X11 cursor (not in its swapchain). cursor_depth auto: at the
+                // depth of the scene under it (disparity of the two eye images there,
+                // smoothed; kept while the patch has no texture); hud: at hud_depth
+                if (vrdual::cursor_read(*src[0], cur)) {
+                    if (cur.serial != cur_logged) fprintf(stderr, "[xr] cursor %ux%u from the game\n", cur.w, cur.h);
+                    cur_logged = cur.serial;
+                    vrdual_ctl k{};
+                    if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
+                    if (ctl) k = vrdual::ctl_read(ctl);
+                    uint32_t w = out[0].w, h = out[0].h;
+                    float aspect = float(w) / float(h), fl = ctl ? vrdual::eye_params(k, 0, aspect).v[0] : 0, fr = ctl ? vrdual::eye_params(k, 1, aspect).v[0] : 0;
+                    bool scene = cur_auto && fabsf(fl - fr) > 1e-9f;
+                    float kd[2] = {scene ? fl / (fl - fr) : 0, scene ? fr / (fl - fr) : 0};
+                    int d;
+                    if (scene && vrdual::scene_disparity(src[0]->px.data(), src[1]->px.data(), w, h, cur.x, cur.y, kd[0], kd[1], int(w / 8), &d)) {
+                        cur_d = cur_d_ok ? cur_d + 0.3f * (float(d) - cur_d) : float(d);
+                        cur_d_ok = true;
+                    }
+                    for (int e = 0; e < 2; ++e) {
+                        EyeOut& o = out[e];
+                        float hud = ctl ? vrdual::eye_params(k, e, aspect).v[7] * float(o.w) / 2 : 0;
+                        bool bgra = (src[e]->fmt == VRDUAL_FMT_BGRA8) != o.swizzle;
+                        vrdual::cursor_draw(o.map, o.w, o.h, bgra, cur, int(lroundf(scene && cur_d_ok ? cur_d * kd[e] : hud)));
                     }
                 }
             }
@@ -995,13 +1170,59 @@ static int run(int argc, char** argv) {
             }
         }
     end_frame:
+        game_layer = !layers.empty();
+        if (fs.shouldRender && (ov.until > vrdual::now_s() || !ov.shown.empty())) {
+            // visible: event + current settings; expired: one transparent image
+            // (WiVRn keeps showing the last frame when nothing else is sent)
+            for (auto& t : ov.text) t.clear();
+            if (ov.until > vrdual::now_s()) {
+                vrdual_ctl k{};
+                if (ctl) k = vrdual::ctl_read(ctl);
+                char b[3][160];
+                snprintf(b[0], sizeof b[0], "vrdual stereo VR  |  %s", ov_event.c_str());
+                snprintf(b[1], sizeof b[1], "game: %s   screen: %s   input: %s", fresh ? input_app.c_str() : "none", screen_name(scr.mode),
+                         fresh ? icfg.input.c_str() : "-");
+                if (ctl) {
+                    char ipd[40], hud[24];
+                    if (k.ipd_near > 0 && fabsf(k.ipd_near - k.ipd) > 1e-4f) snprintf(ipd, sizeof ipd, "ipd %.1f / %.1f mm", k.ipd * 1000, k.ipd_near * 1000);
+                    else snprintf(ipd, sizeof ipd, "ipd %.1f mm", k.ipd * 1000);
+                    if (k.hud_depth > 0) snprintf(hud, sizeof hud, "%.3g m", k.hud_depth);
+                    else snprintf(hud, sizeof hud, "infinity");
+                    snprintf(b[2], sizeof b[2], "%s   world_scale %.3g   hud %s   hfov %.3g", ipd, k.world_scale, hud, k.hfov);
+                } else {
+                    b[2][0] = 0;
+                }
+                for (int l = 0; l < 3; ++l) ov.text[l] = b[l];
+            }
+            std::string all = ov.text[0] + "\n" + ov.text[1] + "\n" + ov.text[2];
+            if (all == "\n\n") all.clear();
+            bool ok = ov.o.sc || overlay_init(s, g, formats, ov);
+            if (ok && (all != ov.shown || !ov.o.released)) {
+                ok = overlay_upload(g, ov);
+                ov.shown = all;
+            }
+            if (!ok) {
+                fprintf(stderr, "[xr] overlay unavailable (swapchain), disabled\n");
+                overlay_time = 0;
+                ov.until = 0;
+                ov.shown.clear();
+            } else {
+                ovq.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT | XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+                ovq.space = view_space;
+                ovq.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+                ovq.subImage = {ov.o.sc, {{0, 0}, {int32_t(ov.o.w), int32_t(ov.o.h)}}, 0};
+                ovq.pose = {{0, 0, 0, 1}, {0, -0.25f, -1.5f}};
+                ovq.size = {0.8f, 0.8f * Overlay::kH / Overlay::kW};
+                layers.push_back((XrCompositionLayerBaseHeader*)&ovq);
+            }
+        }
         XrFrameEndInfo fe{XR_TYPE_FRAME_END_INFO};
         fe.displayTime = fs.predictedDisplayTime;
         fe.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
         fe.layerCount = uint32_t(layers.size());
         fe.layers = layers.data();
         XR_CHECK(xrEndFrame(s, &fe));
-        if (!layers.empty()) ++submitted;
+        if (game_layer) ++submitted;  // overlay-only frames don't count
         double t = vrdual::now_s();
         if (t - t_report > 5) {
             fprintf(stderr, "[xr] %ld frames submitted, %ld new game frames (%.1f/s)\n", submitted, uploads, uploads / (t - t_report));
@@ -1013,6 +1234,7 @@ static int run(int argc, char** argv) {
     vkDeviceWaitIdle(g.dev);
     for (auto& o : out)
         if (o.sc) xrDestroySwapchain(o.sc);
+    if (ov.o.sc) xrDestroySwapchain(ov.o.sc);
     send_head(0, 0, 0);
     xrDestroySession(s);
     xrDestroyInstance(g_inst);

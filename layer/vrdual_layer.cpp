@@ -61,6 +61,7 @@ struct Config {
     bool mirror = false;       // VRDUAL_EYE=both: one process, twin device on mirror_gpu
     bool skip_w1 = true;
     bool export_frames = true;
+    bool cursor = true;        // X11 cursor position + image into the frame header
     bool lockstep = true;
     bool live = true;          // wanted; per device it also needs bufferDeviceAddress
     int lockstep_timeout_ms = 250;
@@ -111,6 +112,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
     c.export_frames = st.i("export") != 0;
+    c.cursor = st.i("cursor") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
     c.lockstep_timeout_ms = st.i("lockstep_timeout_ms");
     c.live = st.i("live") != 0;
@@ -148,6 +150,8 @@ struct InstanceData {
     PFN_vkGetPhysicalDeviceFeatures GetPhysicalDeviceFeatures;
     PFN_vkGetPhysicalDeviceFeatures2 GetPhysicalDeviceFeatures2;
     PFN_vkEnumerateDeviceExtensionProperties EnumerateDeviceExtensionProperties;
+    VkResult (VKAPI_PTR* CreateXlibSurfaceKHR)(VkInstance, const void*, const VkAllocationCallbacks*, VkSurfaceKHR*);
+    VkResult (VKAPI_PTR* CreateXcbSurfaceKHR)(VkInstance, const void*, const VkAllocationCallbacks*, VkSurfaceKHR*);
     uint32_t api_version = VK_API_VERSION_1_0;
     VkPhysicalDevice chosen = VK_NULL_HANDLE;
     bool chosen_resolved = false;
@@ -189,6 +193,7 @@ struct SwapchainData {
     VkExtent2D extent;
     std::vector<VkImage> images;
     uint32_t pixfmt = 0;  // 0 = not exportable
+    uint32_t xwin = 0;    // X11 window of the surface (cursor export), 0 = unknown
     Readback rb;
     // mirror: device B stand-ins for the swapchain images
     std::vector<VkImage> b_images;
@@ -284,6 +289,7 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     snprintf(hd->gpu_name, sizeof hd->gpu_name, "%.63s", gpu_name);
     snprintf(hd->pci, sizeof hd->pci, "%.31s", pci);
     snprintf(hd->app, sizeof hd->app, "%.63s", g_cfg.app.c_str());
+    hd->cursor_w = hd->cursor_h = hd->cursor_serial = 0;
     __sync_synchronize();
     hd->magic = VRDUAL_MAGIC;
     logf("exporting %ux%u fmt=%u to %s", w, h, pixfmt, shm_path(eye).c_str());
@@ -318,6 +324,8 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     s.seq++;
     hd->last_frame = frame + 1;
 }
+
+#include "vrdual_cursor.hpp"
 
 // All swapchains of the process share one frame file per eye (wined3d keeps
 // several: helper windows, an old fullscreen one, ...). The file belongs to the
@@ -437,6 +445,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateInstance(const VkInstanceCreateI
     IFN(DestroyInstance); IFN(EnumeratePhysicalDevices); IFN(EnumeratePhysicalDeviceGroups);
     IFN(GetPhysicalDeviceProperties); IFN(GetPhysicalDeviceProperties2); IFN(GetPhysicalDeviceMemoryProperties);
     IFN(GetPhysicalDeviceFeatures); IFN(GetPhysicalDeviceFeatures2); IFN(EnumerateDeviceExtensionProperties);
+    id->CreateXlibSurfaceKHR = (decltype(id->CreateXlibSurfaceKHR))gipa(*out, "vkCreateXlibSurfaceKHR");
+    id->CreateXcbSurfaceKHR = (decltype(id->CreateXcbSurfaceKHR))gipa(*out, "vkCreateXcbSurfaceKHR");
 #undef IFN
     if (!id->GetPhysicalDeviceProperties2) id->GetPhysicalDeviceProperties2 = (PFN_vkGetPhysicalDeviceProperties2)gipa(*out, "vkGetPhysicalDeviceProperties2KHR");
     if (!id->GetPhysicalDeviceFeatures2) id->GetPhysicalDeviceFeatures2 = (PFN_vkGetPhysicalDeviceFeatures2)gipa(*out, "vkGetPhysicalDeviceFeatures2KHR");
@@ -944,6 +954,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateSwapchainKHR(VkDevice dev, const
     s.format = ci->imageFormat;
     s.extent = ci->imageExtent;
     s.pixfmt = exp ? pixfmt_of(ci->imageFormat) : 0;
+    s.xwin = cursor::window_of(ci->surface);
     uint32_t n = 0;
     dd->d.GetSwapchainImagesKHR(dev, *out, &n, nullptr);
     s.images.resize(n);
@@ -1090,6 +1101,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         return dd->d.QueuePresentKHR(queue, pi);
     }
     dd->frame++;
+    if (g_cfg.cursor) {
+        vrdual_shm_header* h[2] = {g_out[0].hdr, g_out[1].hdr};
+        cursor::update(s->xwin, s->extent, h, 2);
+    }
     if (dd->aer) {
         // Pair F = frames 2F (left) and 2F+1 (right). The copy waited for this
         // frame's rendering, so the next frame's draws read the other eye's params.
@@ -1111,12 +1126,29 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
 
 #include "vrdual_mirror.hpp"
 
+// X11 surfaces: remember the window, the cursor export queries the pointer over it.
+static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateXlibSurfaceKHR(VkInstance inst, const void* ci, const VkAllocationCallbacks* alloc, VkSurfaceKHR* out) {
+    InstanceData* id = inst_of(key(inst));
+    if (!id->CreateXlibSurfaceKHR) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkResult r = id->CreateXlibSurfaceKHR(inst, ci, alloc, out);
+    if (r == VK_SUCCESS) cursor::remember(*out, uint32_t(((const cursor::XlibSurfaceCI*)ci)->window));
+    return r;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateXcbSurfaceKHR(VkInstance inst, const void* ci, const VkAllocationCallbacks* alloc, VkSurfaceKHR* out) {
+    InstanceData* id = inst_of(key(inst));
+    if (!id->CreateXcbSurfaceKHR) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    VkResult r = id->CreateXcbSurfaceKHR(inst, ci, alloc, out);
+    if (r == VK_SUCCESS) cursor::remember(*out, ((const cursor::XcbSurfaceCI*)ci)->window);
+    return r;
+}
+
 // ---------------------------------------------------------- proc addrs -----
 static PFN_vkVoidFunction intercept_instance(const char* name) {
 #define I(n) if (!strcmp(name, "vk" #n)) return (PFN_vkVoidFunction)vrd_##n
     I(CreateInstance); I(DestroyInstance); I(EnumeratePhysicalDevices); I(EnumeratePhysicalDeviceGroups);
     I(CreateDevice); I(EnumerateDeviceExtensionProperties); I(GetPhysicalDeviceProperties);
     I(GetPhysicalDeviceProperties2); I(GetPhysicalDeviceFeatures); I(GetPhysicalDeviceFeatures2);
+    I(CreateXlibSurfaceKHR); I(CreateXcbSurfaceKHR);
 #undef I
     if (!strcmp(name, "vkEnumeratePhysicalDeviceGroupsKHR")) return (PFN_vkVoidFunction)vrd_EnumeratePhysicalDeviceGroups;
     if (!strcmp(name, "vkGetPhysicalDeviceProperties2KHR")) return (PFN_vkVoidFunction)vrd_GetPhysicalDeviceProperties2;

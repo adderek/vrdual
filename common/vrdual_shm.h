@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #define VRDUAL_MAGIC 0x56524455u /* "VRDU" */
-#define VRDUAL_VERSION 3u
+#define VRDUAL_VERSION 4u
 #define VRDUAL_SLOTS 4u
 
 enum vrdual_pixfmt {
@@ -36,9 +36,21 @@ struct vrdual_shm_header {
     char gpu_name[64];
     char pci[32];
     char app[64];                   // v2: producing app (profile key: VkApplicationInfo name, else exe)
+    // v4: the X11 cursor over the game window. The swapchain never contains it
+    // (hardware cursor), so games relying on it showed none in the HMD. Written
+    // by the layer with each frame; seqlock cursor_seq (odd while writing).
+    volatile uint32_t cursor_seq;
+    uint32_t cursor_serial;          // image identity (XFixes cursor serial)
+    int32_t cursor_x, cursor_y;      // pointer position, swapchain pixels (may lie outside)
+    uint32_t cursor_w, cursor_h;     // image size, 0 = no cursor known
+    uint32_t cursor_hot_x, cursor_hot_y;
 };
 
-#define VRDUAL_HDR_BYTES 4096u
+// Cursor image: premultiplied ARGB32 (B, G, R, A bytes), cursor_w * cursor_h
+// pixels at VRDUAL_CURSOR_OFF, cropped to VRDUAL_CURSOR_MAX square.
+#define VRDUAL_CURSOR_MAX 64u
+#define VRDUAL_CURSOR_OFF 4096u
+#define VRDUAL_HDR_BYTES (VRDUAL_CURSOR_OFF + VRDUAL_CURSOR_MAX * VRDUAL_CURSOR_MAX * 4u)
 
 static inline uint64_t vrdual_file_bytes(uint64_t slot_bytes) {
     return VRDUAL_HDR_BYTES + slot_bytes * VRDUAL_SLOTS;
