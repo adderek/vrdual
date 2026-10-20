@@ -6,7 +6,7 @@ Every setting can be given four ways; later ones win:
 
 Built-in game profiles (`kAppProfiles` in `common/vrdual_config.hpp`): values
 found for specific games, e.g. Psychonauts `skip_w1 = 0`, Mirror's Edge
-`world_scale = 50`. `./vrdual-ctl show APP` marks them `built-in`.
+`world_scale = 50`, `hud_depth = 1`. `./vrdual-ctl show APP` marks them `built-in`.
 
 - The environment variable is the key in upper case: `screen` → `VRDUAL_SCREEN`,
   `hud_depth` → `VRDUAL_HUD_DEPTH`, `map_a` → `VRDUAL_MAP_A`.

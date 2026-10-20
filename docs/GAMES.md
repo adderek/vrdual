@@ -3,7 +3,7 @@
 Status per game, dual GPU (2x RX 7900 XTX, host "fractal") unless noted.
 Launch option for all: `/home/adderek/vrdual/run %command%` (from
 `vrdual steam-install`); `vrdual xr` runs once for all games. Last update
-2026-10-19.
+2026-10-20.
 
 Status: **works** = stereo in the HMD confirmed; **runs** = renders, stereo
 not confirmed or weak; **broken** = crash or no picture.
@@ -16,7 +16,7 @@ not confirmed or weak; **broken** = crash or no picture.
 | LEGO Harry Potter 1-4 (21130) | Proton | works | turn off video effects | a "ghost" with effects on (likely DoF) |
 | Tomb Raider III (225320) | Proton | works | windowed / 1920x1080 | |
 | Psychonauts (3830) | native GL → Zink | works | `skip_w1 = 0` (built-in) | draws the scene with `w == 1`; one SIGSEGV seen, not analysed |
-| Mirror's Edge (17410) | Proton, D3D9 (UE3) | works | `world_scale = 50` (built-in) | crosshair doubled: set `hud_depth` (try 3–10) |
+| Mirror's Edge (17410) | Proton, D3D9 (UE3) | works | `world_scale = 50`, `hud_depth = 1` (built-in) | crosshair single at `hud_depth` 1 (values below 1 not tried) |
 | Firewatch (383870) | Unity | runs | landscape resolution | the portrait desktop cuts the menu |
 | Skyrim (72850) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | weak depth at scale 1; long loading |
 | Fallout: New Vegas (22380) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | HUD shown; `hud_depth` not confirmed yet |

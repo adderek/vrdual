@@ -76,6 +76,7 @@ struct AppValue {
 static const AppValue kAppProfiles[] = {
     {"psychonauts", "skip_w1", "0"},          // draws the scene with w == 1: unshifted = no stereo
     {"mirrorsedge.exe", "world_scale", "50"},
+    {"mirrorsedge.exe", "hud_depth", "1"},    // crosshair fuses at 1 m (user, 2026-10-20)
     {"tesv.exe", "world_scale", "70"},        // Skyrim: 1 unit = 1.43 cm (not tuned yet)
     {"falloutnv.exe", "world_scale", "70"},   // same engine family (not tuned yet)
 };
