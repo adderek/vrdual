@@ -16,7 +16,8 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     settings (`kAppProfiles` today: built into the binary) become a sponsor
     feature. Needs a separate data source the code loads (e.g. a profiles file
     from a private repository, which GitHub Sponsors tiers can grant access to)
-    and a decision on the licence of the public code (no LICENSE file yet).
+    (the public code is Apache-2.0 since 2026-10-20: anything in it can be
+    copied, so gated profiles must live outside this repository).
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

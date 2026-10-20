@@ -68,4 +68,10 @@ Tycoon. Broken: Portal (Zink bug), Tomb Raider I (DOSBox, 2D).
 vrdual is developed in spare time. If it lets you play something in VR,
 consider [sponsoring on GitHub](https://github.com/sponsors/adderek).
 
+## License
+
+[Apache License 2.0](LICENSE). Use, modify and redistribute freely, also
+commercially; copies and derivative works must keep the copyright and the
+[NOTICE](NOTICE) file, which names this project as the origin.
+
 More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · plan: [TODO.md](TODO.md) · for AI agents: [AGENTS.md](AGENTS.md)
