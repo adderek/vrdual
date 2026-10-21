@@ -1065,130 +1065,133 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 
 ## Epic games
 
-| Alan wake's american nightmare | | |
-| Alien: isolation | | |
-| Assasin's creed: Odyssey | | |
-| Assasin's creed: origins | | |
-| Assasin's creed: syndicate | | |
-| Bioshock 2 remastered | | |
-| Bioshock infinite | | |
-| Borderlands 2 | | |
-| Borderlands 3 | | |
-| Borderlands the pre-sequel | | |
-| Cities skylines | | |
-| Control | | |
-| Cyberpunk 2077 | | |
-| Dead by daylight | | |
-| Dead island 2 | | |
-| Death stranding | | |
-| Destiny 2 | | |
-| Dishonored definitive edition | | |
-| Dishonored death of the outsiders | | |
-| Dying light | | |
-| Elite dangerous | | |
-| Fallout 3: GOTY | | |
-| Fallout | | |
-| Fallout: New vegas | | |
-| Galactic civilizations III | | |
-| Gamedec definitive edition | | |
-| Ghost busters remastered | | |
-| GTA V | | |
-| Heavy rain | | |
-| Hell let loose | | |
-| Homeworlds: dessert of Kharak | | |
-| Jennifer wilde unlikely revolutionaries | | |
-| Jurrasic world evolution | | |
-| Just cause 4 | | |
-| LEGO Builders journey | | |
-| Metro 2033 redux | | |
-| Metro last light redux | | |
-| Never alone (Kisima Ingitchuna) | | |
-| Offworld trading company | | |
-| Orwell: keeping an eye on you | | |
-| payday 2 | | |
-| prey | | |
-| Rage 2 | | |
-| Railway empire | | |
-| Red dead redemption II | | |
-| Rise of the tomb raider | | |
-| Rollercoaster tycoon 3 complete edition | | |
-| Saints row IV remastered | | |
-| Shadow of the tomb raider definitive edition | | |
-| Shadow tactics Blades of the shogun | | |
-| Shadowrun returns | | |
-| Star wars squadrons | | |
-| Star wars Battlefront II celebration edition | | |
-| Surviving mars | | |
-| Calisto protocol | | |
-| The elder scrolls online | | |
-| The evil within | | |
-| The evil within 2 | | |
-| The talos principle | | |
-| Tomb raider GOTY | | |
-| Total war: Warhammer | | |
-| Vampyr | | |
-| Watch dogs | | |
-| Watch dogs 2 | | |
-| Wolfenstein: the new order | | |
-| XCOM 2 | | |
+| game | VR | platform | vrdual |
+|---|---|---|---|
+| Alan wake's american nightmare |  |  |  |
+| Alien: isolation | MotherVR (community mod enabling the game's unfinished VR mode) | Win |  |
+| Assasin's creed: Odyssey |  |  |  |
+| Assasin's creed: origins |  |  |  |
+| Assasin's creed: syndicate |  |  |  |
+| Bioshock 2 remastered |  |  |  |
+| Bioshock infinite |  |  |  |
+| Borderlands 2 | separate VR edition (owned on Steam: Borderlands 2 VR) | Win |  |
+| Borderlands 3 | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Borderlands the pre-sequel |  |  |  |
+| Cities skylines |  |  |  |
+| Control |  |  |  |
+| Cyberpunk 2077 | R.E.A.L. VR (Luke Ross; withdrawn after a DMCA, status unclear) | Win |  |
+| Dead by daylight | anti-cheat (online): not for vrdual |  |  |
+| Dead island 2 | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Death stranding |  |  |  |
+| Destiny 2 | anti-cheat (online): not for vrdual |  |  |
+| Dishonored definitive edition |  |  |  |
+| Dishonored death of the outsiders |  |  |  |
+| Dying light |  |  |  |
+| Elite dangerous | native VR mode | Win |  |
+| Fallout 3: GOTY |  |  |  |
+| Fallout |  |  |  |
+| Fallout: New vegas |  |  |  |
+| Galactic civilizations III |  |  |  |
+| Gamedec definitive edition |  |  |  |
+| Ghost busters remastered |  |  |  |
+| GTA V | R.E.A.L. VR (Luke Ross); story mode only (GTA Online has anti-cheat) | Win |  |
+| Heavy rain |  |  |  |
+| Hell let loose | anti-cheat (online): not for vrdual |  |  |
+| Homeworlds: dessert of Kharak |  |  |  |
+| Jennifer wilde unlikely revolutionaries |  |  |  |
+| Jurrasic world evolution |  |  |  |
+| Just cause 4 |  |  |  |
+| LEGO Builders journey | vorpX reported in the classic (non-ray-traced) mode only | Win |  |
+| Metro 2033 redux |  |  |  |
+| Metro last light redux |  |  |  |
+| Never alone (Kisima Ingitchuna) |  |  |  |
+| Offworld trading company |  |  |  |
+| Orwell: keeping an eye on you |  |  |  |
+| payday 2 |  |  |  |
+| prey |  |  |  |
+| Rage 2 |  |  |  |
+| Railway empire |  |  |  |
+| Red dead redemption II | R.E.A.L. VR (Luke Ross) | Win |  |
+| Rise of the tomb raider | VR only in the Blood Ties DLC (SteamVR); main game: none | Win |  |
+| Rollercoaster tycoon 3 complete edition |  |  |  |
+| Saints row IV remastered |  |  |  |
+| Shadow of the tomb raider definitive edition |  |  |  |
+| Shadow tactics Blades of the shogun |  |  |  |
+| Shadowrun returns |  |  |  |
+| Star wars squadrons | native VR mode | Win |  |
+| Star wars Battlefront II celebration edition |  |  |  |
+| Surviving mars |  |  |  |
+| Calisto protocol | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| The elder scrolls online | anti-cheat (online): not for vrdual |  |  |
+| The evil within |  |  |  |
+| The evil within 2 |  |  |  |
+| The talos principle | separate VR edition exists (The Talos Principle VR, not owned) | Win |  |
+| Tomb raider GOTY |  |  |  |
+| Total war: Warhammer |  |  |  |
+| Vampyr | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Watch dogs |  |  |  |
+| Watch dogs 2 |  |  |  |
+| Wolfenstein: the new order |  |  |  |
+| XCOM 2 |  |  |  |
 
 | game | VR | platform | vrdual |
 |---|---|---|---|
-| Red Dead Redemption 2 | R.E.A.L. VR (Luke Ross) | Win |  |
+| Red Dead Redemption 2 |  |  |  |
 
 ## Origin / EA
 
 | game | VR | platform | vrdual |
-| A way out | | |
-| Alice Madness Returns | | |
-| Battlefield 1942 | | |
-| Battlefield 3 | | |
-| Bejeweled 3 | | |
-| Burnout paradise | | |
-| Command & conquer: red alert | | |
-| Red alert 2: Yuri's revenge | | |
-| Crysis 2 | | |
-| Crysis 3 | | |
-| Dead in bermuda | | |
-| Dead space 3 | | |
-| Dead space | | |
-| Dragon age: Inquisition | | |
-| Dragon age: Origins | | |
-| Dungeon keeper | | |
-| FC 25 | | |
-| FC 24 | | |
-| FIFA 23 | | |
-| FIFA 10 | | |
-| FIFA 13 | | |
-| FIFA 17 | | |
-| FIFA 18 | | |
-| FIFA 21 | | |
-| FIFA 22 | | |
-| GRID Legends | | |
-| Jade empire: Special edition | | |
-| Mass effect 2 | | |
-| Mass effect legendary edition | | |
-| Medal of honor | | |
-| Medal of honor pacific assault | | |
-| Mirror's edge | | |
-| NFS Heat | | |
-| NFS Most wanted | | |
-| Peggle | | |
-| Plants vs zombies | | |
-| Plants vs zombies garden warfare | | |
-| Populous | | |
-| Sim city 2000 | | |
-| Star wars Jedi fallen order | | |
-| Star wars Jedi survivor | | |
-| Star wars battlefront | | |
-| Star wars battlefront II | | |
-| Star wars squadrons | | |
-| Syberia II | | |
-| The sims 2 ultimate collection | | |
-| The sims 4 | | |
-| Theme hospital | | |
-| Ultima VIII | | |
-| Unravel | | |
-| Unravel two | | |
-| Wing commander III: Heart of the tiger | | |
-| Zumba's revenge | | |
+|---|---|---|---|
+| A way out | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Alice Madness Returns |  |  | works |
+| Battlefield 1942 |  |  |  |
+| Battlefield 3 | anti-cheat (online): not for vrdual |  |  |
+| Bejeweled 3 |  |  |  |
+| Burnout paradise |  |  |  |
+| Command & conquer: red alert |  |  |  |
+| Red alert 2: Yuri's revenge |  |  |  |
+| Crysis 2 | built-in stereoscopic 3D mode | Win |  |
+| Crysis 3 | built-in stereoscopic 3D mode | Win |  |
+| Dead in bermuda |  |  |  |
+| Dead space 3 |  |  |  |
+| Dead space |  |  |  |
+| Dragon age: Inquisition |  |  |  |
+| Dragon age: Origins |  |  |  |
+| Dungeon keeper |  |  |  |
+| FC 25 | anti-cheat (online): not for vrdual |  |  |
+| FC 24 | anti-cheat (online): not for vrdual |  |  |
+| FIFA 23 |  |  |  |
+| FIFA 10 |  |  |  |
+| FIFA 13 |  |  |  |
+| FIFA 17 |  |  |  |
+| FIFA 18 |  |  |  |
+| FIFA 21 |  |  |  |
+| FIFA 22 |  |  |  |
+| GRID Legends |  |  |  |
+| Jade empire: Special edition |  |  |  |
+| Mass effect 2 |  |  |  |
+| Mass effect legendary edition |  |  |  |
+| Medal of honor |  |  |  |
+| Medal of honor pacific assault |  |  |  |
+| Mirror's edge |  |  | works |
+| NFS Heat |  |  |  |
+| NFS Most wanted |  |  |  |
+| Peggle |  |  |  |
+| Plants vs zombies |  |  |  |
+| Plants vs zombies garden warfare |  |  |  |
+| Populous |  |  |  |
+| Sim city 2000 |  |  |  |
+| Star wars Jedi fallen order | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Star wars Jedi survivor | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Star wars battlefront |  |  |  |
+| Star wars battlefront II |  |  |  |
+| Star wars squadrons | native VR mode | Win |  |
+| Syberia II |  |  |  |
+| The sims 2 ultimate collection |  |  |  |
+| The sims 4 |  |  |  |
+| Theme hospital |  |  |  |
+| Ultima VIII |  |  |  |
+| Unravel | generic DX11 stereo mod (Geo-11) reported to work, gamepad | Win |  |
+| Unravel two |  |  |  |
+| Wing commander III: Heart of the tiger |  |  |  |
+| Zumba's revenge |  |  |  |
