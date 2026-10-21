@@ -89,6 +89,10 @@ consider supporting it: [GitHub Sponsors](https://github.com/sponsors/adderek),
 
 When reporting a problem, include the output of `./vrdual version` (it also
 shows whether Steam still loads an older layer) and the game's log.
+`./vrdual report --open` opens a game report prefilled with the last game you
+played and your system; `./vrdual request "Game" --open` asks for a game in
+[Discussions](https://github.com/adderek/vrdual/discussions/categories/game-requests).
+vrdual sends nothing itself: you see the form and submit it.
 
 Hardware helps too: the only headset here is a Meta Quest 3S, so other
 headsets (and their OpenXR runtimes) are untested. If you can lend or

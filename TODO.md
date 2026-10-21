@@ -27,10 +27,10 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     store/build column in `docs/GAMES.md`.
 12. `vrdual thanks` (PLAN §L): open-source projects in the user's stack that
     accept sponsors; engine name into the frame header.
-13. User feedback without a server (PLAN §M): `vrdual request` (Discussions
-    prefill), `vrdual report` + local `games.tsv` log, issue form
-    `game-report.yml`, "no profile" prompt. Owner enables the Discussions
-    categories in the repo settings.
+13. User feedback without a server (PLAN §M): done 2026-10-21 (play log,
+    `vrdual games | request | report`, no-profile hint). Left: store id and
+    engine in the report (with item 12); check on GitHub that the prefilled
+    Discussions body and the issue form fields arrive.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

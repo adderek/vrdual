@@ -22,7 +22,19 @@ frame index. Near cube shifts ~25 px between eyes, far cubes ~0, the HUD bar
 ./vrdual wivrn                                 # WiVRn streaming server (Flatpak, user install)
 ./vrdual xr [--session S] [--lock world|head]  # game in the HMD via OpenXR
 ./vrdual version                               # build identity of tools, build/ layers, installed copies
+./vrdual games                                 # local play log (vrdual-xr writes it)
+./vrdual request [GAME] [--open]               # ask for a game: GitHub Discussions URLs
+./vrdual report [GAME] [--open]                # prefilled game-report issue form URL
 ```
+
+Feedback (PLAN §M): `vrdual-xr` appends one line per game process to
+`$XDG_STATE_HOME/vrdual/games.tsv` (default `~/.local/state/vrdual/`): start,
+seconds with frames, app, GPU, profile (`config` / `built-in` / `none`). It
+stays local. `request` and `report` only print prefilled GitHub URLs (GAME
+defaults to the last logged game; field ids of `report` match
+`.github/ISSUE_TEMPLATE/game-report.yml`); the user submits them, nothing is
+sent by vrdual. A game without a profile gets a hint on stderr and in the
+headset notice.
 
 Build identity: every binary is compiled with `VRDUAL_BUILD_INFO`
 (`tools/build_info.sh`, `common/vrdual_version.h`), e.g. `vrdual

@@ -306,6 +306,91 @@ vrdual_wivrn() {
     return $rc
 }
 
+# ------------------------------------------------- feedback (docs/PLAN.md §M) --
+# Nothing here sends anything: the commands print prefilled GitHub URLs, the
+# user reads the form and submits it (or not). --open opens them in a browser.
+VRDUAL_REPO_URL=${VRDUAL_REPO_URL:-https://github.com/adderek/vrdual}
+
+# Play log written by vrdual-xr: start, seconds, app, gpu, profile (tab separated).
+games_log() { echo "${XDG_STATE_HOME:-$HOME/.local/state}/vrdual/games.tsv"; }
+vrdual_games() {
+    local f; f=$(games_log)
+    [[ -f $f ]] || { say "no games logged yet ($f; vrdual xr writes it)"; return 0; }
+    cat "$f"
+}
+urlenc() { python3 -I -c 'import sys, urllib.parse as u; print(u.quote(sys.argv[1], safe=""))' "$1"; }
+open_urls() { local u; for u; do xdg-open "$u" >/dev/null 2>&1 || say "open: $u"; done; }
+
+# Facts about this machine for a request or report (one "Key: value" per line).
+system_facts() {
+    local mesa os
+    mesa=$(pacman -Q mesa 2>/dev/null | cut -d' ' -f2 || true)
+    [[ -n $mesa ]] || mesa=$(dpkg-query -W -f='${Version}' mesa-vulkan-drivers 2>/dev/null || rpm -q --qf '%{VERSION}' mesa-vulkan-drivers 2>/dev/null || true)
+    mesa=${mesa#*:}  # package epoch
+    os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
+    local gpu=${1:-$(lspci 2>/dev/null | grep -E 'VGA|3D|Display' | cut -d: -f3- | sed 's/^ //' | sort | uniq -c | sed -E 's/^ *([0-9]+) /\1x /' | paste -sd';' || true)}
+    printf 'GPU: %s\nMesa: %s\nOS: %s\nvrdual: %s\n' "${gpu:-?}" "${mesa:-?}" "${os:-?}" \
+        "$("$B/vrdual-ctl" --version 2>/dev/null || "$VRDUAL_ROOT/tools/build_info.sh")"
+}
+
+# feedback_args [GAME] [--open]: sets game (default: last one in the play log),
+# open, and gpu/secs/prof from the log lines of that game.
+feedback_args() {
+    local a f; game="" open=0
+    for a; do case $a in --open) open=1 ;; *) game=$a ;; esac; done
+    f=$(games_log)
+    [[ -n $game || ! -f $f ]] || game=$(tail -n1 "$f" | cut -f3)
+    [[ -n $game ]] || { say "name the game (no play log yet: $f)"; return 2; }
+    gpu="" secs=0 prof=""
+    [[ -f $f ]] && IFS=$'\t' read -r gpu secs prof < <(awk -F'\t' -v g="$game" '$3 == g {gpu = $4; s += $2; p = $5} END {print gpu "\t" s+0 "\t" p}' "$f")
+    return 0
+}
+
+# vrdual_request [GAME] [--open]: ask for a game in Discussions. stdout:
+# "search<TAB>URL" (upvote an existing request) and "new<TAB>URL" (prefilled).
+vrdual_request() {
+    local game open gpu secs prof body
+    feedback_args "$@" || return
+    body="**Game:** $game
+**Store / build:** (Steam / GOG / Epic / other)
+**What would you like:** (it runs but needs a profile / it does not run / ...)
+
+---
+$([[ -n $prof ]] && printf 'App name seen by vrdual: `%s`' "$game")$( ((secs > 0)) && printf ', played %s min, profile: %s' $((secs / 60)) "${prof:-none}")
+$(system_facts "$gpu")"
+    local s="$VRDUAL_REPO_URL/discussions/categories/game-requests?discussions_q=$(urlenc "$game")"
+    local n="$VRDUAL_REPO_URL/discussions/new?category=game-requests&title=$(urlenc "$game")&body=$(urlenc "$body")"
+    say "upvote an existing request if there is one; else open the new one (prefilled, edit before posting):"
+    printf 'search\t%s\nnew\t%s\n' "$s" "$n"
+    ((open)) && open_urls "$s" "$n"
+    return 0
+}
+
+# vrdual_report [GAME] [--open]: prefilled game-report issue form
+# (.github/ISSUE_TEMPLATE/game-report.yml field ids). Shows the filled fields
+# on stderr, the URL on stdout.
+vrdual_report() {
+    local game open gpu secs prof
+    feedback_args "$@" || return
+    local facts; facts=$(system_facts "$gpu")
+    local -a kv=(
+        "game=$game" "exe=$([[ -n $prof ]] && echo "$game")"
+        "gpu=$(sed -n 's/^GPU: //p' <<<"$facts"), Mesa $(sed -n 's/^Mesa: //p' <<<"$facts"), $(sed -n 's/^OS: //p' <<<"$facts")"
+        "version=$(sed -n 's/^vrdual: //p' <<<"$facts")"
+        "notes=$( ((secs > 0)) && printf 'Played %s min with vrdual-xr, profile: %s.' $((secs / 60)) "${prof:-none}")"
+    )
+    local u="$VRDUAL_REPO_URL/issues/new?template=game-report.yml&title=$(urlenc "[game] $game")" x
+    say "prefilled (you fill in store, result and the rest; nothing is sent until you submit):"
+    for x in "${kv[@]}"; do
+        [[ -n ${x#*=} ]] || continue
+        say "  ${x%%=*}: ${x#*=}"
+        u+="&${x%%=*}=$(urlenc "${x#*=}")"
+    done
+    echo "$u"
+    ((open)) && open_urls "$u"
+    return 0
+}
+
 vrdual_snapshot() {
     local out="${1:-$VRDUAL_ROOT/sbs.png}"
     vrdual_run --snapshot "$out" --at "${2:-150}" -- "$B/vrdual-cube" --frames 100000
@@ -340,11 +425,20 @@ vrdual_selftest() {
     check bash -c "v=\$('$VRDUAL_ROOT/vrdual' version) && grep -q \$'^tools\tvrdual .*, built .* on ' <<<\"\$v\" &&
         grep -q 'build/libVkLayer_vrdual.so.*, built ' <<<\"\$v\" &&
         SOURCE_DATE_EPOCH=0 '$VRDUAL_ROOT/tools/build_info.sh' | grep -q ', built 1970-01-01 00:00:00 +0000 on ' || { echo \"\$v\"; false; }"
+    label="feedback: request / report URLs prefilled from the play log, nothing sent"
+    check bash -c "export XDG_STATE_HOME='$tmp/fb'; mkdir -p \$XDG_STATE_HOME/vrdual
+        printf '2026-10-21 10:00:00\t600\tmirrorsedge.exe\tAMD Radeon RX 7900 XTX (RADV NAVI31)\tbuilt-in\n' >\$XDG_STATE_HOME/vrdual/games.tsv
+        r=\$('$VRDUAL_ROOT/vrdual' request 2>/dev/null) && p=\$('$VRDUAL_ROOT/vrdual' report 2>/dev/null) &&
+        grep -q \$'^search\thttps://github.com/.*/discussions/categories/game-requests?discussions_q=mirrorsedge.exe\$' <<<\"\$r\" &&
+        grep -q \$'^new\thttps://github.com/.*/discussions/new?category=game-requests&title=mirrorsedge.exe&body=.*played%2010%20min' <<<\"\$r\" &&
+        grep -q '/issues/new?template=game-report.yml&title=%5Bgame%5D%20mirrorsedge.exe&game=mirrorsedge.exe&exe=mirrorsedge.exe&gpu=AMD%20Radeon' <<<\"\$p\" &&
+        grep -q '&notes=Played%2010%20min.*built-in' <<<\"\$p\" || { echo \"\$r\"; echo \"\$p\"; false; }"
     label="docs/CONFIG.md lists every config key"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
+    export XDG_STATE_HOME="$tmp/state"  # vrdual-xr's play log
     # Checks 2, 3, 3b and 4a need the second GPU (0b); single-GPU hosts skip them.
     local two=1
     [[ $(cat /sys/bus/pci/devices/0000:0b:00.0/class 2>/dev/null) == 0x03* ]] || two=0
@@ -618,10 +712,13 @@ PA
             kill \$g \$p; wait
             [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && grep -q 'new frame sequence' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
                 grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
+        label="openxr: play log has one line per game process, no-profile hint"
+        check bash -c "f='$tmp/state/vrdual/games.tsv'; [[ \$(grep -cE \$'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}\t[0-9]+\tvrdual-cube\t[^\t]+\tnone\$' \"\$f\") -ge 2 ]] &&
+            grep -q \"no vrdual profile for 'vrdual-cube'\" '$tmp/xr5.log' || { cat \"\$f\"; false; }"
     else
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
     fi
-    unset VRDUAL_CONFIG
+    unset VRDUAL_CONFIG XDG_STATE_HOME
     if ((fails)); then say "selftest: $fails FAILED"; return 1; fi
     say "selftest: all passed"
 }
@@ -654,6 +751,10 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
                                   --session S --scale F --snapshot PNG --at N
   clean                         remove stale /dev/shm/vrdual-*
   version                       version, build time and machine of the tools and of each installed layer
+  games                         local play log written by xr (never sent anywhere)
+  request [GAME] [--open]       ask for a game: GitHub Discussions URLs (search, prefilled new)
+  report [GAME] [--open]        how a game runs: prefilled GitHub issue form URL; you submit it
+                                  GAME defaults to the last one played; nothing is sent by vrdual
   selftest                      automated verification (~20 s, two small windows); exit 0 = pass
 
 Settings: config file, overridable per run by VRDUAL_<KEY> env (VRDUAL_IPD=0.066 ...).
@@ -663,7 +764,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
@@ -675,9 +776,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ $# -gt 0 ]]; then vrdual_dispatch "$@"; exit; fi
     vrdual_help
     PS3=$'\nchoose: '
-    select c in build gpus demo calib config snapshot steam-install view wivrn xr clean quit; do
+    select c in build gpus demo calib config snapshot steam-install view wivrn xr request report clean quit; do
         [[ $c == quit || -z $c ]] && exit 0
-        vrdual_dispatch "$c"
+        case $c in request|report) vrdual_dispatch "$c" --open ;; *) vrdual_dispatch "$c" ;; esac
         break
     done
 fi

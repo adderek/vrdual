@@ -33,6 +33,7 @@
 // clang-format on
 
 #include <dlfcn.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -423,6 +424,44 @@ static ScreenGeom screen_geom(const Screen& sc, XrPosef base, const vrdual::Scre
     }
     return G;
 }
+// Local play log for the user (`vrdual games`, `vrdual report`); never sent
+// anywhere. One line per game process: start (local time), seconds with
+// frames, app, GPU, profile (config / built-in / none). Tab separated.
+// File: $XDG_STATE_HOME/vrdual/games.tsv, else ~/.local/state/vrdual/games.tsv.
+struct GameLog {
+    std::string app, gpu, profile;
+    time_t start = 0;
+    double t0 = 0, t1 = 0;
+
+    static std::string path() {
+        const char* x = getenv("XDG_STATE_HOME");
+        const char* h = getenv("HOME");
+        std::string d = x && *x ? std::string(x) : std::string(h ? h : "/tmp") + "/.local/state";
+        mkdir(d.c_str(), 0755);
+        d += "/vrdual";
+        mkdir(d.c_str(), 0755);
+        return d + "/games.tsv";
+    }
+    void begin(const std::string& a, const char* g, const std::string& prof) {
+        flush();
+        app = a, gpu = g, profile = prof;
+        start = time(nullptr);
+        t0 = t1 = vrdual::now_s();
+    }
+    void seen() { if (!app.empty()) t1 = vrdual::now_s(); }
+    void flush() {
+        if (app.empty()) return;
+        char when[32];
+        struct tm tm;
+        strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", localtime_r(&start, &tm));
+        if (FILE* f = fopen(path().c_str(), "a")) {
+            fprintf(f, "%s\t%.0f\t%s\t%s\t%s\n", when, t1 - t0, app.c_str(), gpu.c_str(), profile.c_str());
+            fclose(f);
+        }
+        app.clear();
+    }
+};
+
 static int screen_parse(const std::string& s) { return s == "flat" ? SCREEN_FLAT : s == "curved" ? SCREEN_CURVED : SCREEN_FULL; }
 static const char* screen_name(int m) { return m == SCREEN_FLAT ? "flat" : m == SCREEN_CURVED ? "curved" : "full"; }
 
@@ -797,6 +836,7 @@ static int run(int argc, char** argv) {
     bool blanked = false;
     // input: profile follows the game in the frame file (hdr->app)
     std::string input_app = "\x01";
+    GameLog games;
     std::unique_ptr<vrdual::Mapper> mapper;
     vrdual::Uinput uinput;
     double t_input = vrdual::now_s();
@@ -895,6 +935,11 @@ static int run(int argc, char** argv) {
                     ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off");
             icfg = ic;
             vrdual::Settings st = vrdual::load_settings({input_app});
+            std::string prof = !st.profile.empty() ? "config" : "none";
+            for (auto& kv : st.src)
+                if (prof == "none" && kv.second.rfind("built-in", 0) == 0) prof = "built-in";
+            games.begin(input_app, L.hdr->gpu_name, prof);
+            if (prof == "none") fprintf(stderr, "[xr] no vrdual profile for '%s' (ask for one: vrdual request)\n", input_app.c_str());
             scr.mode = screen_parse(st.s("screen"));
             scr.dist = std::max(0.2f, st.f("screen_dist"));
             scr.fov = std::clamp(st.f("screen_fov"), 10.0f, 170.0f);
@@ -907,7 +952,7 @@ static int run(int argc, char** argv) {
             overlay_time = st.f("overlay_time");
             cur_auto = st.s("cursor_depth") != "hud";
             cur_d_ok = false;
-            notify("game started");
+            notify(prof == "none" ? "game started, no profile (vrdual request)" : "game started");
             grab = vrdual::ScreenGrab{};
             grab.sx = scr.sx;
             grab.sy = scr.sy;
@@ -922,6 +967,7 @@ static int run(int argc, char** argv) {
             lean_ref = false;
             recentres = 0;
         }
+        if (fresh) games.seen();
         double t_now = vrdual::now_s();
         bool anchored = world || frozen;
         float aspect = float(L.w ? L.w : 16) / float(L.h ? L.h : 9);
@@ -1252,6 +1298,7 @@ static int run(int argc, char** argv) {
         }
         if (max_frames >= 0 && submitted >= max_frames) { fprintf(stderr, "[xr] %ld frames submitted\n", submitted); g_quit = g_user_quit = 1; }
     }
+    games.flush();
     vkDeviceWaitIdle(g.dev);
     for (auto& o : out)
         if (o.sc) xrDestroySwapchain(o.sc);

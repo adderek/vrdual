@@ -178,7 +178,11 @@ sponsors: fair to the ecosystem and an answer to "vrdual is a money grab".
 - Needs: the layer to record the engine name in the frame header (it already
   sees `VkApplicationInfo`; still passive).
 
-## M. User feedback without a server (decided 2026-10-21)
+## M. User feedback without a server (decided 2026-10-21; first part done 2026-10-21)
+
+Done: play log in `vrdual-xr`, `vrdual games | request | report`, no-profile
+hint (ARCHITECTURE "Commands"). Open: store id and engine in the report (needs
+§L's engine name in the frame header).
 
 A server of our own is not worth it for a non-commercial project (cost, plus
 GDPR duties: an IP or install id is personal data). GitHub is the backend.
