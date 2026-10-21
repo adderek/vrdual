@@ -1,5 +1,11 @@
 # Cached memory: shadow + GPU write-back (fast and correct)
 
+**Status 2026-10-21:** implemented as described (default; `VRDUAL_CACHED_SHADOW=0`
+= the old full diff). Selftest: `vrdual-cube --cached --verts-file --readback`
+(pread into the mapping reaches both eyes; GPU fills read back, 0 bad; without
+the write-back: all bad). Left: games (Alice, Gunslinger), then remove
+`cached_wp`.
+
 **Problem.** In mirror mode every push compares all mapped *cached*
 (driver-mapped, `HOST_CACHED`) memory with what A and B hold: the app reads it
 back, so it gets A's real mapping, and userfaultfd cannot track driver

@@ -4,10 +4,15 @@
 // Animation is driven by the frame index, so two instances stay in sync.
 //
 //   vrdual-cube [--frames N] [--size WxH] [--title T] [--scene cubes|calib] [--bda] [--extra-window]
-//              [--clear-alpha A] [--late-verts N] [--cached]
+//              [--clear-alpha A] [--late-verts N] [--verts-file] [--cached] [--readback]
 //
 // --late-verts N: vertices zero until frame N, then written into the same
 // mapping (the mirror must push writes long after the first sync).
+// --verts-file: the late vertex write is a pread(2) from a file straight into
+// the mapping, i.e. done by the kernel (UE3 texture streaming does that).
+// --readback: every frame vkCmdFillBuffer writes the frame number into a
+// HOST_CACHED buffer; after the frame's fence the app checks it can read it
+// ("readback: N ok, M bad" every 100 frames).
 // --cached: vertices in a 1 MB HOST_CACHED buffer (mirror: VRDUAL_CACHED_WP
 // tracks whole pages).
 // --clear-alpha A: background alpha (games leave 0; the layer exports 1).
@@ -23,8 +28,10 @@
 // and fuses without strain. Posts are scaled so all look equally wide.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <unistd.h>
 #include <vulkan/vulkan.h>
 
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -77,7 +84,7 @@ int main(int argc, char** argv) {
     bool bda = false, extra = false;
     float clear_alpha = 1;
     int late_verts = 0;
-    bool cached = false;
+    bool cached = false, verts_file = false, readback = false;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &W, &H);
@@ -86,6 +93,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
         else if (!strcmp(argv[i], "--cached")) cached = true;
+        else if (!strcmp(argv[i], "--verts-file")) verts_file = true;
+        else if (!strcmp(argv[i], "--readback")) readback = true;
         else if (!strcmp(argv[i], "--late-verts") && i + 1 < argc) late_verts = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--clear-alpha") && i + 1 < argc) clear_alpha = (float)atof(argv[++i]);
     }
@@ -371,6 +380,34 @@ int main(int argc, char** argv) {
     }
     if (late_verts) memset(p, 0, verts.size() * 4);
     else memcpy(p, verts.data(), verts.size() * 4);
+    int vfd = -1;  // --verts-file: unlinked temp file holding the vertices
+    if (verts_file) {
+        char tmpl[] = "/tmp/vrdual-cube-verts-XXXXXX";
+        vfd = mkstemp(tmpl);
+        if (vfd < 0 || write(vfd, verts.data(), verts.size() * 4) != ssize_t(verts.size() * 4)) { perror("verts file"); return 1; }
+        unlink(tmpl);
+    }
+    // --readback: GPU fills, the app reads (one 256-byte slot per frame in flight)
+    VkBuffer rbuf = VK_NULL_HANDLE;
+    volatile uint32_t* rbp = nullptr;
+    uint64_t rb_ok = 0, rb_bad = 0;
+    if (readback) {
+        VkBufferCreateInfo rci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        rci.size = 4096;
+        rci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        CK(vkCreateBuffer(dev, &rci, nullptr, &rbuf));
+        VkMemoryRequirements rmr;
+        vkGetBufferMemoryRequirements(dev, rbuf, &rmr);
+        VkMemoryAllocateInfo rai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, rmr.size,
+                                 memtype(rmr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                                                 VK_MEMORY_PROPERTY_HOST_CACHED_BIT)};
+        VkDeviceMemory rmem;
+        CK(vkAllocateMemory(dev, &rai, nullptr, &rmem));
+        vkBindBufferMemory(dev, rbuf, rmem, 0);
+        void* rp;
+        CK(vkMapMemory(dev, rmem, 0, VK_WHOLE_SIZE, 0, &rp));
+        rbp = (volatile uint32_t*)rp;
+    }
     uint32_t nverts = uint32_t(verts.size() / 6);
 
     // --- frame loop --------------------------------------------------------
@@ -477,7 +514,15 @@ int main(int argc, char** argv) {
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) running = false;
         int f = int(frame % FIF);
         vkWaitForFences(dev, 1, &inflight[f], VK_TRUE, UINT64_MAX);
-        if (late_verts && frame == uint64_t(late_verts)) memcpy(p, verts.data(), verts.size() * 4);
+        if (late_verts && frame == uint64_t(late_verts)) {
+            if (vfd < 0) memcpy(p, verts.data(), verts.size() * 4);
+            else if (pread(vfd, p, verts.size() * 4, 0) != ssize_t(verts.size() * 4)) fprintf(stderr, "vrdual-cube: pread into the mapping: %s\n", strerror(errno));
+        }
+        if (readback && frame >= uint64_t(FIF)) {  // this slot was filled FIF frames ago, its fence just waited
+            if (rbp[f * 64] == uint32_t(frame - FIF + 1)) ++rb_ok;
+            else ++rb_bad;
+            if (frame % 100 == 0) fprintf(stderr, "readback: %llu ok, %llu bad\n", (unsigned long long)rb_ok, (unsigned long long)rb_bad);
+        }
         uint32_t ii;
         VkResult ar = vkAcquireNextImageKHR(dev, sc, UINT64_MAX, acquired[f], VK_NULL_HANDLE, &ii);
         if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) { fprintf(stderr, "acquire: %d\n", ar); break; }
@@ -486,6 +531,11 @@ int main(int argc, char** argv) {
         vkResetCommandBuffer(cb, 0);
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         vkBeginCommandBuffer(cb, &bi);
+        if (readback) {
+            vkCmdFillBuffer(cb, rbuf, VkDeviceSize(f) * 256, 256, uint32_t(frame + 1));
+            VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+        }
         VkClearValue cv[2];
         cv[0].color = {{0.05f, 0.06f, 0.09f, clear_alpha}};
         cv[1].depthStencil = {1, 0};

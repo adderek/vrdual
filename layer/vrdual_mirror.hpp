@@ -74,19 +74,33 @@ template <typename T> static void forget_handle(T a) {
 struct Mem {
     uint64_t bmem = 0;
     VkDeviceSize size = 0;
-    bool cached = false, coherent = true;
+    bool cached = false, coherent = true;  // cached: the app gets A's own mapping (no shadow)
+    bool readback = false;                 // HOST_CACHED type: the app reads GPU results from it
     bool mapped = false;
     char* amap = nullptr;    // null while A is mapped only during pushes (transient)
     char* bmap = nullptr;    // same for B
     bool a_released = false; // transient: A unmapped right after the app's vkMapMemory
     VkDeviceSize off = 0, len = 0;
-    char* shadow = nullptr;  // non-cached only
+    char* shadow = nullptr;  // what the app maps (not for `cached`)
     char* last = nullptr;    // what A and B hold, as last pushed
     size_t cap = 0;          // bytes mmap'd for shadow/last
     VkDeviceSize cap_off = 0;
     bool tracked = false;    // shadow registered for dirty tracking
     int wp = -1;             // cached: write-tracking slot
     bool synced = false;     // tracked and fully pushed once: scans list every later write
+};
+
+// GPU writes into host-visible memory (copies, fills, query results): byte
+// range of an A allocation; end may lie past it (copy to the end of a buffer).
+struct MemRange { uint64_t mem; VkDeviceSize off, end; };
+
+// A submit whose command buffers write host-visible memory: those ranges are
+// copied from A into the app's shadows once the app can know it finished.
+struct Writeback {
+    VkFence fence = VK_NULL_HANDLE;  // the app's, or ours when it passed none
+    bool ours = false;
+    std::vector<std::pair<VkSemaphore, uint64_t>> sig;  // values the submit signals
+    std::vector<MemRange> r;
 };
 
 struct Template {
@@ -118,6 +132,13 @@ struct MDev {
     // where a push spends its time (per 600 pushes, logged with the memory sync line)
     uint64_t full_bytes = 0, full_cached_bytes = 0, full_ns = 0, scan_ns = 0, map_ns = 0;
     std::vector<std::pair<size_t, size_t>> ranges;  // push_one scratch (offset, length)
+    // write-back (GPU results into the shadows the app reads)
+    struct BufBind { uint64_t mem = 0; VkDeviceSize off = 0, size = 0; };
+    std::unordered_map<uint64_t, BufBind> bufs;                    // A buffer -> memory binding
+    std::unordered_map<VkCommandBuffer, std::vector<MemRange>> cbw;  // ranges a command buffer writes
+    std::vector<Writeback> wbs;                                    // submitted, not yet copied back
+    std::vector<VkFence> fence_pool;                               // our fences for submits without one
+    uint64_t wb_bytes = 0;
 };
 
 static MDev* mdev_of(void* k) {
@@ -183,6 +204,169 @@ static void ctx_end(Ctx& c) {
     }
     c.used = 0;
 }
+
+// ------------------------------------------------------------ write-back ----
+// The app maps host-visible memory through a shadow and reads it there, so
+// what A's GPU writes into such memory (readback copies, fills, query
+// results) must be copied into the shadow before the app can look: the
+// commands are recorded per command buffer (hooks called by the generated
+// wrappers, also after a mirror stop), a submit keeps their ranges with a
+// fence, and the sync calls through which the app learns of completion copy
+// them back first. Shader stores into host memory are not tracked (DXVK reads
+// back with copies).
+static constexpr VkDeviceSize kToEnd = ~VkDeviceSize(0);
+
+static void wb_note(MDev* md, VkCommandBuffer cb, VkBuffer buf, VkDeviceSize off, VkDeviceSize end) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto b = md->bufs.find(h2u(buf));
+    if (b == md->bufs.end() || !b->second.mem || !md->mems.count(b->second.mem)) return;  // not host-visible
+    VkDeviceSize o = b->second.off;
+    md->cbw[cb].push_back({b->second.mem, o + off, end == kToEnd ? o + b->second.size : o + end});
+}
+
+static void hook_CmdCopyBuffer(MDev* md, VkCommandBuffer cb, VkBuffer, VkBuffer dst, uint32_t n, const VkBufferCopy* r) {
+    for (uint32_t i = 0; i < n; ++i) wb_note(md, cb, dst, r[i].dstOffset, r[i].dstOffset + r[i].size);
+}
+static void hook_CmdCopyBuffer2(MDev* md, VkCommandBuffer cb, const VkCopyBufferInfo2* ci) {
+    for (uint32_t i = 0; i < ci->regionCount; ++i)
+        wb_note(md, cb, ci->dstBuffer, ci->pRegions[i].dstOffset, ci->pRegions[i].dstOffset + ci->pRegions[i].size);
+}
+// image -> buffer: from the region's offset to the buffer's end (the exact
+// extent needs the image format; readback buffers are small)
+static void hook_CmdCopyImageToBuffer(MDev* md, VkCommandBuffer cb, VkImage, VkImageLayout, VkBuffer dst, uint32_t n, const VkBufferImageCopy* r) {
+    for (uint32_t i = 0; i < n; ++i) wb_note(md, cb, dst, r[i].bufferOffset, kToEnd);
+}
+static void hook_CmdCopyImageToBuffer2(MDev* md, VkCommandBuffer cb, const VkCopyImageToBufferInfo2* ci) {
+    for (uint32_t i = 0; i < ci->regionCount; ++i) wb_note(md, cb, ci->dstBuffer, ci->pRegions[i].bufferOffset, kToEnd);
+}
+static void hook_CmdFillBuffer(MDev* md, VkCommandBuffer cb, VkBuffer dst, VkDeviceSize off, VkDeviceSize size, uint32_t) {
+    wb_note(md, cb, dst, off, size == VK_WHOLE_SIZE ? kToEnd : off + size);
+}
+static void hook_CmdUpdateBuffer(MDev* md, VkCommandBuffer cb, VkBuffer dst, VkDeviceSize off, VkDeviceSize size, const void*) {
+    wb_note(md, cb, dst, off, off + size);
+}
+static void hook_CmdCopyQueryPoolResults(MDev* md, VkCommandBuffer cb, VkQueryPool, uint32_t, uint32_t, VkBuffer dst, VkDeviceSize off,
+                                         VkDeviceSize, VkQueryResultFlags) {
+    wb_note(md, cb, dst, off, kToEnd);
+}
+static void hook_CmdExecuteCommands(MDev* md, VkCommandBuffer cb, uint32_t n, const VkCommandBuffer* sec) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto& to = md->cbw[cb];
+    for (uint32_t i = 0; i < n; ++i) {
+        auto it = md->cbw.find(sec[i]);
+        if (it != md->cbw.end()) to.insert(to.end(), it->second.begin(), it->second.end());
+    }
+}
+static void hook_BindBufferMemory(MDev* md, VkDevice, VkBuffer buf, VkDeviceMemory mem, VkDeviceSize off) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto& b = md->bufs[h2u(buf)];
+    b.mem = h2u(mem), b.off = off;
+}
+static void hook_BindBufferMemory2(MDev* md, VkDevice dev, uint32_t n, const VkBindBufferMemoryInfo* bi) {
+    for (uint32_t i = 0; i < n; ++i) hook_BindBufferMemory(md, dev, bi[i].buffer, bi[i].memory, bi[i].memoryOffset);
+}
+static void hook_DestroyBuffer(MDev* md, VkDevice, VkBuffer buf, const VkAllocationCallbacks*) {
+    std::lock_guard<std::mutex> l(md->lock);
+    md->bufs.erase(h2u(buf));
+}
+
+// The ranges a submit's command buffers write (md->lock held by the caller).
+static void wb_collect(MDev* md, VkCommandBuffer cb, Writeback& w) {
+    auto it = md->cbw.find(cb);
+    if (it != md->cbw.end()) w.r.insert(w.r.end(), it->second.begin(), it->second.end());
+}
+
+static VkFence wb_fence(MDev* md) {
+    std::lock_guard<std::mutex> l(md->lock);
+    if (!md->fence_pool.empty()) {
+        VkFence f = md->fence_pool.back();
+        md->fence_pool.pop_back();
+        return f;
+    }
+    VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkFence f = VK_NULL_HANDLE;
+    md->a.CreateFence(md->dd->device, &fi, nullptr, &f);
+    return f;
+}
+
+// Copies one finished range from A into the shadow and into `last` (so the
+// next push does not send A's GPU result to B as a CPU change: B's GPU wrote
+// its own). md->lock held.
+static void wb_apply(MDev* md, const MemRange& r) {
+    auto it = md->mems.find(r.mem);
+    if (it == md->mems.end()) return;
+    Mem& m = it->second;
+    if (!m.mapped || !m.shadow) return;  // unmapped: copied at the next map (readback types); cached: A's own mapping
+    VkDeviceSize b = std::max(r.off, m.off), e = std::min(r.end, m.off + m.len);
+    if (b >= e) return;
+    VkDevice dev = md->dd->device;
+    char* a = m.amap;
+    bool tmp = !a;
+    if (tmp && md->a.MapMemory(dev, u2h<VkDeviceMemory>(r.mem), m.off, m.len, 0, (void**)&a) < 0) return;
+    if (!m.coherent) {
+        VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, u2h<VkDeviceMemory>(r.mem), m.off, VK_WHOLE_SIZE};
+        md->a.InvalidateMappedMemoryRanges(dev, 1, &mr);
+    }
+    size_t o = size_t(b - m.off), n = size_t(e - b);
+    memcpy(m.shadow + o, a + o, n);
+    memcpy(m.last + o, a + o, n);
+    md->wb_bytes += n;
+    if (tmp) md->a.UnmapMemory(dev, u2h<VkDeviceMemory>(r.mem));
+}
+
+// Copies back every finished submit. sem/val: the app saw that timeline
+// value, so submits signalling it are done and their fence signals with them
+// (waited for briefly).
+static void wb_poll(MDev* md, VkSemaphore sem = VK_NULL_HANDLE, uint64_t val = 0) {
+    VkDevice dev = md->dd->device;
+    std::lock_guard<std::mutex> l(md->lock);
+    for (size_t i = 0; i < md->wbs.size();) {
+        Writeback& w = md->wbs[i];
+        VkResult s = md->a.GetFenceStatus(dev, w.fence);
+        if (s == VK_NOT_READY && sem)
+            for (auto& p : w.sig)
+                if (p.first == sem && p.second <= val) {
+                    s = md->a.WaitForFences(dev, 1, &w.fence, VK_TRUE, 1000000000ull);
+                    break;
+                }
+        if (s == VK_NOT_READY || s == VK_TIMEOUT) {
+            ++i;
+            continue;
+        }
+        if (s == VK_SUCCESS)
+            for (auto& r : w.r) wb_apply(md, r);
+        if (w.ours) {
+            md->a.ResetFences(dev, 1, &w.fence);
+            md->fence_pool.push_back(w.fence);
+        }
+        md->wbs[i] = std::move(md->wbs.back());
+        md->wbs.pop_back();
+    }
+}
+
+static void wb_semaphores(MDev* md, const VkSemaphoreWaitInfo* wi) {
+    for (uint32_t i = 0; i < wi->semaphoreCount; ++i) wb_poll(md, wi->pSemaphores[i], wi->pValues[i]);
+}
+static void hook_after_QueueWaitIdle(MDev* md, VkQueue, VkResult r) {
+    if (r == VK_SUCCESS) wb_poll(md);
+}
+static void hook_after_DeviceWaitIdle(MDev* md, VkDevice, VkResult r) {
+    if (r == VK_SUCCESS) wb_poll(md);
+}
+// An app fence going away (reset, destroyed): copy back what it covered first.
+static void wb_drop_fence(MDev* md, VkFence f) {
+    if (!f) return;
+    wb_poll(md);
+    std::lock_guard<std::mutex> l(md->lock);
+    for (size_t i = 0; i < md->wbs.size();)
+        if (md->wbs[i].fence == f && !md->wbs[i].ours) {
+            md->wbs[i] = std::move(md->wbs.back());
+            md->wbs.pop_back();
+        } else {
+            ++i;
+        }
+}
+static void hook_DestroyFence(MDev* md, VkDevice, VkFence f, const VkAllocationCallbacks*) { wb_drop_fence(md, f); }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -601,10 +785,10 @@ static void push_memory(MDev* md) {
     if (++md->pushes % 600 == 0) {
         const double k = 600 * 1048576.0, n = 600 * 1e6;
         logf("mirror: memory sync %.2f ms/submit avg over %.1f MB mapped, %.1f MB diffed; full diff %.1f MB (%.1f MB cached) %.2f ms, "
-             "dirty scan %.2f ms, transient maps %.2f ms, %llu cached write faults",
+             "dirty scan %.2f ms, transient maps %.2f ms, %llu cached write faults, %.2f MB written back",
              md->push_ns / n, bytes / 1048576.0, md->diffed_bytes / k, md->full_bytes / k, md->full_cached_bytes / k, md->full_ns / n,
-             md->scan_ns / n, md->map_ns / n, (unsigned long long)wp::g_faults.exchange(0));
-        md->push_ns = md->diffed_bytes = md->full_bytes = md->full_cached_bytes = md->full_ns = md->scan_ns = md->map_ns = 0;
+             md->scan_ns / n, md->map_ns / n, (unsigned long long)wp::g_faults.exchange(0), md->wb_bytes / k);
+        md->push_ns = md->diffed_bytes = md->full_bytes = md->full_cached_bytes = md->full_ns = md->scan_ns = md->map_ns = md->wb_bytes = 0;
     }
 }
 
@@ -653,7 +837,11 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateMemory(VkDevice dev, const VkMem
         Mem m;
         m.bmem = h2u(bm);
         m.size = ai->allocationSize;
-        m.cached = (f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) || !strcmp(env("VRDUAL_SHADOW", "1"), "0");
+        // HOST_CACHED (readback) memory gets a shadow too, unless cached_wp = 1
+        // (A's own mapping + write tracking) or VRDUAL_CACHED_SHADOW=0 (A's mapping, full diff)
+        m.readback = f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+        m.cached = (m.readback && (g_cfg.cached_wp || !strcmp(env("VRDUAL_CACHED_SHADOW", "1"), "0"))) ||
+                   !strcmp(env("VRDUAL_SHADOW", "1"), "0");
         m.coherent = f & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         std::lock_guard<std::mutex> l(md->lock);
         md->mems[h2u(*out)] = m;
@@ -671,6 +859,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_CreateBuffer(VkDevice dev, const VkBuffe
     VkBufferCreateInfo c2 = *ci;
     if (rp) c2.flags |= VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
     VkResult r = md->a.CreateBuffer(dev, &c2, alloc, out);
+    if (r >= 0) {
+        std::lock_guard<std::mutex> l(md->lock);
+        md->bufs[h2u(*out)].size = ci->size;
+    }
     if (r < 0 || !md->live) return r;
     VkBufferOpaqueCaptureAddressCreateInfo oc{VK_STRUCTURE_TYPE_BUFFER_OPAQUE_CAPTURE_ADDRESS_CREATE_INFO, c2.pNext};
     if (rp) {
@@ -709,6 +901,10 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeMemory(VkDevice dev, VkDeviceMemory mem,
             wp::remove(it->second.wp);
             md->mems.erase(it);
         }
+        // a new allocation may get the same handle: forget pending writes into this one
+        auto gone = [&](const MemRange& r) { return r.mem == h2u(mem); };
+        for (auto& w : md->wbs) w.r.erase(std::remove_if(w.r.begin(), w.r.end(), gone), w.r.end());
+        for (auto& kv : md->cbw) kv.second.erase(std::remove_if(kv.second.begin(), kv.second.end(), gone), kv.second.end());
     }
     md->a.FreeMemory(dev, mem, alloc);
     if (mem && md->live) md->b.FreeMemory(md->bdev, xl_handle(mem), nullptr);
@@ -744,6 +940,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory m
     }
     m.synced = false;  // a new mapping starts with a full diff
     m.amap = (char*)*pp;
+    if (!m.cached && m.readback) {  // the app may read what the GPU wrote before this mapping
+        if (!m.coherent) {
+            VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, mem, off, VK_WHOLE_SIZE};
+            md->a.InvalidateMappedMemoryRanges(dev, 1, &mr);
+        }
+        memcpy(m.shadow, m.amap, size_t(len));
+        memcpy(m.last, m.amap, size_t(len));
+    }
     m.a_released = tmp && !m.cached;
     if (m.a_released) {  // the app writes the shadow; A is mapped per push
         md->a.UnmapMemory(dev, mem);
@@ -850,6 +1054,7 @@ static void b_wait_fences(MDev* md, uint32_t n, const VkFence* f) {
 static VKAPI_ATTR VkResult VKAPI_CALL m_WaitForFences(VkDevice dev, uint32_t n, const VkFence* f, VkBool32 all, uint64_t timeout) {
     MDev* md = mdev_of(key(dev));
     VkResult r = md->a.WaitForFences(dev, n, f, all, timeout);
+    if (r == VK_SUCCESS) wb_poll(md);  // before the app reads what finished
     if (r != VK_SUCCESS || !md->live) return r;
     if (all) {
         b_wait_fences(md, n, f);
@@ -863,12 +1068,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_WaitForFences(VkDevice dev, uint32_t n, 
 static VKAPI_ATTR VkResult VKAPI_CALL m_GetFenceStatus(VkDevice dev, VkFence f) {
     MDev* md = mdev_of(key(dev));
     VkResult r = md->a.GetFenceStatus(dev, f);
+    if (r == VK_SUCCESS) wb_poll(md);
     if (r == VK_SUCCESS && md->live) b_wait_fences(md, 1, &f);
     return r;
 }
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_ResetFences(VkDevice dev, uint32_t n, const VkFence* f) {
     MDev* md = mdev_of(key(dev));
+    for (uint32_t i = 0; i < n; ++i) wb_drop_fence(md, f[i]);
     if (md->live) {
         b_wait_fences(md, n, f);
         std::vector<VkFence> bf;
@@ -881,6 +1088,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_ResetFences(VkDevice dev, uint32_t n, co
 static VKAPI_ATTR VkResult VKAPI_CALL m_WaitSemaphores(VkDevice dev, const VkSemaphoreWaitInfo* wi, uint64_t timeout) {
     MDev* md = mdev_of(key(dev));
     VkResult r = md->a.WaitSemaphores(dev, wi, timeout);
+    if (r == VK_SUCCESS) wb_semaphores(md, wi);
     if (r != VK_SUCCESS || !md->live) return r;
     Ctx& c = ctx_begin(md);
     VkSemaphoreWaitInfo bwi;
@@ -893,6 +1101,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_WaitSemaphores(VkDevice dev, const VkSem
 static VKAPI_ATTR VkResult VKAPI_CALL m_GetSemaphoreCounterValue(VkDevice dev, VkSemaphore s, uint64_t* v) {
     MDev* md = mdev_of(key(dev));
     VkResult r = md->a.GetSemaphoreCounterValue(dev, s, v);
+    if (r == VK_SUCCESS) wb_poll(md, s, *v);
     if (r != VK_SUCCESS || !md->live) return r;
     VkSemaphore bs = xl_handle(s);
     VkSemaphoreWaitInfo wi{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, 0, 1, &bs, v};
@@ -921,10 +1130,35 @@ static VKAPI_ATTR void VKAPI_CALL m_GetDeviceQueue2(VkDevice dev, const VkDevice
     if (!md->bqueue_any) md->bqueue_any = bq;
 }
 
+// After A accepted a submit: its host-memory writes wait for the app's sync.
+static void wb_add(MDev* md, Writeback& w) {
+    if (w.r.empty()) return;
+    std::lock_guard<std::mutex> l(md->lock);
+    md->wbs.push_back(std::move(w));
+}
+
 static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo* si, VkFence f) {
     MDev* md = mdev_of(key(q));
+    wb_poll(md);
     push_memory(md);  // after a stop too: shadows must keep reaching A
-    VkResult r = md->a.QueueSubmit(q, n, si, f);
+    Writeback w;
+    {
+        std::lock_guard<std::mutex> l(md->lock);
+        for (uint32_t i = 0; i < n; ++i) {
+            for (uint32_t j = 0; j < si[i].commandBufferCount; ++j) wb_collect(md, si[i].pCommandBuffers[j], w);
+            for (auto* s = (const VkBaseInStructure*)si[i].pNext; s; s = s->pNext)
+                if (s->sType == VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO) {
+                    auto* t = (const VkTimelineSemaphoreSubmitInfo*)s;
+                    for (uint32_t k = 0; k < t->signalSemaphoreValueCount && k < si[i].signalSemaphoreCount; ++k)
+                        w.sig.push_back({si[i].pSignalSemaphores[k], t->pSignalSemaphoreValues[k]});
+                }
+        }
+    }
+    VkFence fa = f;
+    if (!w.r.empty() && !f) fa = w.fence = wb_fence(md), w.ours = true;
+    else w.fence = f;
+    VkResult r = md->a.QueueSubmit(q, n, si, fa);
+    if (r >= 0) wb_add(md, w);
     if (r < 0 || !md->live) return r;
     Ctx& c = ctx_begin(md);
     auto* bsi = c.alloc<VkSubmitInfo>(n);
@@ -942,8 +1176,22 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit(VkQueue q, uint32_t n, const
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit2(VkQueue q, uint32_t n, const VkSubmitInfo2* si, VkFence f) {
     MDev* md = mdev_of(key(q));
+    wb_poll(md);
     push_memory(md);  // after a stop too: shadows must keep reaching A
-    VkResult r = md->a.QueueSubmit2(q, n, si, f);
+    Writeback w;
+    {
+        std::lock_guard<std::mutex> l(md->lock);
+        for (uint32_t i = 0; i < n; ++i) {
+            for (uint32_t j = 0; j < si[i].commandBufferInfoCount; ++j) wb_collect(md, si[i].pCommandBufferInfos[j].commandBuffer, w);
+            for (uint32_t k = 0; k < si[i].signalSemaphoreInfoCount; ++k)
+                w.sig.push_back({si[i].pSignalSemaphoreInfos[k].semaphore, si[i].pSignalSemaphoreInfos[k].value});
+        }
+    }
+    VkFence fa = f;
+    if (!w.r.empty() && !f) fa = w.fence = wb_fence(md), w.ours = true;
+    else w.fence = f;
+    VkResult r = md->a.QueueSubmit2(q, n, si, fa);
+    if (r >= 0) wb_add(md, w);
     if (r < 0 || !md->live) return r;
     Ctx& c = ctx_begin(md);
     auto* bsi = c.alloc<VkSubmitInfo2>(n);
@@ -985,6 +1233,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateCommandBuffers(VkDevice dev, con
 static VKAPI_ATTR void VKAPI_CALL m_FreeCommandBuffers(VkDevice dev, VkCommandPool pool, uint32_t n, const VkCommandBuffer* cbs) {
     MDev* md = mdev_of(key(dev));
     md->a.FreeCommandBuffers(dev, pool, n, cbs);
+    {
+        std::lock_guard<std::mutex> l(md->lock);
+        for (uint32_t i = 0; i < n; ++i) md->cbw.erase(cbs[i]);
+    }
     if (!md->live) return;
     std::vector<VkCommandBuffer> b;
     for (uint32_t i = 0; i < n; ++i)
@@ -998,6 +1250,10 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeCommandBuffers(VkDevice dev, VkCommandPo
 static VKAPI_ATTR VkResult VKAPI_CALL m_BeginCommandBuffer(VkCommandBuffer cb, const VkCommandBufferBeginInfo* bi) {
     MDev* md = mdev_of(key(cb));
     VkResult r = md->a.BeginCommandBuffer(cb, bi);
+    if (r >= 0) {
+        std::lock_guard<std::mutex> l(md->lock);
+        md->cbw[cb].clear();  // recording starts over
+    }
     if (r < 0 || !md->live) return r;
     bool sec;
     {

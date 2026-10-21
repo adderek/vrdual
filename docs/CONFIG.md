@@ -62,7 +62,7 @@ map_x = KEY_E
 | `lockstep_timeout_ms` | `250` | ms | give up waiting after this |
 | `edge_mask` | `outer` | `outer` `both` `off` | `vrdual xr`: black strip, then a fade, at each eye's outer edge (left eye: left, right eye: right), the "floating window" of 3D cinema. Each eye's shifted view shows a strip there the game never drew for its own camera (culled objects, pop-in, odd colours) and near objects seen by one eye only (flicker). `both` = also the inner edge (vignette) |
 | `edge_mask_dist` | `1` | meters | strip width = how far the eye shift moves things this near (hfov 90°, IPD 68 mm: 1 m → 33 px of 1920, 0.5 m → 65 px); follows IPD, anchor, hfov and head lean live |
-| `cached_wp` | `0` | `0` `1` | mirror mode: track the game's writes to cached (driver-mapped) GPU memory instead of comparing all of it every submit. **Fast** where DXVK d3d9 keeps hundreds of MB mapped (CoJ Gunslinger: 24 → 0.1 ms/submit), but **breaks games that read files straight into that memory** (the kernel's writes fail; Alice: Madness Returns shows black flickering objects). Choose per game: fast with bugs, or slow without |
+| `cached_wp` | `0` | `0` `1` | mirror mode, superseded: since 2026-10-21 cached (driver-mapped) GPU memory gets a shadow with dirty tracking and write-back by default, fast and correct. `1` = the older write tracking on the driver's own mapping (mprotect): about as fast, but **breaks games that read files straight into that memory** (the kernel's writes fail; Alice: Madness Returns showed black flickering objects). Keep `0` |
 | `left_gpu` | `pci:0000:06:00.0` | `pci:…`, index, name substring | GPU for the left eye (and the game in mirror mode) |
 | `right_gpu` | `pci:0000:0b:00.0` | same | GPU for the right eye |
 | `log` | `1` | `0` `1` | layer log to stderr (Proton log for Steam games) |
@@ -153,5 +153,6 @@ Debugging only: `VRDUAL_FILTER=0` (no GPU / capability filter),
 `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_CLAMP_API=1`, `VRDUAL_TRACE_EXTS=1` (log
 enabled device extensions), `VRDUAL_MIRROR_TRACE=N` (log the first N mirrored
 calls), `VRDUAL_SHADOW=0`, `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (full memory
-diff, no userfaultfd), `VRDUAL_MIRROR_FAIL_AT=N`
+diff, no userfaultfd), `VRDUAL_CACHED_SHADOW=0` (mirror: cached memory
+mapped directly, full diff every submit), `VRDUAL_MIRROR_FAIL_AT=N`
 (selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest).

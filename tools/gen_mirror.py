@@ -34,6 +34,17 @@ MANUAL = {
     'vkCreateBuffer', 'vkGetBufferDeviceAddress',
 }
 
+# Generated, plus a hand-written hook in vrdual_mirror.hpp: hook_<Cmd>(md, args)
+# runs first (also after a mirror stop: GPU writes into host memory are
+# tracked for the app's own reads), hook_after_<Cmd>(md, args, r) right after
+# the call on A.
+HOOKS_BEFORE = {
+    'vkCmdCopyBuffer', 'vkCmdCopyBuffer2', 'vkCmdCopyImageToBuffer', 'vkCmdCopyImageToBuffer2',
+    'vkCmdFillBuffer', 'vkCmdUpdateBuffer', 'vkCmdCopyQueryPoolResults', 'vkCmdExecuteCommands',
+    'vkBindBufferMemory', 'vkBindBufferMemory2', 'vkDestroyBuffer', 'vkDestroyFence',
+}
+HOOKS_AFTER = {'vkQueueWaitIdle', 'vkDeviceWaitIdle'}
+
 # Mirrored commands that are fine to run on A only (no GPU-visible effect on B).
 A_ONLY = {
     'vkDebugMarkerSetObjectNameEXT', 'vkDebugMarkerSetObjectTagEXT', 'vkSetDebugUtilsObjectNameEXT',
@@ -429,8 +440,13 @@ def main(xml_path, disp_path, out_path):
         args = ', '.join(p.name for p in params)
         w(f'    if (g_trace) trace_call("{name}");')
         w(f'    MDev* md = mdev_of(key({params[0].name}));')
+        canon_name = next((n for n in names if n in HOOKS_BEFORE or n in HOOKS_AFTER), name)
+        if canon_name in HOOKS_BEFORE:
+            w(f'    hook_{canon_name[2:]}(md, {args});')
         if ret == 'VkResult':
             w(f'    VkResult r = md->a.{name[2:]}({args});')
+            if canon_name in HOOKS_AFTER:
+                w(f'    hook_after_{canon_name[2:]}(md, {args}, r);')
             w('    if (r < 0 || !md->live || !md->b.' + name[2:] + ') return r;')
         else:
             w(f'    md->a.{name[2:]}({args});')
