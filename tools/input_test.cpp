@@ -225,6 +225,53 @@ int main() {
         expect(!scene_disparity(L.data(), R.data(), W, H, 160, 32, 0.5f, -0.5f, 40, &d), "cursor: flat patch -> no depth");
     }
 
+    {  // menu + a / b switches the control mode in every mode; the game sees neither button
+        Mapper m(cfg("off"));
+        Controls c;
+        c.menu = true; auto ev = m.step(c, 0.01);
+        c.a = true; ev = m.step(c, 0.01);
+        expect(m.input() == "gamepad" && m.changes == 1 && std::none_of(ev.begin(), ev.end(), [](const InEvent& e) { return e.type == EV_KEY; }),
+               "off: menu + a -> gamepad, no key sent");
+        c.a = false; ev = m.step(c, 0.01);
+        expect(!has(ev, {DEV_PAD, EV_KEY, BTN_A, 0}), "chord: a's release not sent");
+        c.menu = false; ev = m.step(c, 0.01);
+        expect(!has(ev, {DEV_PAD, EV_KEY, BTN_START, 1}), "chord: menu release is no Start");
+        // gamepad: a menu tap is Start, pressed on release, released on the next step
+        c.menu = true; ev = m.step(c, 0.01);
+        expect(!has(ev, {DEV_PAD, EV_KEY, BTN_START, 1}), "gamepad: menu down sends nothing yet");
+        c.menu = false; ev = m.step(c, 0.01);
+        expect(has(ev, {DEV_PAD, EV_KEY, BTN_START, 1}), "gamepad: menu tap -> Start on release");
+        ev = m.step(c, 0.01);
+        expect(has(ev, {DEV_PAD, EV_KEY, BTN_START, 0}), "gamepad: Start released on the next step");
+        // held: no Start after a 1 s hold (recentre)
+        c.menu = true; m.step(c, 0.6); m.step(c, 0.6);
+        c.menu = false; ev = m.step(c, 0.01);
+        expect(!has(ev, {DEV_PAD, EV_KEY, BTN_START, 1}), "gamepad: menu held 1 s -> no Start");
+        // switching away releases what the old mode holds
+        c.x = true; c.lx = 1; m.step(c, 0.01);
+        c.menu = true; m.step(c, 0.01);
+        c.a = true; ev = m.step(c, 0.01);
+        expect(m.controls() == "mouse: stick" && has(ev, {DEV_PAD, EV_KEY, BTN_X, 0}) && has(ev, {DEV_PAD, EV_ABS, ABS_X, 0}),
+               "gamepad -> mouse: X released, stick centred");
+        c = Controls{}; m.step(c, 0.01);
+        c.rt = 1; m.step(c, 0.01);  // left button held
+        c.menu = true; m.step(c, 0.01);
+        c.b = true; ev = m.step(c, 0.01);
+        expect(m.input() == "gamepad" && has(ev, {DEV_MOUSE, EV_KEY, BTN_LEFT, 0}), "mouse -> back: left button released");
+        c = Controls{}; m.step(c, 0.01);
+        // b from off wraps to tune; a walks through all six
+        Mapper w(cfg("off"));
+        auto chord = [&](bool next) {
+            Controls k; k.menu = true; w.step(k, 0.01);
+            (next ? k.a : k.b) = true; w.step(k, 0.01);
+            w.step(Controls{}, 0.01);
+        };
+        chord(false);
+        expect(w.input() == "tune", "off: menu + b -> tune");
+        std::string seen;
+        for (int i = 0; i < 6; ++i) { chord(true); seen += w.controls() + ","; }
+        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,tune,", ("cycle: " + seen).c_str());
+    }
     // uinput round trip with a virtual pad
     {
         Uinput u;

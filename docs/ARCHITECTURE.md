@@ -21,13 +21,22 @@ frame index. Near cube shifts ~25 px between eyes, far cubes ~0, the HUD bar
 ./vrdual view [--session S]                    # SBS window (finds games inside Flatpak Steam)
 ./vrdual wivrn                                 # WiVRn streaming server (Flatpak, user install)
 ./vrdual xr [--session S] [--lock world|head]  # game in the HMD via OpenXR
+./vrdual version                               # build identity of tools, build/ layers, installed copies
 ```
+
+Build identity: every binary is compiled with `VRDUAL_BUILD_INFO`
+(`tools/build_info.sh`, `common/vrdual_version.h`), e.g. `vrdual
+v0.1.0-3-gabc1234-dirty, built 2026-10-21 18:05:09 +0200 on fractal`: `git
+describe --tags --dirty --always` (releases are tags `v0.x.y`; outside git the
+`VERSION` file, filled in by `git archive` through `export-subst`), the build time (ISO-8601; `SOURCE_DATE_EPOCH` for
+reproducible release builds) and the build machine. The layer logs it once per
+process (`… (64-bit layer)`), `vrdual-xr` at start, the tools on `--version`.
 
 `vrdual` is the non-interactive CLI (stdout = data, prose on stderr, exit code =
 result). `_` holds the implementation and adds a menu for humans. Build needs
 `g++`, `glslc` (shaderc), `sdl3` and the Vulkan loader. `selftest` also needs
 `spirv-val`, `magick` and `python3`. Vulkan headers are vendored in
-`third_party/Vulkan-Headers` (tag v1.4.357), OpenXR headers in
+`third_party/Vulkan-Headers` (submodule, tag v1.4.357), OpenXR headers in
 `third_party/OpenXR-SDK` (release-1.1.65, headers only: `vrdual-xr` opens the
 runtime itself, no loader). `make lib32` (part of `build`) needs gcc multilib
 and the 32-bit GL/X11/Vulkan libs for the 32-bit layer and `vrdual-gltest`.
@@ -298,7 +307,21 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
 
 Selftest's OpenXR check uses a Monado build at `build/monado/` (in-process
 runtime, `XRT_FEATURE_SERVICE=OFF`; copy `libopenxr_monado.so` + a json there,
-or point `VRDUAL_XR_TEST_RUNTIME` at one); skipped otherwise.
+or point `VRDUAL_XR_TEST_RUNTIME` at one); skipped otherwise. `make clean`
+keeps `build/monado/`. Rebuilding it here (no sudo; Eigen is header-only):
+
+```bash
+cd ~/.cache/vrdual
+git clone --depth 1 -b 3.4.0 https://gitlab.com/libeigen/eigen.git eigen-src
+cmake -S eigen-src -B eigen-build -DCMAKE_INSTALL_PREFIX=$PWD/eigen && cmake --install eigen-build
+git clone --depth 1 https://gitlab.freedesktop.org/monado/monado.git monado-src
+cmake -S monado-src -B monado-src/build -DXRT_FEATURE_SERVICE=OFF -DBUILD_TESTING=OFF \
+  -DEigen3_DIR=$PWD/eigen/share/eigen3/cmake -DVulkan_INCLUDE_DIR=<vrdual>/third_party/Vulkan-Headers/include
+cmake --build monado-src/build -j8 --target openxr_monado
+# copy src/xrt/targets/openxr/libopenxr_monado.so to build/monado/, and
+# openxr_monado-dev.json as build/monado/openxr_monado.json with
+# "library_path": "./libopenxr_monado.so"
+```
 
 ## Camera anchor and IPD
 

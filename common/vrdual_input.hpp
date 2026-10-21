@@ -13,6 +13,9 @@
 // Buttons are remapped with map_<button> = KEY_*|BTN_*|none in [global] or
 // [app:NAME]; buttons: a b x y l3 r3 lt rt lg rg menu. In mouse mode the menu
 // button (unmapped) cycles mouse_mode; held 1 s it re-centres head_look=edge.
+// Menu held + a / b: next / previous control mode (off, gamepad, mouse stick,
+// motion, aim, tune), in every mode; so menu's own code (gamepad: Start) is
+// sent as a tap when it is released without a chord and before 1 s.
 //
 // Mapper is pure (state in, events out) so it can be tested without devices;
 // Uinput creates the virtual devices on first use. Header-only.
@@ -311,7 +314,11 @@ public:
         mode_ = cfg_.mouse_mode == "motion" ? 1 : cfg_.mouse_mode == "aim" ? 2 : 0;
     }
     const char* mouse_mode() const { return mode_ == 1 ? "motion" : mode_ == 2 ? "aim" : "stick"; }
+    const std::string& input() const { return cfg_.input; }
+    // "gamepad", "mouse: aim", ... for notices
+    std::string controls() const { return cfg_.input == "mouse" ? std::string("mouse: ") + mouse_mode() : cfg_.input; }
     int recentres = 0;  // menu held 1 s; vrdual-xr also re-centres head_lean on it
+    int changes = 0;    // control mode changed (menu + a/b, or menu tap in mouse mode)
 
     // Code a button sends in the current input mode (0 = nothing).
     int code_of(int b) const {
@@ -332,22 +339,35 @@ public:
     std::vector<InEvent> step(const Controls& c, double dt) {
         std::vector<InEvent> ev;
         bool now[B_COUNT] = {c.a, c.b, c.x, c.y, c.l3, c.r3, hyst(B_LT, c.lt), hyst(B_RT, c.rt), hyst(B_LG, c.lg), hyst(B_RG, c.rg), c.menu};
+        if (menu_up_) key(ev, menu_up_, false), menu_up_ = 0;  // second half of a menu tap
         menu_hold_ = now[B_MENU] ? menu_hold_ + dt : 0;
+        if (now[B_MENU])  // chord: menu held + a / b switches the control mode; the game sees neither
+            for (int b : {B_A, B_B})
+                if (now[b] && !prev_[b]) {
+                    cycle(b == B_A ? 1 : -1, ev);
+                    swallow_[b] = chord_ = true;
+                }
         if (cfg_.input == "gamepad") pad_axes(c, ev);
-        if (cfg_.input != "off") {
-            for (int b = 0; b < B_COUNT; ++b) {
-                if (now[b] == prev_[b]) continue;
-                int code = down_code_[b];  // release what was pressed, even if the mode changed meanwhile
-                if (now[b]) code = down_code_[b] = code_of(b);
-                if (code > 0) key(ev, code, now[b]);
-                if (!now[b]) {
-                    if (b == B_MENU && code <= 0 && cfg_.input == "mouse" && !recentred_) {
+        for (int b = 0; b < B_COUNT; ++b) {
+            if (now[b] == prev_[b]) continue;
+            if (swallow_[b]) { swallow_[b] = now[b]; continue; }
+            if (b == B_MENU) {  // acts on release: a tap, not a chord or a hold
+                if (!now[b] && !chord_ && !recentred_) {
+                    int code = code_of(b);
+                    if (code > 0) key(ev, code, true), menu_up_ = code;
+                    else if (cfg_.input == "mouse") {
                         mode_ = (mode_ + 1) % 3;
+                        ++changes;
                         fprintf(stderr, "[input] mouse mode: %s\n", mouse_mode());
                     }
-                    down_code_[b] = 0;
                 }
+                if (!now[b]) chord_ = false;
+                continue;
             }
+            int code = down_code_[b];  // release what was pressed, even if the mode changed meanwhile
+            if (now[b]) code = down_code_[b] = code_of(b);
+            if (code > 0) key(ev, code, now[b]);
+            if (!now[b]) down_code_[b] = 0;
         }
         if (cfg_.input == "mouse") {
             lstick_keys(c, ev);
@@ -369,6 +389,28 @@ public:
 private:
     InputCfg cfg_;
     int mode_ = 0;
+    bool swallow_[B_COUNT] = {};  // pressed as part of a chord: its release is not the game's either
+    bool chord_ = false;          // a chord happened during this menu hold
+    int menu_up_ = 0;             // menu tap: code to release on the next step
+
+    // Next (+1) / previous (-1) control mode. Releases whatever the old mode
+    // holds down (keys, buttons, pad axes) so nothing sticks.
+    void cycle(int dir, std::vector<InEvent>& ev) {
+        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "tune"};
+        int pos = cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 5 : 0;
+        for (int b = 0; b < B_COUNT; ++b)
+            if (down_code_[b] > 0) key(ev, down_code_[b], false), down_code_[b] = 0;
+        for (int i = 0; i < 4; ++i)
+            if (dir_[i]) key(ev, lstick_key(i), false), dir_[i] = false;
+        if (cfg_.input == "gamepad")
+            for (int a : {ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ}) axis(ev, a, 0);
+        pos = (pos + dir + 6) % 6;
+        cfg_.input = kIn[pos];
+        if (pos >= 2 && pos <= 4) mode_ = pos - 2;
+        hand_prev_ok_ = false;
+        ++changes;
+        fprintf(stderr, "[input] controls: %s\n", controls().c_str());
+    }
     bool prev_[B_COUNT] = {};
     int down_code_[B_COUNT] = {};
     bool an_[B_COUNT] = {};  // analog buttons' current state (hysteresis)
@@ -403,13 +445,16 @@ private:
         axis(ev, ABS_Z, int(lrintf(std::fmin(1.f, c.lt) * 255)));
         axis(ev, ABS_RZ, int(lrintf(std::fmin(1.f, c.rt) * 255)));
     }
-    void lstick_keys(const Controls& c, std::vector<InEvent>& ev) {
-        if (cfg_.lstick == "none") return;
+    int lstick_key(int i) const {  // up down left right
         bool arrows = cfg_.lstick == "arrows";
         const int keys[4] = {arrows ? KEY_UP : KEY_W, arrows ? KEY_DOWN : KEY_S, arrows ? KEY_LEFT : KEY_A, arrows ? KEY_RIGHT : KEY_D};
+        return keys[i];
+    }
+    void lstick_keys(const Controls& c, std::vector<InEvent>& ev) {
+        if (cfg_.lstick == "none") return;
         bool want[4] = {c.ly > 0.5f, c.ly < -0.5f, c.lx < -0.5f, c.lx > 0.5f};
         for (int i = 0; i < 4; ++i)
-            if (want[i] != dir_[i]) { key(ev, keys[i], want[i]); dir_[i] = want[i]; }
+            if (want[i] != dir_[i]) { key(ev, lstick_key(i), want[i]); dir_[i] = want[i]; }
     }
     float shape(float v) const {
         float a = std::fabs(v);

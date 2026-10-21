@@ -96,6 +96,7 @@ in front of the face (films). Controls, always on:
 | control | world lock | head lock |
 |---|---|---|
 | menu (≡, left) held 1 s | picture in front of the current gaze | freeze in place / follow again |
+| menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → tune (notice in the headset) | same |
 | both grips held | move with the hands, turn with the hands' line (15° snap; press a trigger during the grab for free turning), hand distance scales | same |
 | … + right stick | stretch width (x) / height (y) | same |
 | … + left stick | orbit the picture around you | same |
@@ -104,7 +105,7 @@ in front of the face (films). Controls, always on:
 
 | key | default | values | meaning |
 |---|---|---|---|
-| `input` | `off` | `off` `gamepad` `mouse` `tune` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings (below), the game gets nothing |
+| `input` | `off` | `off` `gamepad` `mouse` `tune` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings (below), the game gets nothing. The mode a game starts in; menu + a / b switches it in the headset |
 | `mouse_mode` | `stick` | `stick` `motion` `aim` | right stick moves the pointer / right controller rotation / controller ray = absolute pointer. A short menu press cycles them |
 | `mouse_speed` | `1` | factor | pointer speed |
 | `mouse_curve` | `2.5` | exponent | stick response (stick mode) |
@@ -129,7 +130,9 @@ in front of the face (films). Controls, always on:
 Default buttons in mouse mode: a = Enter, b = Esc, x = Space, y = Tab,
 l3 = Alt, r3 = middle click, lt = Shift, rt = left click, lg = Ctrl,
 rg = right click, menu = mode cycle (held 1 s: recentre). Gamepad mode: Xbox
-layout (a b x y, sticks, triggers, grips = bumpers).
+layout (a b x y, sticks, triggers, grips = bumpers), menu = Start. Menu's own
+code (Start, or a `map_menu`) goes out as a tap when menu is released, unless
+it was held 1 s or used for menu + a / b.
 
 ## Per-process environment only
 

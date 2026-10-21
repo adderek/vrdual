@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "../common/vrdual_version.h"
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_frames.hpp"
 #include "../common/vrdual_shm.h"
@@ -128,6 +129,7 @@ int main(int argc, char** argv) {
         else if (a == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (a == "--at" && i + 1 < argc) at = strtoull(argv[++i], nullptr, 10);
         else if (a == "--timeout" && i + 1 < argc) timeout = strtod(argv[++i], nullptr);
+        else if (a == "--version") { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
         else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--at N] [--timeout SEC]]\n", argv[0]); return 2; }
     }
     std::string base = vrdual::shm_dir() + "/vrdual-" + session + "-";

@@ -51,6 +51,7 @@
 
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_shm.h"
+#include "../common/vrdual_version.h"
 #include "spirv_patch.hpp"
 
 #define EXPORT extern "C" __attribute__((visibility("default")))
@@ -133,6 +134,8 @@ static void load_config(const VkApplicationInfo* app) {
     if (!c.ctl) { logf("cannot open control block %s", vrdual::ctl_path(c.session).c_str()); return; }
     if (!created && !c.seed) c.seed = new vrdual::Settings(st);  // never freed (layer globals live forever)
     vrdual_ctl v = vrdual::ctl_read(c.ctl);
+    static std::atomic<bool> told{false};
+    if (!told.exchange(true)) logf("%s (%d-bit layer)", VRDUAL_BUILD_INFO, int(sizeof(void*) * 8));
     logf("app='%s' exe='%s' profile='%s' session=%s (%s control block)", app_name.c_str(), exe_name().c_str(),
          st.profile.c_str(), c.session.c_str(), created ? "seeded" : "joined");
     logf("eye=%s anchor=%s ipd=%.1fmm ipd_near=%.1fmm world_scale=%g hfov=%g skip_w1=%d gpu='%s'%s%s",

@@ -50,6 +50,7 @@
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_font.hpp"
 #include "../common/vrdual_frames.hpp"
+#include "../common/vrdual_version.h"
 #include "../common/vrdual_input.hpp"
 
 static volatile sig_atomic_t g_quit = 0;
@@ -773,6 +774,8 @@ static int run(int argc, char** argv) {
     int grab_recentres = 0;
     vrdual::Tuner tune;  // input = tune: sticks change world_scale / hud_depth / hfov
     bool tune_on = false, tune_seeded = false;
+    int control_changes = 0;  // mapper->changes already shown
+    bool chord_hold = false;  // menu held with a / b pressed: a mode switch, not a recentre
     float hfov_now = 90;
     vrdual::Cursor cur;
     uint32_t cur_logged = 0;
@@ -886,7 +889,8 @@ static int run(int argc, char** argv) {
             ctl = nullptr;
             input_app.assign(L.hdr->app, strnlen(L.hdr->app, sizeof L.hdr->app));
             vrdual::InputCfg ic = vrdual::load_input_cfg(input_app);
-            mapper.reset(ic.input != "off" || ic.head_look != "off" || ic.lean ? new vrdual::Mapper(ic) : nullptr);
+            mapper.reset(new vrdual::Mapper(ic));  // also with input = off: menu + a / b switches the control mode
+            control_changes = 0;
             fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s\n", input_app.c_str(), ic.input.c_str(),
                     ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off");
             icfg = ic;
@@ -927,7 +931,10 @@ static int run(int argc, char** argv) {
             vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G);
             bool was = grab.both;
             memcpy(grab.basis, &base.orientation, sizeof grab.basis);
-            if (grab.step(c, t_now - t_input)) c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;  // grabbing: the game doesn't see them
+            chord_hold = c.menu && (chord_hold || c.a || c.b);
+            vrdual::Controls cg = c;
+            if (chord_hold) cg.menu = false;  // menu + a / b: no recentre at 1 s
+            if (grab.step(cg, t_now - t_input)) c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;  // grabbing: the game doesn't see them
             if (was && !grab.both)
                 fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, orbit %+.0f %+.0f deg, scale %.2f x %.2f (screen_scale_x/y to keep)\n",
                         grab.off[0], grab.off[1], grab.off[2], grab.orbit[0] * 57.29578f, grab.orbit[1] * 57.29578f, grab.sx, grab.sy);
@@ -955,7 +962,9 @@ static int run(int argc, char** argv) {
                 vrdual_ctl k = vrdual::ctl_read(ctl);
                 if (!tune.moving) { tune.v[0] = k.world_scale; tune.v[1] = k.hud_depth; tune.v[2] = k.hfov; }  // `vrdual set` counts too
                 if (!tune_seeded) { memcpy(tune.start, tune.v, sizeof tune.v); tune_seeded = true; }
-                int r = tune.step(c, t_now - t_input);
+                vrdual::Controls ct = c;
+                if (c.menu) ct.a = ct.b = false;  // menu + a / b switches the control mode
+                int r = tune.step(ct, t_now - t_input);
                 if (r & vrdual::TUNE_CHANGED)
                     vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = tune.v[0]; w.hud_depth = tune.v[1]; w.hfov = tune.v[2]; });
                 if (r & (vrdual::TUNE_SETTLED | vrdual::TUNE_RESET))
@@ -967,6 +976,18 @@ static int run(int argc, char** argv) {
                 }
             }
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
+            if (mapper && mapper->changes != control_changes) {
+                control_changes = mapper->changes;
+                bool t = mapper->input() == "tune";
+                if (t && !tune_on) {
+                    tune = vrdual::Tuner{};
+                    tune.dz = icfg.deadzone;
+                    tune_seeded = false;
+                    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo\n");
+                }
+                tune_on = t;
+                notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
+            }
             if (mapper && icfg.lean && c.head_ok) {
                 if (!lean_ref || mapper->recentres != recentres) {
                     ref_p[0] = c.head_px; ref_p[1] = c.head_py; ref_p[2] = c.head_pz;
@@ -1244,6 +1265,8 @@ static int run(int argc, char** argv) {
 // Headset gone, WiVRn restarted, session lost: start over in a fresh process
 // (re-exec: no runtime state survives), waiting for the runtime meanwhile.
 int main(int argc, char** argv) {
+    if (argc > 1 && !strcmp(argv[1], "--version")) { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
+    fprintf(stderr, "[xr] %s\n", VRDUAL_BUILD_INFO);
     int rc = run(argc, argv);
     if (rc != kLost || g_user_quit) return rc == kLost ? 0 : rc;
     alarm(0);

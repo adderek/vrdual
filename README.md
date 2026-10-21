@@ -27,6 +27,17 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 - For the headset: WiVRn (server on the PC, app on the Quest)
 - Steam: tested with the Flatpak
 
+## Get it
+
+`vrdual-<version>.tar.gz` of a release from
+[Releases](https://github.com/adderek/vrdual/releases) (0.x are
+pre-releases; GitHub's own "Source code" archives lack the Vulkan headers
+submodule and do not build), or:
+
+```bash
+git clone --recursive https://github.com/adderek/vrdual
+```
+
 ## Steam games
 
 ```bash
@@ -75,6 +86,9 @@ Tycoon. Broken: Portal (Zink bug), Tomb Raider I (DOSBox, 2D).
 vrdual is developed in spare time. If it lets you play something in VR,
 consider supporting it: [GitHub Sponsors](https://github.com/sponsors/adderek),
 [Liberapay](https://liberapay.com/adderek/) or [Ko-fi](https://ko-fi.com/adderek).
+
+When reporting a problem, include the output of `./vrdual version` (it also
+shows whether Steam still loads an older layer) and the game's log.
 
 Hardware helps too: the only headset here is a Meta Quest 3S, so other
 headsets (and their OpenXR runtimes) are untested. If you can lend or

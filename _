@@ -171,6 +171,22 @@ steam_layer_check() {
     return 0
 }
 
+# Build identity (tools/build_info.sh) of what would run: source tree, tools,
+# build/ layers and the copies games load (steam-install). stdout = data:
+# "<what>\t<build info>", "-" when missing.
+vrdual_version() {
+    local f d i
+    printf 'source\t%s\n' "$("$VRDUAL_ROOT/tools/build_info.sh" | sed 's/, built .*//') (now)"
+    printf 'tools\t%s\n' "$("$B/vrdual-ctl" --version 2>/dev/null || echo -)"
+    for f in "$B/libVkLayer_vrdual.so" "$B/lib32/libVkLayer_vrdual.so" \
+        "$STEAM_FLATPAK"/vrdual/layer/libVkLayer_vrdual{64,32}.so "$HOME"/.local/share/vrdual/layer/libVkLayer_vrdual{64,32}.so; do
+        d=${f/#$HOME/\~}
+        [[ -f $f ]] || { [[ $f == "$B"/* ]] && printf '%s\t-\n' "$d"; continue; }
+        i=$(strings -a "$f" | grep -m1 '^vrdual .*, built ' || true)  # grep -m1: SIGPIPE for strings, pipefail
+        printf '%s\t%s\n' "$d" "${i:-(older than build info)}"
+    done
+}
+
 # SBS window for a running session (also finds games inside Flatpak Steam).
 vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 
@@ -320,6 +336,10 @@ vrdual_selftest() {
     label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
     label="built-in game profile: Psychonauts gets skip_w1 = 0"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# built-in'"
+    label="build info: vrdual version lists tools and layers; SOURCE_DATE_EPOCH fixes the time"
+    check bash -c "v=\$('$VRDUAL_ROOT/vrdual' version) && grep -q \$'^tools\tvrdual .*, built .* on ' <<<\"\$v\" &&
+        grep -q 'build/libVkLayer_vrdual.so.*, built ' <<<\"\$v\" &&
+        SOURCE_DATE_EPOCH=0 '$VRDUAL_ROOT/tools/build_info.sh' | grep -q ', built 1970-01-01 00:00:00 +0000 on ' || { echo \"\$v\"; false; }"
     label="docs/CONFIG.md lists every config key"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
 
@@ -366,6 +386,8 @@ vrdual_selftest() {
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
         "$B/vrdual-cube" --scene calib --clear-alpha 0 --title "selftest mirror" >"$tmp/mirror.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images' "$tmp/mirror.log" && break; sleep 0.1; done
+    label="build info: layer logs version, ISO build time and this machine"
+    check grep -qE "^\[vrdual:LR\] vrdual [^ ]+, built [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4} on $(uname -n) \(64-bit layer\)$" "$tmp/mirror.log"
     label="mirror: app sees 1 GPU, twin on 0b"; check bash -c "grep -q 'app sees 1 GPU' '$tmp/mirror.log' && grep -q 'twin device on .*0000:0b:00.0' '$tmp/mirror.log'"
     label="mirror: app clears alpha 0, frame file alpha 255"
     check bash -c "for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --alpha /dev/shm/vrdual-$sess-0) && break; sleep 0.1; done; [ \"\$a\" = 255 ]"
@@ -631,6 +653,7 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
                                   --left-gpu G --right-gpu G (pci:BBBB:BB:DD.F | index | name)
                                   --session S --scale F --snapshot PNG --at N
   clean                         remove stale /dev/shm/vrdual-*
+  version                       version, build time and machine of the tools and of each installed layer
   selftest                      automated verification (~20 s, two small windows); exit 0 = pass
 
 Settings: config file, overridable per run by VRDUAL_<KEY> env (VRDUAL_IPD=0.066 ...).
@@ -640,7 +663,8 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version) "vrdual_$cmd" "$@" ;;
+        --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
     esac

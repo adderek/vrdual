@@ -1,0 +1,9 @@
+# Release source archives (GitHub's "Source code", `git archive`): the
+# version is filled in, development-only files stay out.
+VERSION export-subst
+AGENTS.md export-ignore
+CLAUDE.md export-ignore
+TODO.md export-ignore
+docs/tasks export-ignore
+screenshots export-ignore
+.gitattributes export-ignore

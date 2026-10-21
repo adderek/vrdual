@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "../common/vrdual_version.h"
 #include "../common/vrdual_ctl.hpp"
 
 using namespace vrdual;
@@ -25,7 +26,7 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 }
 
 static int usage() {
-    fprintf(stderr, "usage: vrdual-ctl path | init | show [APP] | live | set KEY VALUE | save [--global]   [--session S]\n");
+    fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | live | set KEY VALUE | save [--global]   [--session S]\n");
     return 2;
 }
 
@@ -41,6 +42,7 @@ int main(int argc, char** argv) {
     }
     if (args.empty()) return usage();
     const std::string& cmd = args[0];
+    if (cmd == "--version" || cmd == "version") { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
 
     if (cmd == "path") { printf("%s\n", config_path().c_str()); return 0; }
 

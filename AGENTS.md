@@ -50,6 +50,7 @@ automatically.
 | `tools/spvpatch.cpp` | offline patcher driver for `spirv-val` checks |
 | `tools/measure_posts.py` | measures disparity/anchor in a calib snapshot vs theory (±1 px / 4 %) |
 | `_` / `vrdual` | implementation + human menu / machine CLI (sources `_`) |
+| `tools/build_info.sh`, `common/vrdual_version.h` | build identity (version from `git describe`, ISO build time, machine) compiled into every binary; `vrdual version` |
 | `docs/GAMES.md` | per-game status and settings (update after testing a game) |
 
 ## Commands
@@ -60,6 +61,7 @@ automatically.
 ./vrdual run --session S -- APP ARGS   # any Vulkan app, one copy per eye
 ./vrdual-ctl / ./vrdual live|set|save  # live control of session S (VRDUAL_SESSION or --session)
 ./vrdual clean                # stale /dev/shm/vrdual-* from manual runs
+./vrdual version              # build identity of tools, layers and the Steam copies
 ```
 
 Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_EYE=left VRDUAL_SESSION=x APP`.
@@ -165,7 +167,11 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - Code comments and docs in English; match the existing terse comment style.
   The user writes in Polish, is a senior engineer and prefers terse answers.
 - Git repo since 2026-10-18 (`master`, remote `origin` = github.com:adderek/vrdual). Vulkan-Headers is a
-  submodule (`git submodule update --init`). Commit only when the user asks.
+  submodule (`git submodule update --init`). Releases (maintainer, all local, no
+  CI): tag `v0.x.y`, push it, `tools/release.sh --publish v0.x.y` (tarball with
+  the submodule, notes from CHANGELOG.md, 0.x = pre-release); `.gitattributes`
+  keeps agent/task files out of archives and fills in `VERSION`. Commit only
+  when the user asks.
 - Steam here is the **Flatpak** (`~/.var/app/com.valvesoftware.Steam`): its
   `/dev/shm` is private, `$HOME` inside = that dir. Test games by hand with
   `flatpak run --command=bash com.valvesoftware.Steam -c '...'` (see ARCHITECTURE
