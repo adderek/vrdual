@@ -85,7 +85,7 @@ struct Mem {
     size_t cap = 0;          // bytes mmap'd for shadow/last
     VkDeviceSize cap_off = 0;
     bool tracked = false;    // shadow registered for dirty tracking
-    int wp = -1;             // cached: write-tracking slot (VRDUAL_CACHED_WP=1)
+    int wp = -1;             // cached: write-tracking slot
     bool synced = false;     // tracked and fully pushed once: scans list every later write
 };
 
@@ -377,7 +377,7 @@ static bool dirty_scan(char* p, size_t n, std::vector<std::pair<size_t, size_t>>
     return true;
 }
 
-// Write tracking for cached mappings (VRDUAL_CACHED_WP=1, experimental). They
+// Write tracking for cached mappings (VRDUAL_CACHED_WP=0 turns it off). They
 // are the driver's own (VM_PFNMAP: no userfaultfd), and DXVK d3d9 keeps
 // hundreds of MB there (CoJ Gunslinger: 288 MB, 23 ms/submit of memcmp for
 // ~0.1 MB of changes). The mapping is made read-only per block; the first
@@ -439,7 +439,7 @@ static void on_segv(int sig, siginfo_t* si, void* uc) {
 
 static bool enabled() {
     static const bool e = [] {
-        if (strcmp(env("VRDUAL_CACHED_WP", "0"), "1")) return false;
+        if (!strcmp(env("VRDUAL_CACHED_WP", "1"), "0")) { logf("mirror: cached write tracking off (VRDUAL_CACHED_WP=0)"); return false; }
         struct sigaction sa{};
         sigaction(SIGSEGV, nullptr, &g_prev);
         sa.sa_sigaction = on_segv;
@@ -450,7 +450,7 @@ static bool enabled() {
             return false;
         }
         g_installed = true;
-        logf("mirror: cached write tracking on (mprotect + SIGSEGV, VRDUAL_CACHED_WP=1, experimental)");
+        logf("mirror: cached write tracking on (mprotect + SIGSEGV; VRDUAL_CACHED_WP=0 turns it off)");
         return true;
     }();
     return e;

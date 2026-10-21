@@ -78,7 +78,7 @@ map_x = KEY_E
 | `screen_scale_y` | `1` | 0.1..10 | picture height scale |
 | `overlay_time` | `4` | seconds, 0 = off | notice panel 1.5 m in front of the eyes on events (headset connected, game started / stopped, screen recentred or moved, tune changes): the event, the game, screen and input mode, ipd, world_scale, hud_depth, hfov |
 
-Command line: `vrdual xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn] [--frames N] [--swap]`.
+Command line: `vrdual xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn] [--no-audio] [--frames N] [--swap]`.
 `vrdual wivrn-restart` restarts the server alone (a running `vrdual xr` reconnects).
 Start it once, before or after the game; it keeps running across games and
 reloads each new game's settings.
@@ -86,6 +86,10 @@ With WiVRn as the runtime it needs `wivrn-server`: when none runs it starts
 one in the background (log `$XDG_RUNTIME_DIR/vrdual-wivrn.log`);
 `--no-start-wivrn` refuses instead. `vrdual wivrn` (foreground) and the
 background start share a lock, so vrdual never runs two servers.
+Audio: when the headset connects (WiVRn's `wivrn.sink` appears) it becomes the
+default output, so games play in the headset; the previous default comes back
+when `vrdual xr` exits. Only on connect: an output chosen by hand later stays.
+`--no-audio` leaves the outputs alone.
 `--lock world` (default) keeps the picture in the room; `--lock head` keeps it
 in front of the face (films). Controls, always on:
 
@@ -143,6 +147,6 @@ Debugging only: `VRDUAL_FILTER=0` (no GPU / capability filter),
 `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_CLAMP_API=1`, `VRDUAL_TRACE_EXTS=1` (log
 enabled device extensions), `VRDUAL_MIRROR_TRACE=N` (log the first N mirrored
 calls), `VRDUAL_SHADOW=0`, `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (full memory
-diff, no userfaultfd), `VRDUAL_CACHED_WP=1` (mirror: track writes to cached
-mappings with mprotect + SIGSEGV, experimental), `VRDUAL_MIRROR_FAIL_AT=N`
+diff, no userfaultfd), `VRDUAL_CACHED_WP=0` (mirror: no write tracking for cached
+mappings, full diff), `VRDUAL_MIRROR_FAIL_AT=N`
 (selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest).

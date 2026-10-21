@@ -178,10 +178,11 @@ vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 # WiVRn as runtime needs wivrn-server: started in the background when none
 # runs (log: $XDG_RUNTIME_DIR/vrdual-wivrn.log); --no-start-wivrn refuses instead,
 # --restart-wivrn stops a running one first (headset stuck on WiVRn's app list).
+# Audio follows the headset (xr_audio_follow); --no-audio leaves outputs alone.
 vrdual_xr() {
-    local a start=1 restart=0 args=()
+    local a start=1 restart=0 audio=1 args=()
     for a in "$@"; do
-        case $a in --no-start-wivrn) start=0 ;; --restart-wivrn) restart=1 ;; *) args+=("$a") ;; esac
+        case $a in --no-start-wivrn) start=0 ;; --restart-wivrn) restart=1 ;; --no-audio) audio=0 ;; *) args+=("$a") ;; esac
     done
     set -- "${args[@]}"
     # follows the game between host /dev/shm and Flatpak Steam's, across games
@@ -201,7 +202,49 @@ vrdual_xr() {
         fi
         wivrn_bg_start || return 1
     fi
+    if [[ $rt == *wivrn* ]] && ((audio)) && command -v pactl >/dev/null; then
+        local state rc=0 ap
+        state=$(mktemp)
+        xr_audio_follow "$state" & ap=$!
+        trap ':' INT TERM  # Ctrl-C ends vrdual-xr; the restore below still runs
+        "$B/vrdual-xr" "$@" || rc=$?
+        trap - INT TERM
+        kill $ap 2>/dev/null || true
+        wait $ap 2>/dev/null || true  # killed: 143, and set -e
+        xr_audio_restore "$state"
+        rm -f "$state"
+        return $rc
+    fi
     "$B/vrdual-xr" "$@"
+}
+
+# Game audio to the headset. WiVRn's sink appears when the headset connects;
+# at that moment it becomes the default output (streams following the default
+# move with it). Only on appearance: a default changed by hand later stays.
+# $1: file that keeps the output to restore.
+xr_audio_follow() {
+    local had=0 now prev
+    while :; do
+        now=0
+        pactl list short sinks 2>/dev/null | cut -f2 | grep -qx wivrn.sink && now=1
+        if ((now && !had)); then
+            prev=$(pactl get-default-sink 2>/dev/null)
+            if [[ -n $prev && $prev != wivrn.sink ]] && pactl set-default-sink wivrn.sink; then
+                echo "$prev" >"$1"
+                say "audio: default output -> wivrn.sink (headset), was $prev"
+            fi
+        fi
+        had=$now
+        sleep "${VRDUAL_AUDIO_POLL:-2}"
+    done
+}
+
+# Puts the output from before back, if the headset's is still the default.
+xr_audio_restore() {
+    local prev
+    prev=$(cat "$1" 2>/dev/null)
+    [[ -n $prev && $(pactl get-default-sink 2>/dev/null) == wivrn.sink ]] || return 0
+    pactl set-default-sink "$prev" && say "audio: default output -> $prev"
 }
 
 wivrn_bg_start() {
@@ -348,10 +391,10 @@ vrdual_selftest() {
         $M '$tmp/bda.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/bda.log' || { cat '$tmp/bda.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
-    # 3c. VRDUAL_CACHED_WP=1: HOST_CACHED mapping protected per block; the late
+    # 3c. Cached write tracking (default): HOST_CACHED mapping protected per block; the late
     # vertex write must fault, be recorded and reach B.
     rm -f /dev/shm/vrdual-$sess-*
-    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_CACHED_WP=1 \
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
         "$B/vrdual-cube" --scene calib --bda --cached --late-verts 60 --title "selftest cached wp" >"$tmp/wp.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images' "$tmp/wp.log" && break; sleep 0.1; done
     label="mirror cached write tracking: late write faults and reaches B, ipd 64mm"
@@ -436,6 +479,37 @@ vrdual_selftest() {
     label="input: mapper scenarios$( "$B/vrdual-input-test" 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped: module not loaded)' || echo ', uinput pad read back')"
     check "$B/vrdual-input-test"
 
+    # audio: the headset's sink becomes the default when it appears, a later
+    # manual choice stays, the old default comes back (fake pactl)
+    mkdir -p "$tmp/pa" && cat >"$tmp/pa/pactl" <<'PA' && chmod +x "$tmp/pa/pactl"
+#!/bin/sh
+d=$(dirname "$0")
+case "$1 $2" in
+"list short") n=0; while read -r s; do n=$((n+1)); printf '%s\t%s\tPipeWire\n' $n "$s"; done <"$d/sinks" ;;
+"get-default-sink "*) cat "$d/default" ;;
+"set-default-sink "*) echo "$2" >"$d/default" ;;
+esac
+PA
+    label="vrdual xr audio: default -> wivrn.sink on connect, manual choice kept, restored on exit"
+    check bash -c "export PATH='$tmp/pa':\$PATH VRDUAL_AUDIO_POLL=0.1; source '$VRDUAL_ROOT/_'; d='$tmp/pa'
+        echo hdmi >\$d/sinks; echo hdmi >\$d/default; st=\$(mktemp)
+        xr_audio_follow \$st 2>/dev/null & p=\$!
+        sleep 0.4; [[ \$(cat \$d/default) == hdmi ]] || { echo 'switched without a headset'; kill \$p; exit 1; }
+        echo wivrn.sink >>\$d/sinks; sleep 0.4; [[ \$(cat \$d/default) == wivrn.sink ]] || { echo 'not switched'; kill \$p; exit 1; }
+        echo manual >\$d/default; sleep 0.4; [[ \$(cat \$d/default) == manual ]] || { echo 'manual choice overridden'; kill \$p; exit 1; }
+        echo wivrn.sink >\$d/default; kill \$p; wait \$p 2>/dev/null || true; xr_audio_restore \$st 2>/dev/null
+        [[ \$(cat \$d/default) == hdmi ]] || { echo \"not restored: \$(cat \$d/default)\"; exit 1; }"
+    label="vrdual xr audio: Ctrl-C on xr still restores the output"
+    mkdir -p "$tmp/pa/b" && printf '#!/bin/sh\nexec sleep 30\n' >"$tmp/pa/b/vrdual-xr" && chmod +x "$tmp/pa/b/vrdual-xr"
+    printf '#!/bin/sh\nexit 0\n' >"$tmp/pa/pgrep" && chmod +x "$tmp/pa/pgrep"  # wivrn-server "runs"
+    check bash -c "d='$tmp/pa'; printf 'hdmi\nwivrn.sink\n' >\$d/sinks; echo hdmi >\$d/default
+        # background jobs start with SIGINT ignored; a terminal's Ctrl-C does not: default it again
+        setsid python3 -I -c 'import os,signal,sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \\
+            bash -c \"export PATH=\$d:\\\$PATH VRDUAL_AUDIO_POLL=0.1 XR_RUNTIME_JSON=/x/openxr_wivrn.json; source '$VRDUAL_ROOT/_'; B=\$d/b; vrdual_xr --session none || true; echo done >\$d/exited\" 2>/dev/null & p=\$!
+        for i in \$(seq 30); do [[ \$(cat \$d/default) == wivrn.sink ]] && break; sleep 0.1; done
+        [[ \$(cat \$d/default) == wivrn.sink ]] || { echo 'not switched'; kill -- -\$p; exit 1; }
+        kill -INT -- -\$p; for i in \$(seq 30); do [[ -e \$d/exited ]] && break; sleep 0.1; done
+        [[ -e \$d/exited && \$(cat \$d/default) == hdmi ]] || { echo \"exited: \$(cat \$d/exited 2>/dev/null) default: \$(cat \$d/default)\"; kill -- -\$p 2>/dev/null; exit 1; }"
     label="vrdual xr --no-start-wivrn: refuses without wivrn-server"
     mkdir -p "$tmp/nopgrep" && printf '#!/bin/sh\nexit 1\n' >"$tmp/nopgrep/pgrep" && chmod +x "$tmp/nopgrep/pgrep"
     printf '#!/bin/sh\nsleep 3\n' >"$tmp/nopgrep/flatpak" && chmod +x "$tmp/nopgrep/flatpak"  # fake server
@@ -546,9 +620,10 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
                                   the launch option:  .../vrdual/run %command%
   view [--session S]            SBS window of a running game (finds Flatpak Steam sessions)
-  xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn]
+  xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn] [--no-audio]
                                 game in the HMD via OpenXR (WiVRn -> Quest); runs across
-                                games; starts wivrn-server in the background if none runs
+                                games; starts wivrn-server in the background if none runs;
+                                audio goes to the headset while it is connected
   wivrn                         start the WiVRn streaming server (Flatpak, foreground)
   wivrn-restart                 stop wivrn-server, start it in the background (a running
                                   xr reconnects; reconnect the headset app)
