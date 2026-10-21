@@ -143,5 +143,6 @@ Debugging only: `VRDUAL_FILTER=0` (no GPU / capability filter),
 `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_CLAMP_API=1`, `VRDUAL_TRACE_EXTS=1` (log
 enabled device extensions), `VRDUAL_MIRROR_TRACE=N` (log the first N mirrored
 calls), `VRDUAL_SHADOW=0`, `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (full memory
-diff, no userfaultfd), `VRDUAL_MIRROR_FAIL_AT=N`
+diff, no userfaultfd), `VRDUAL_CACHED_WP=1` (mirror: track writes to cached
+mappings with mprotect + SIGSEGV, experimental), `VRDUAL_MIRROR_FAIL_AT=N`
 (selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest).

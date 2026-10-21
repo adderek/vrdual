@@ -128,8 +128,14 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   write-protect fires its MMU notifier, the BO is revalidated with
   `hmm_range_fault` for write, which unprotects all its pages: scans then
   report ~100 MB "written" per submit (slower than the full diff), and B
-  cannot always replay the userptr's device address. The log line `memory sync … MB mapped, … MB diffed; full diff … (… cached) …,
-  dirty scan …, transient maps …` shows where a push spends its time.
+  cannot always replay the userptr's device address. `VRDUAL_CACHED_WP=1`
+  (experimental): cached mappings are made read-only per block (64 KB or
+  more, ≤ 4096 blocks); the first write faults, a SIGSEGV handler (no libc,
+  no TLS: Wine's segment registers) records the block and unprotects it;
+  other faults go to the previous handler (Wine's). Kernel writes into a
+  protected block (`read(2)` straight into the buffer) fail with EFAULT. The log line `memory sync … MB mapped, … MB diffed; full diff … (… cached) …,
+  dirty scan …, transient maps …, … cached write faults` shows where a push
+  spends its time.
   32-bit processes (or `VRDUAL_TRANSIENT_MAPS=1`) map A-under-a-shadow and B
   only while a push copies changed pages: two persistent buffers per mapping
   instead of four, else large games exhaust the 4 GB address space (Alice
@@ -166,7 +172,8 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   reporting 1.3; `VRDUAL_CLAMP_API=1` to force).
 - Debug knobs: `VRDUAL_MIRROR_TRACE=N` (log first N mirrored calls),
   `VRDUAL_FILTER=0`, `VRDUAL_KEEP_EXT=...`, `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_SHADOW=0`,
-  `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (no dirty tracking), `VRDUAL_MIRROR_FAIL_AT=N` (stop the mirror at the
+  `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (no dirty tracking),
+  `VRDUAL_CACHED_WP=1` (cached write tracking, experimental), `VRDUAL_MIRROR_FAIL_AT=N` (stop the mirror at the
   Nth memory sync, for tests).
 
 ## Steam (Flatpak or native) and OpenGL games

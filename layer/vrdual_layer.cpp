@@ -22,6 +22,7 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <link.h>
+#include <signal.h>
 #include <linux/fs.h>
 #include <linux/userfaultfd.h>
 #include <sys/ioctl.h>

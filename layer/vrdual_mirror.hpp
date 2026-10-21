@@ -85,6 +85,7 @@ struct Mem {
     size_t cap = 0;          // bytes mmap'd for shadow/last
     VkDeviceSize cap_off = 0;
     bool tracked = false;    // shadow registered for dirty tracking
+    int wp = -1;             // cached: write-tracking slot (VRDUAL_CACHED_WP=1)
     bool synced = false;     // tracked and fully pushed once: scans list every later write
 };
 
@@ -376,6 +377,141 @@ static bool dirty_scan(char* p, size_t n, std::vector<std::pair<size_t, size_t>>
     return true;
 }
 
+// Write tracking for cached mappings (VRDUAL_CACHED_WP=1, experimental). They
+// are the driver's own (VM_PFNMAP: no userfaultfd), and DXVK d3d9 keeps
+// hundreds of MB there (CoJ Gunslinger: 288 MB, 23 ms/submit of memcmp for
+// ~0.1 MB of changes). The mapping is made read-only per block; the first
+// write faults, our SIGSEGV handler sets the block's bit and makes it
+// writable again. A push swaps the bits to 0, re-protects those blocks, then
+// diffs them: a write after the swap either lands before the re-protect (read
+// by the diff) or faults again (next push). Faults that are not ours go to the
+// previous handler (Wine's). The handler uses no libc and no TLS: in Wine the
+// segment registers may be the Windows ones. Risk: the kernel writing into a
+// protected block (read(2) straight into the buffer) gets EFAULT, not a fault.
+namespace wp {
+constexpr int kSlots = 1024, kWords = 64;  // up to 4096 blocks per mapping
+struct Slot {
+    std::atomic<uintptr_t> base{0};  // page-aligned, 0 = free
+    std::atomic<size_t> len{0}, blk{0};
+    std::atomic<uint64_t> bits[kWords];
+};
+static Slot* g_slots = new Slot[kSlots];
+static std::mutex& g_lock = *new std::mutex;  // slot (de)allocation, not used by the handler
+static std::atomic<uint64_t> g_faults{0};
+static struct sigaction g_prev;
+static std::atomic<bool> g_installed{false};
+
+static long raw_mprotect(uintptr_t p, size_t n, int prot) {
+#if defined(__x86_64__)
+    long r;
+    asm volatile("syscall" : "=a"(r) : "a"(10L), "D"(p), "S"(n), "d"(long(prot)) : "rcx", "r11", "memory");
+    return r;
+#elif defined(__i386__)
+    long r;
+    asm volatile("int $0x80" : "=a"(r) : "a"(125L), "b"(p), "c"(n), "d"(prot) : "memory");
+    return r;
+#else
+    return mprotect((void*)p, n, prot);
+#endif
+}
+
+static void on_segv(int sig, siginfo_t* si, void* uc) {
+    uintptr_t a = uintptr_t(si->si_addr);
+    if (si->si_code == SEGV_ACCERR)
+        for (int i = 0; i < kSlots; ++i) {
+            uintptr_t b = g_slots[i].base.load(std::memory_order_acquire);
+            size_t n = g_slots[i].len.load(std::memory_order_relaxed), k = g_slots[i].blk.load(std::memory_order_relaxed);
+            if (!b || a < b || a >= b + n || !k) continue;
+            size_t j = (a - b) / k;
+            g_slots[i].bits[j / 64].fetch_or(uint64_t(1) << (j % 64), std::memory_order_acq_rel);
+            g_faults.fetch_add(1, std::memory_order_relaxed);
+            if (raw_mprotect(b + j * k, std::min(k, n - j * k), PROT_READ | PROT_WRITE) == 0) return;
+            break;
+        }
+    if (g_prev.sa_flags & SA_SIGINFO) {
+        g_prev.sa_sigaction(sig, si, uc);
+    } else if (g_prev.sa_handler == SIG_DFL) {
+        signal(sig, SIG_DFL);  // re-raised by the faulting instruction
+    } else if (g_prev.sa_handler != SIG_IGN) {
+        g_prev.sa_handler(sig);
+    }
+}
+
+static bool enabled() {
+    static const bool e = [] {
+        if (strcmp(env("VRDUAL_CACHED_WP", "0"), "1")) return false;
+        struct sigaction sa{};
+        sigaction(SIGSEGV, nullptr, &g_prev);
+        sa.sa_sigaction = on_segv;
+        sa.sa_flags = (g_prev.sa_flags | SA_SIGINFO) & ~SA_RESETHAND;
+        sa.sa_mask = g_prev.sa_mask;
+        if (sigaction(SIGSEGV, &sa, nullptr) != 0) {
+            logf("mirror: cached write tracking off (sigaction: %s)", strerror(errno));
+            return false;
+        }
+        g_installed = true;
+        logf("mirror: cached write tracking on (mprotect + SIGSEGV, VRDUAL_CACHED_WP=1, experimental)");
+        return true;
+    }();
+    return e;
+}
+
+// Still the first handler? (a library may have replaced it; then faults in
+// protected blocks would reach the app as crashes)
+static bool still_ours() {
+    struct sigaction cur{};
+    sigaction(SIGSEGV, nullptr, &cur);
+    return (cur.sa_flags & SA_SIGINFO) && cur.sa_sigaction == on_segv;
+}
+
+// Protects [p, p + n) (whole pages inside it) and returns its slot, or -1.
+static int add(char* p, size_t n) {
+    if (!enabled()) return -1;
+    uintptr_t b = (uintptr_t(p) + 4095) & ~uintptr_t(4095), e = (uintptr_t(p) + n) & ~uintptr_t(4095);
+    if (e <= b) return -1;
+    size_t len = e - b, blk = std::max<size_t>(64 << 10, ((len + kWords * 64 - 1) / (kWords * 64) + 4095) & ~size_t(4095));
+    std::lock_guard<std::mutex> l(g_lock);
+    for (int i = 0; i < kSlots; ++i) {
+        if (g_slots[i].base.load()) continue;
+        for (auto& w : g_slots[i].bits) w.store(0);
+        g_slots[i].len.store(len);
+        g_slots[i].blk.store(blk);
+        if (raw_mprotect(b, len, PROT_READ) != 0) return -1;
+        g_slots[i].base.store(b, std::memory_order_release);
+        return i;
+    }
+    static std::atomic<bool> logged{false};
+    if (!logged.exchange(true)) logf("mirror: cached write tracking: all %d slots in use, more mappings get the full diff", kSlots);
+    return -1;
+}
+
+// Unprotects and frees the slot (the driver may keep its mapping alive).
+static void remove(int i) {
+    if (i < 0) return;
+    std::lock_guard<std::mutex> l(g_lock);
+    uintptr_t b = g_slots[i].base.exchange(0);
+    raw_mprotect(b, g_slots[i].len.load(), PROT_READ | PROT_WRITE);
+}
+
+// Written blocks of slot i as mapping offsets (p = the mapping), re-protected.
+static void take(int i, const char* p, size_t n, std::vector<std::pair<size_t, size_t>>& out) {
+    Slot& s = g_slots[i];
+    uintptr_t b = s.base.load();
+    size_t len = s.len.load(), blk = s.blk.load(), head = b - uintptr_t(p);
+    for (int w = 0; w < kWords; ++w) {
+        uint64_t m = s.bits[w].exchange(0, std::memory_order_acq_rel);
+        for (; m; m &= m - 1) {
+            size_t j = size_t(w) * 64 + size_t(__builtin_ctzll(m)), o = j * blk, k = std::min(blk, len - o);
+            raw_mprotect(b + o, k, PROT_READ);
+            out.push_back({head + o, k});
+        }
+    }
+    // unprotected head/tail partial pages of the mapping: always diffed
+    if (head) out.push_back({0, std::min(head, n)});
+    if (head + len < n) out.push_back({head + len, n - head - len});
+}
+}  // namespace wp
+
 // 32-bit processes run out of address space with four mappings per mapped
 // allocation (A, B, shadow, last): there A (under a shadow) and B are mapped
 // only while a push copies changed pages.
@@ -397,6 +533,12 @@ static void push_one(MDev* md, uint64_t amem, Mem& m) {
     rs.clear();
     uint64_t t0 = now_ns();
     size_t len = size_t(m.len);
+    if (m.wp >= 0 && !wp::still_ours()) {
+        logf("mirror: SIGSEGV handler replaced by someone else, cached write tracking off");
+        wp::remove(m.wp);
+        m.wp = -1, m.synced = false;
+    }
+    if (m.wp >= 0 && m.synced) wp::take(m.wp, m.amap, len, rs);
     bool scanned = m.tracked && dirty_scan(m.shadow, (len + 4095) & ~size_t(4095), rs);
     for (auto& r : rs) r.second = std::min(r.second, len - std::min(r.first, len));  // last page
     if (m.tracked && !scanned) m.tracked = m.synced = false;
@@ -406,7 +548,7 @@ static void push_one(MDev* md, uint64_t amem, Mem& m) {
         rs.clear();
         size_t first = first_change(src, m.last, m.len);
         if (first != SIZE_MAX) rs.push_back({first, m.len - first});
-        m.synced = m.tracked;  // protected before this diff: later writes show up in scans
+        m.synced = m.tracked || m.wp >= 0;  // protected before this diff: later writes show up in scans
         md->full_bytes += m.len;
         if (m.cached) md->full_cached_bytes += m.len;
         md->full_ns += now_ns() - t1;
@@ -454,9 +596,9 @@ static void push_memory(MDev* md) {
     if (++md->pushes % 600 == 0) {
         const double k = 600 * 1048576.0, n = 600 * 1e6;
         logf("mirror: memory sync %.2f ms/submit avg over %.1f MB mapped, %.1f MB diffed; full diff %.1f MB (%.1f MB cached) %.2f ms, "
-             "dirty scan %.2f ms, transient maps %.2f ms",
+             "dirty scan %.2f ms, transient maps %.2f ms, %llu cached write faults",
              md->push_ns / n, bytes / 1048576.0, md->diffed_bytes / k, md->full_bytes / k, md->full_cached_bytes / k, md->full_ns / n,
-             md->scan_ns / n, md->map_ns / n);
+             md->scan_ns / n, md->map_ns / n, (unsigned long long)wp::g_faults.exchange(0));
         md->push_ns = md->diffed_bytes = md->full_bytes = md->full_cached_bytes = md->full_ns = md->scan_ns = md->map_ns = 0;
     }
 }
@@ -559,6 +701,7 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeMemory(VkDevice dev, VkDeviceMemory mem,
         auto it = md->mems.find(h2u(mem));
         if (it != md->mems.end()) {
             free_shadow(it->second);
+            wp::remove(it->second.wp);
             md->mems.erase(it);
         }
     }
@@ -605,8 +748,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory m
     m.off = off;
     m.len = len;
     m.mapped = true;
-    if (m.cached) memcpy(m.last, m.amap, len);
-    else *pp = m.shadow;
+    if (m.cached) {
+        memcpy(m.last, m.amap, len);
+        if (m.wp < 0 && md->live) m.wp = wp::add(m.amap, len);
+    } else *pp = m.shadow;
     return r;
 }
 
@@ -619,6 +764,8 @@ static VKAPI_ATTR void VKAPI_CALL m_UnmapMemory(VkDevice dev, VkDeviceMemory mem
         if (it != md->mems.end() && it->second.mapped) {
             Mem& m = it->second;
             push_one(md, it->first, m);
+            wp::remove(m.wp);
+            m.wp = -1;
             if (m.bmap) md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem));
             a_released = m.a_released;
             m.mapped = m.a_released = false;

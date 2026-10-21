@@ -4,10 +4,12 @@
 // Animation is driven by the frame index, so two instances stay in sync.
 //
 //   vrdual-cube [--frames N] [--size WxH] [--title T] [--scene cubes|calib] [--bda] [--extra-window]
-//              [--clear-alpha A] [--late-verts N]
+//              [--clear-alpha A] [--late-verts N] [--cached]
 //
 // --late-verts N: vertices zero until frame N, then written into the same
 // mapping (the mirror must push writes long after the first sync).
+// --cached: vertices in a 1 MB HOST_CACHED buffer (mirror: VRDUAL_CACHED_WP
+// tracks whole pages).
 // --clear-alpha A: background alpha (games leave 0; the layer exports 1).
 // --extra-window: a second, small swapchain created after the main one and
 // presented every frame too (like wined3d's helper windows).
@@ -75,6 +77,7 @@ int main(int argc, char** argv) {
     bool bda = false, extra = false;
     float clear_alpha = 1;
     int late_verts = 0;
+    bool cached = false;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &W, &H);
@@ -82,6 +85,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) scene = argv[++i];
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
+        else if (!strcmp(argv[i], "--cached")) cached = true;
         else if (!strcmp(argv[i], "--late-verts") && i + 1 < argc) late_verts = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--clear-alpha") && i + 1 < argc) clear_alpha = (float)atof(argv[++i]);
     }
@@ -341,14 +345,15 @@ int main(int argc, char** argv) {
         }
     }
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bci.size = verts.size() * 4;
+    bci.size = cached ? std::max<size_t>(verts.size() * 4, 1u << 20) : verts.size() * 4;
     bci.usage = bda ? VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     VkBuffer vbuf;
     CK(vkCreateBuffer(dev, &bci, nullptr, &vbuf));
     vkGetBufferMemoryRequirements(dev, vbuf, &mr);
     VkMemoryAllocateFlagsInfo mafi{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT};
     mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, bda ? &mafi : nullptr, mr.size,
-           memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+           memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                          (cached ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT : 0))};
     VkDeviceMemory vmem;
     CK(vkAllocateMemory(dev, &mai, nullptr, &vmem));
     vkBindBufferMemory(dev, vbuf, vmem, 0);
