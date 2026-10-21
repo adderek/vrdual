@@ -5,9 +5,12 @@
 //
 //   vrdual-cube [--frames N] [--size WxH] [--title T] [--scene cubes|calib] [--bda] [--extra-window]
 //              [--clear-alpha A] [--late-verts N] [--verts-file] [--cached] [--readback]
+//              [--swapchain-format a2b10g10r10|a2r10g10b10|rgba16f]
 //
 // --late-verts N: vertices zero until frame N, then written into the same
 // mapping (the mirror must push writes long after the first sync).
+// --swapchain-format: a 10-bit or FP16 swapchain (as UE4 games pick), exit 3
+// if the surface does not offer it.
 // --verts-file: the late vertex write is a pread(2) from a file straight into
 // the mapping, i.e. done by the kernel (UE3 texture streaming does that).
 // --readback: every frame vkCmdFillBuffer writes the frame number into a
@@ -86,6 +89,7 @@ int main(int argc, char** argv) {
     float clear_alpha = 1;
     int late_verts = 0;
     bool cached = false, verts_file = false, readback = false;
+    std::string want_fmt;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &W, &H);
@@ -96,6 +100,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--cached")) cached = true;
         else if (!strcmp(argv[i], "--verts-file")) verts_file = true;
         else if (!strcmp(argv[i], "--readback")) readback = true;
+        else if (!strcmp(argv[i], "--swapchain-format") && i + 1 < argc) want_fmt = argv[++i];
         else if (!strcmp(argv[i], "--late-verts") && i + 1 < argc) late_verts = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--clear-alpha") && i + 1 < argc) clear_alpha = (float)atof(argv[++i]);
     }
@@ -172,6 +177,15 @@ int main(int argc, char** argv) {
     vkGetPhysicalDeviceSurfaceFormatsKHR(pd, surf, &nf, fmts.data());
     VkSurfaceFormatKHR fmt = fmts[0];
     for (auto& f : fmts) if (f.format == VK_FORMAT_B8G8R8A8_SRGB) fmt = f;
+    if (!want_fmt.empty()) {
+        VkFormat w = want_fmt == "a2b10g10r10" ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : want_fmt == "a2r10g10b10" ? VK_FORMAT_A2R10G10B10_UNORM_PACK32
+                   : want_fmt == "rgba16f" ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_UNDEFINED;
+        bool found = false;
+        for (auto& f : fmts) if (f.format == w && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) fmt = f, found = true;
+        if (!found) for (auto& f : fmts) if (f.format == w) fmt = f, found = true;
+        if (!found) { fprintf(stderr, "vrdual-cube: swapchain format %s not offered by the surface\n", want_fmt.c_str()); return 3; }
+        fprintf(stderr, "vrdual-cube: swapchain format %s (%d), colour space %d\n", want_fmt.c_str(), fmt.format, fmt.colorSpace);
+    }
     uint32_t npm = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(pd, surf, &npm, nullptr);
     std::vector<VkPresentModeKHR> pms(npm);

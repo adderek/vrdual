@@ -4,7 +4,8 @@
   double-buffer the params (two vec4 slots, index flipped at present), or accept.
 - Compositor keys are only tested through `vrdual-ctl`; add an SDL event
   injection path (e.g. `--keys "Up Up W"`) so selftest can cover them.
-- Readback handles only the first swapchain and 8-bit RGBA/BGRA formats.
+- Readback: 10-bit and FP16 swapchains go through a blit to 8-bit since
+  2026-10-21; HDR colour spaces (PQ / scRGB above 1) are not tone-mapped.
 - `vrdual gpus` "behind-switch" heuristic counts bridge hops (>4); the Navi31
   card has its own internal switch. Verify on other boards.
 - Patched shaders: geometry/tess/mesh stages, shader objects, inline modules,

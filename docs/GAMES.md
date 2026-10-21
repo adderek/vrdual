@@ -52,7 +52,7 @@ do not upset the inner ear; `world_scale` can shrink them further.
 | game | why | risk | other VR route (as found 2026-10-21) |
 |---|---|---|---|
 | LEGO Marvel Super Heroes / LEGO Batman 3 / LEGO The Hobbit | LEGO Harry Potter already works; toy bricks on the desk; for everyone | post effects (DoF) off | none found (no VR mod, no vorpX profile confirmed) |
-| Little Nightmares | dark miniature diorama, ideal scale and pace | UE4: likely 10-bit backbuffer (`r.DefaultBackBufferPixelFormat=0`, see Hogwarts) | UEVR (generic, Windows); a separate VR game, Little Nightmares VR: Altered Echoes (2026) |
+| Little Nightmares | dark miniature diorama, ideal scale and pace | UE4: 10-bit backbuffer, exported since 2026-10-21 (blit to 8-bit) | UEVR (generic, Windows); a separate VR game, Little Nightmares VR: Altered Echoes (2026) |
 | Unravel / Unravel Two | photoreal small scale, calm | unknown engine path | Geo-11 (generic DX11 stereo, Windows) reported to work |
 | Trine | fairy-tale 2.5D with many layers, strong depth | little camera movement | built-in stereoscopic 3D (side by side) in Trine 1–3 |
 | Batman: Arkham Asylum / City | stereo classic of the 3D Vision era, third person, well known | UE3 D3D9 via DXVK: Alice's cached-memory trade-off until TODO 3 | none found (Arkham VR is a separate PS VR / PC VR game) |

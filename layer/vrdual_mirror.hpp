@@ -1600,7 +1600,7 @@ static void create_swapchain_twin(DeviceData* dd, const VkSwapchainCreateInfoKHR
         s.b_mem.push_back(bm);
         record_handle(ai, bi);
     }
-    if (s.pixfmt && !create_readback(md->b, md->bdev, md->bmp, s.extent, s.b_rb))
+    if (s.pixfmt && !create_readback(md->b, md->bdev, md->bmp, s.extent, s.b_rb, conv_format_of(s.format)))
         logf("mirror: readback alloc failed on B — right eye not exported");
     logf("mirror: swapchain %ux%u, %zu twin images on B", s.extent.width, s.extent.height, s.b_images.size());
 }

@@ -167,12 +167,15 @@ struct InstanceData {
     bool chosen_resolved = false;
 };
 
-// Host-visible readback buffer for one swapchain image.
+// Host-visible readback buffer for one swapchain image; for swapchains that
+// are not 8-bit, an 8-bit image the frame is blitted into first.
 struct Readback {
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     void* map = nullptr;
     bool coherent = true;
+    VkImage conv = VK_NULL_HANDLE;
+    VkDeviceMemory conv_mem = VK_NULL_HANDLE;
 };
 
 // Command buffer + sync for the readback copy, on the presenting queue family.
@@ -846,6 +849,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
 static void free_readback(const Dispatch& d, VkDevice dev, Readback& rb) {
     if (rb.buf) d.DestroyBuffer(dev, rb.buf, nullptr);
     if (rb.mem) d.FreeMemory(dev, rb.mem, nullptr);
+    if (rb.conv) d.DestroyImage(dev, rb.conv, nullptr);
+    if (rb.conv_mem) d.FreeMemory(dev, rb.conv_mem, nullptr);
     rb = Readback{};
 }
 
@@ -930,24 +935,62 @@ static uint32_t pixfmt_of(VkFormat f) {
     switch (f) {
     case VK_FORMAT_B8G8R8A8_UNORM: case VK_FORMAT_B8G8R8A8_SRGB: return VRDUAL_FMT_BGRA8;
     case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_R8G8B8A8_SRGB: return VRDUAL_FMT_RGBA8;
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32: case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+    case VK_FORMAT_R16G16B16A16_SFLOAT: return VRDUAL_FMT_BGRA8;  // through conv_format_of
     default: return 0;
+    }
+}
+
+// 8-bit format a swapchain format is blitted into before readback (the blit
+// converts), or UNDEFINED = copied as it is. 10-bit UNORM (UE4 picks it even
+// with HDR off) holds gamma-encoded values like 8-bit: UNORM -> UNORM keeps
+// them. FP16 (scRGB) is linear: the sRGB target encodes it.
+static VkFormat conv_format_of(VkFormat f) {
+    switch (f) {
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32: case VK_FORMAT_A2R10G10B10_UNORM_PACK32: return VK_FORMAT_B8G8R8A8_UNORM;
+    case VK_FORMAT_R16G16B16A16_SFLOAT: return VK_FORMAT_B8G8R8A8_SRGB;
+    default: return VK_FORMAT_UNDEFINED;
     }
 }
 
 // Host-visible buffer the size of one 4-byte-per-pixel frame; HOST_CACHED
 // preferred since the CPU reads it every frame.
-static bool create_readback(const Dispatch& d, VkDevice dev, const VkPhysicalDeviceMemoryProperties& mp, VkExtent2D e, Readback& rb) {
+static bool create_readback(const Dispatch& d, VkDevice dev, const VkPhysicalDeviceMemoryProperties& mp, VkExtent2D e, Readback& rb,
+                            VkFormat conv = VK_FORMAT_UNDEFINED) {
+    if (conv != VK_FORMAT_UNDEFINED) {
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType = VK_IMAGE_TYPE_2D;
+        ici.format = conv;
+        ici.extent = {e.width, e.height, 1};
+        ici.mipLevels = ici.arrayLayers = 1;
+        ici.samples = VK_SAMPLE_COUNT_1_BIT;
+        ici.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        VkMemoryRequirements imr;
+        if (d.CreateImage(dev, &ici, nullptr, &rb.conv) != VK_SUCCESS) return false;
+        d.GetImageMemoryRequirements(dev, rb.conv, &imr);
+        int t = pick_memtype(mp, imr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        VkMemoryAllocateInfo iai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, imr.size, uint32_t(t)};
+        if (t < 0 || d.AllocateMemory(dev, &iai, nullptr, &rb.conv_mem) != VK_SUCCESS) {
+            d.DestroyImage(dev, rb.conv, nullptr);
+            rb = Readback{};
+            return false;
+        }
+        d.BindImageMemory(dev, rb.conv, rb.conv_mem, 0);
+    }
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bci.size = VkDeviceSize(e.width) * e.height * 4;
     bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    if (d.CreateBuffer(dev, &bci, nullptr, &rb.buf) != VK_SUCCESS) return false;
+    if (d.CreateBuffer(dev, &bci, nullptr, &rb.buf) != VK_SUCCESS) {
+        free_readback(d, dev, rb);
+        return false;
+    }
     VkMemoryRequirements mr;
     d.GetBufferMemoryRequirements(dev, rb.buf, &mr);
     int best = pick_memtype(mp, mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, mr.size, uint32_t(best)};
     if (best < 0 || d.AllocateMemory(dev, &ai, nullptr, &rb.mem) != VK_SUCCESS) {
-        d.DestroyBuffer(dev, rb.buf, nullptr);
-        rb = Readback{};
+        rb.mem = VK_NULL_HANDLE;
+        free_readback(d, dev, rb);
         return false;
     }
     rb.coherent = mp.memoryTypes[best].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -973,11 +1016,15 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateSwapchainKHR(VkDevice dev, const
     dd->d.GetSwapchainImagesKHR(dev, *out, &n, nullptr);
     s.images.resize(n);
     dd->d.GetSwapchainImagesKHR(dev, *out, &n, s.images.data());
-    if (exp && !s.pixfmt) logf("swapchain format %d not exportable (PoC handles 8-bit RGBA/BGRA only)", ci->imageFormat);
+    if (exp && !s.pixfmt) logf("swapchain format %d not exportable (8-bit RGBA/BGRA, 10-bit UNORM and FP16 are)", ci->imageFormat);
+    VkFormat conv = conv_format_of(ci->imageFormat);
+    if (s.pixfmt && conv != VK_FORMAT_UNDEFINED)
+        logf("swapchain format %d exported through a blit to format %d%s", ci->imageFormat, conv,
+             ci->imageColorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR ? " (HDR colour space: colours will be off)" : "");
     if (s.pixfmt) {
         VkPhysicalDeviceMemoryProperties mp;
         dd->inst->GetPhysicalDeviceMemoryProperties(dd->phys, &mp);
-        if (!create_readback(dd->d, dev, mp, s.extent, s.rb)) {
+        if (!create_readback(dd->d, dev, mp, s.extent, s.rb, conv)) {
             logf("readback alloc failed — export disabled");
             s.pixfmt = 0;
         }  // the frame file is opened by the first present (shm_claim)
@@ -1051,7 +1098,27 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     VkBufferImageCopy reg{};
     reg.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     reg.imageExtent = {ext.width, ext.height, 1};
-    d.CmdCopyImageToBuffer(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb.buf, 1, &reg);
+    if (rb.conv) {  // not 8-bit: the blit converts into the 8-bit image, that one is copied
+        VkImageMemoryBarrier cbar = b;
+        cbar.image = rb.conv;
+        cbar.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        cbar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        cbar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        cbar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &cbar);
+        VkImageBlit bl{};
+        bl.srcSubresource = bl.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        bl.srcOffsets[1] = bl.dstOffsets[1] = {int32_t(ext.width), int32_t(ext.height), 1};
+        d.CmdBlitImage(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb.conv, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl, VK_FILTER_NEAREST);
+        cbar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        cbar.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        cbar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        cbar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &cbar);
+        d.CmdCopyImageToBuffer(cb, rb.conv, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb.buf, 1, &reg);
+    } else {
+        d.CmdCopyImageToBuffer(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb.buf, 1, &reg);
+    }
     b.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     b.dstAccessMask = 0;
     b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;

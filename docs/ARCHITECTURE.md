@@ -514,5 +514,8 @@ why `vrdual gpus` walks the bridge chain. Why it matters for VR:
   one frame.
 - Compositor keys were exercised through the same code path as `vrdual-ctl set`,
   but not by pressing keys in a window (no display automation here).
-- Synchronous readback at present (adds latency), 8-bit RGBA/BGRA swapchains
-  only, first swapchain only, no head tracking yet.
+- Synchronous readback at present (adds latency). Swapchains: 8-bit RGBA/BGRA
+  copied as they are; 10-bit UNORM (A2B10G10R10/A2R10G10B10, what UE4 picks
+  even with HDR off) and FP16 are blitted into an 8-bit image first (FP16 into
+  sRGB, which encodes its linear values); HDR colour spaces are not tone-mapped
+  (logged). The biggest swapchain is exported.

@@ -535,6 +535,21 @@ vrdual_selftest() {
         ! grep -q 'pread into the mapping' '$tmp/cs.log' && ! grep -q STOPPED '$tmp/cs.log' || { cat '$tmp/cs.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
+    # 3b3. 10-bit swapchain (UE4 games pick A2B10G10R10 even with HDR off):
+    # exported through a blit to 8-bit, both eyes.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        "$B/vrdual-cube" --scene calib --swapchain-format a2b10g10r10 --title "selftest 10-bit" >"$tmp/tb.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'twin images\|not offered' "$tmp/tb.log" && break; sleep 0.1; done
+    if grep -q 'not offered' "$tmp/tb.log"; then
+        say "SKIP  10-bit swapchain (the surface offers no A2B10G10R10)"
+    else
+        label="mirror 10-bit swapchain: exported through a blit to 8-bit, ipd 64mm"
+        check bash -c "grep -q 'exported through a blit' '$tmp/tb.log' && '$B/vrdual-compositor' --session $sess --snapshot '$tmp/tb.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
+            $M '$tmp/tb.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/tb.log' || { cat '$tmp/tb.log'; false; }"
+    fi
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
     # 3c. Cached write tracking (cached_wp = 1): HOST_CACHED mapping protected per block; the late
     # vertex write must fault, be recorded and reach B.
     rm -f /dev/shm/vrdual-$sess-*
