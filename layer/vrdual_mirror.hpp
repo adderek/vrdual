@@ -88,6 +88,7 @@ struct Mem {
     bool tracked = false;    // shadow registered for dirty tracking
     int wp = -1;             // cached: write-tracking slot
     bool synced = false;     // tracked and fully pushed once: scans list every later write
+    bool storage_warned = false;  // shader stores into it seen (not copied back), logged
 };
 
 // GPU writes into host-visible memory (copies, fills, query results): byte
@@ -136,6 +137,7 @@ struct MDev {
     struct BufBind { uint64_t mem = 0; VkDeviceSize off = 0, size = 0; };
     std::unordered_map<uint64_t, BufBind> bufs;                    // A buffer -> memory binding
     std::unordered_map<uint64_t, VkFormat> imgs;                   // A image -> format (copy extents)
+    std::unordered_map<uint64_t, uint64_t> views;                  // A buffer view -> buffer
     std::unordered_map<VkCommandBuffer, std::vector<MemRange>> cbw;  // ranges a command buffer writes
     std::vector<Writeback> wbs;                                    // submitted, not yet copied back
     std::vector<VkFence> fence_pool;                               // our fences for submits without one
@@ -449,6 +451,55 @@ static void wb_drop_fence(MDev* md, VkFence f) {
         }
 }
 static void hook_DestroyFence(MDev* md, VkDevice, VkFence f, const VkAllocationCallbacks*) { wb_drop_fence(md, f); }
+
+// Write-back covers transfer commands, not shader stores: a storage buffer in
+// memory the app reads back (HOST_CACHED, shadowed) may leave it stale data.
+// Logged once per allocation, so a game showing stale readbacks says why.
+static void wb_storage(MDev* md, VkBuffer buf) {
+    if (!buf) return;
+    std::lock_guard<std::mutex> l(md->lock);
+    auto b = md->bufs.find(h2u(buf));
+    if (b == md->bufs.end() || !b->second.mem) return;
+    auto m = md->mems.find(b->second.mem);
+    if (m == md->mems.end() || !m->second.readback || m->second.cached || m->second.storage_warned) return;
+    m->second.storage_warned = true;
+    logf("mirror: storage buffer in readback memory (%llu KB): shader stores there are not copied back to the app "
+         "(stale reads? try VRDUAL_CACHED_SHADOW=0)", (unsigned long long)(m->second.size >> 10));
+}
+static VkBuffer view_buffer(MDev* md, VkBufferView v) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto it = md->views.find(h2u(v));
+    return it == md->views.end() ? VK_NULL_HANDLE : u2h<VkBuffer>(it->second);
+}
+static void wb_writes(MDev* md, uint32_t n, const VkWriteDescriptorSet* w) {
+    for (uint32_t i = 0; i < n; ++i) {
+        VkDescriptorType t = w[i].descriptorType;
+        if ((t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) && w[i].pBufferInfo)
+            for (uint32_t j = 0; j < w[i].descriptorCount; ++j) wb_storage(md, w[i].pBufferInfo[j].buffer);
+        if (t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER && w[i].pTexelBufferView)
+            for (uint32_t j = 0; j < w[i].descriptorCount; ++j) wb_storage(md, view_buffer(md, w[i].pTexelBufferView[j]));
+    }
+}
+static void hook_UpdateDescriptorSets(MDev* md, VkDevice, uint32_t n, const VkWriteDescriptorSet* w, uint32_t, const VkCopyDescriptorSet*) {
+    wb_writes(md, n, w);
+}
+static void hook_CmdPushDescriptorSet(MDev* md, VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, uint32_t, uint32_t n,
+                                      const VkWriteDescriptorSet* w) {
+    wb_writes(md, n, w);
+}
+static void hook_CmdPushDescriptorSet2(MDev* md, VkCommandBuffer, const VkPushDescriptorSetInfo* info) {
+    wb_writes(md, info->descriptorWriteCount, info->pDescriptorWrites);
+}
+static void hook_after_CreateBufferView(MDev* md, VkDevice, const VkBufferViewCreateInfo* ci, const VkAllocationCallbacks*, VkBufferView* v,
+                                        VkResult r) {
+    if (r < 0) return;
+    std::lock_guard<std::mutex> l(md->lock);
+    md->views[h2u(*v)] = h2u(ci->buffer);
+}
+static void hook_DestroyBufferView(MDev* md, VkDevice, VkBufferView v, const VkAllocationCallbacks*) {
+    std::lock_guard<std::mutex> l(md->lock);
+    md->views.erase(h2u(v));
+}
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -1442,8 +1493,29 @@ static const void* tr_template_data(Ctx& c, VkDescriptorUpdateTemplate tmpl, con
     return blob;
 }
 
+// Storage buffers written through a template (see wb_storage).
+static void wb_template(MDev* md, VkDescriptorUpdateTemplate t, const void* data) {
+    std::vector<VkDescriptorUpdateTemplateEntry> es;
+    {
+        std::lock_guard<std::mutex> l(md->lock);
+        auto it = md->templates.find(h2u(t));
+        if (it == md->templates.end()) return;
+        es = it->second.entries;
+    }
+    for (auto& e : es) {
+        bool sb = e.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || e.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+        bool tb = e.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+        for (uint32_t j = 0; (sb || tb) && j < e.descriptorCount; ++j) {
+            const char* p = (const char*)data + e.offset + size_t(j) * e.stride;
+            if (sb) wb_storage(md, ((const VkDescriptorBufferInfo*)p)->buffer);
+            else wb_storage(md, view_buffer(md, *(const VkBufferView*)p));
+        }
+    }
+}
+
 static VKAPI_ATTR void VKAPI_CALL m_UpdateDescriptorSetWithTemplate(VkDevice dev, VkDescriptorSet set, VkDescriptorUpdateTemplate t, const void* data) {
     MDev* md = mdev_of(key(dev));
+    wb_template(md, t, data);
     md->a.UpdateDescriptorSetWithTemplate(dev, set, t, data);
     if (!md->live) return;
     Ctx& c = ctx_begin(md);
@@ -1456,6 +1528,7 @@ static VKAPI_ATTR void VKAPI_CALL m_UpdateDescriptorSetWithTemplate(VkDevice dev
 static VKAPI_ATTR void VKAPI_CALL m_CmdPushDescriptorSetWithTemplate(VkCommandBuffer cb, VkDescriptorUpdateTemplate t, VkPipelineLayout layout,
                                                                     uint32_t set, const void* data) {
     MDev* md = mdev_of(key(cb));
+    wb_template(md, t, data);
     md->a.CmdPushDescriptorSetWithTemplate(cb, t, layout, set, data);
     if (!md->live) return;
     Ctx& c = ctx_begin(md);
@@ -1467,6 +1540,7 @@ static VKAPI_ATTR void VKAPI_CALL m_CmdPushDescriptorSetWithTemplate(VkCommandBu
 
 static VKAPI_ATTR void VKAPI_CALL m_CmdPushDescriptorSetWithTemplate2(VkCommandBuffer cb, const VkPushDescriptorSetWithTemplateInfo* info) {
     MDev* md = mdev_of(key(cb));
+    wb_template(md, info->descriptorUpdateTemplate, info->pData);
     md->a.CmdPushDescriptorSetWithTemplate2(cb, info);
     if (!md->live) return;
     Ctx& c = ctx_begin(md);

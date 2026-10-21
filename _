@@ -533,6 +533,8 @@ vrdual_selftest() {
         $M '$tmp/cs.png' --ipd 0.064 --anchor center && for i in \$(seq 100); do grep -q '^readback: [1-9][0-9]* ok' '$tmp/cs.log' && break; sleep 0.1; done &&
         grep -q '^readback: [1-9][0-9]* ok, 0 bad' '$tmp/cs.log' && ! grep -q 'readback: .* [1-9][0-9]* bad' '$tmp/cs.log' &&
         ! grep -q 'pread into the mapping' '$tmp/cs.log' && ! grep -q STOPPED '$tmp/cs.log' || { cat '$tmp/cs.log'; false; }"
+    label="mirror write-back: a storage buffer in readback memory is logged once (shader stores are not copied back)"
+    check bash -c "[[ \$(grep -c 'storage buffer in readback memory' '$tmp/cs.log') == 1 ]] || { grep mirror '$tmp/cs.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3b3. 10-bit swapchain (UE4 games pick A2B10G10R10 even with HDR off):

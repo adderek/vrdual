@@ -17,6 +17,8 @@
 // HOST_CACHED buffer, and a 4x4 image cleared to a frame colour is copied
 // there with vkCmdCopyImageToBuffer; after the frame's fence the app checks
 // both, the image's last texel too ("readback: N ok, M bad" every 100 frames).
+// The buffer is also written into a storage-buffer descriptor (never used by
+// a shader): the mirror logs that shader stores there would not be copied back.
 // --cached: vertices in a 1 MB HOST_CACHED buffer (mirror: VRDUAL_CACHED_WP
 // tracks whole pages).
 // --clear-alpha A: background alpha (games leave 0; the layer exports 1).
@@ -410,7 +412,7 @@ int main(int argc, char** argv) {
     if (readback) {
         VkBufferCreateInfo rci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         rci.size = 4096;
-        rci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        rci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         CK(vkCreateBuffer(dev, &rci, nullptr, &rbuf));
         VkMemoryRequirements rmr;
         vkGetBufferMemoryRequirements(dev, rbuf, &rmr);
@@ -423,6 +425,20 @@ int main(int argc, char** argv) {
         void* rp;
         CK(vkMapMemory(dev, rmem, 0, VK_WHOLE_SIZE, 0, &rp));
         rbp = (volatile uint32_t*)rp;
+        VkDescriptorSetLayoutBinding lb{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+        VkDescriptorSetLayoutCreateInfo lci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0, 1, &lb};
+        VkDescriptorSetLayout dsl;
+        CK(vkCreateDescriptorSetLayout(dev, &lci, nullptr, &dsl));
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
+        VkDescriptorPoolCreateInfo pci2{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, nullptr, 0, 1, 1, &ps};
+        VkDescriptorPool dp;
+        CK(vkCreateDescriptorPool(dev, &pci2, nullptr, &dp));
+        VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, dp, 1, &dsl};
+        VkDescriptorSet ds;
+        CK(vkAllocateDescriptorSets(dev, &dai, &ds));
+        VkDescriptorBufferInfo dbi{rbuf, 0, VK_WHOLE_SIZE};
+        VkWriteDescriptorSet wds{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, ds, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &dbi, nullptr};
+        vkUpdateDescriptorSets(dev, 1, &wds, 0, nullptr);
         VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         ici.imageType = VK_IMAGE_TYPE_2D;
         ici.format = VK_FORMAT_R8G8B8A8_UNORM;

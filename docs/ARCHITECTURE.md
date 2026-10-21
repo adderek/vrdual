@@ -154,7 +154,10 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   through which the app learns of completion (fence wait/status/reset/destroy,
   timeline wait/value, queue/device wait idle) first copy those ranges from A
   into the shadow and into `last` (so B, whose GPU wrote its own result, is
-  not overwritten). Shader stores into host memory are not tracked. Before
+  not overwritten). Shader stores into host memory are not tracked; a storage
+  buffer (or storage texel buffer) placed in readback memory is logged once per
+  allocation ("storage buffer in readback memory …"), so stale readbacks in a
+  game point there (`VRDUAL_CACHED_SHADOW=0` as the workaround). Before
   2026-10-21 cached mappings were A's own (VM_PFNMAP: no userfaultfd), diffed
   in full: DXVK d3d9 keeps hundreds of MB there (CoJ Gunslinger: 288 MB, 23
   ms/submit); `VRDUAL_CACHED_SHADOW=0` brings that back. Tried and dropped

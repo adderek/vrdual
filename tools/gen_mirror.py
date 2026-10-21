@@ -42,8 +42,9 @@ HOOKS_BEFORE = {
     'vkCmdCopyBuffer', 'vkCmdCopyBuffer2', 'vkCmdCopyImageToBuffer', 'vkCmdCopyImageToBuffer2',
     'vkCmdFillBuffer', 'vkCmdUpdateBuffer', 'vkCmdCopyQueryPoolResults', 'vkCmdExecuteCommands',
     'vkBindBufferMemory', 'vkBindBufferMemory2', 'vkDestroyBuffer', 'vkDestroyFence', 'vkDestroyImage',
+    'vkUpdateDescriptorSets', 'vkCmdPushDescriptorSet', 'vkCmdPushDescriptorSet2', 'vkDestroyBufferView',
 }
-HOOKS_AFTER = {'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkCreateImage'}
+HOOKS_AFTER = {'vkQueueWaitIdle', 'vkDeviceWaitIdle', 'vkCreateImage', 'vkCreateBufferView'}
 
 # Mirrored commands that are fine to run on A only (no GPU-visible effect on B).
 A_ONLY = {
