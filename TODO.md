@@ -32,6 +32,11 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     `vrdual games | request | report`, no-profile hint). Left: store id and
     engine in the report (with item 13); check on GitHub that the prefilled
     Discussions body and the issue form fields arrive.
+15. [3D Vision Ready games: use their own stereo fixes](docs/tasks/nvstereo.md)
+    (NVSTEREO emulation; found in Alice: Madness Returns, UE3 with NVIDIA's
+    integration): `nvapi.dll` stand-in, per-eye stereo parameter texture,
+    NVIDIA's shift model; fixes shadows / screen-space effects, one and two
+    GPUs. Research first (logging-only stand-in).
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
