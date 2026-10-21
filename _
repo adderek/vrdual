@@ -182,9 +182,14 @@ vrdual_version() {
         "$STEAM_FLATPAK"/vrdual/layer/libVkLayer_vrdual{64,32}.so "$HOME"/.local/share/vrdual/layer/libVkLayer_vrdual{64,32}.so; do
         d=${f/#$HOME/\~}
         [[ -f $f ]] || { [[ $f == "$B"/* ]] && printf '%s\t-\n' "$d"; continue; }
-        i=$(strings -a "$f" | grep -m1 '^vrdual .*, built ' || true)  # grep -m1: SIGPIPE for strings, pipefail
-        printf '%s\t%s\n' "$d" "${i:-(older than build info)}"
+        printf '%s\t%s\n' "$d" "$(layer_info "$f")"
     done
+}
+
+layer_info() {
+    local i
+    i=$(strings -a "$1" | grep -m1 '^vrdual .*, built ' || true)  # grep -m1: SIGPIPE for strings, pipefail
+    echo "${i:-(older than build info)}"
 }
 
 # SBS window for a running session (also finds games inside Flatpak Steam).
@@ -329,8 +334,12 @@ system_facts() {
     mesa=${mesa#*:}  # package epoch
     os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
     local gpu=${1:-$(lspci 2>/dev/null | grep -E 'VGA|3D|Display' | cut -d: -f3- | sed 's/^ //' | sort | uniq -c | sed -E 's/^ *([0-9]+) /\1x /' | paste -sd';' || true)}
-    printf 'GPU: %s\nMesa: %s\nOS: %s\nvrdual: %s\n' "${gpu:-?}" "${mesa:-?}" "${os:-?}" \
-        "$("$B/vrdual-ctl" --version 2>/dev/null || "$VRDUAL_ROOT/tools/build_info.sh")"
+    # the layer games load: steam-install's copy, else build/ (each binary carries its own build info)
+    local f ver=""
+    for f in "$STEAM_FLATPAK"/vrdual/layer/libVkLayer_vrdual64.so "$HOME"/.local/share/vrdual/layer/libVkLayer_vrdual64.so "$B/libVkLayer_vrdual.so"; do
+        [[ -f $f ]] && { ver="$(layer_info "$f") (layer ${f/#$HOME/\~})"; break; }
+    done
+    printf 'GPU: %s\nMesa: %s\nOS: %s\nvrdual: %s\n' "${gpu:-?}" "${mesa:-?}" "${os:-?}" "${ver:-?}"
 }
 
 # feedback_args [GAME] [--open]: sets game (default: last one in the play log),
@@ -432,6 +441,7 @@ vrdual_selftest() {
         grep -q \$'^search\thttps://github.com/.*/discussions/categories/game-requests?discussions_q=mirrorsedge.exe\$' <<<\"\$r\" &&
         grep -q \$'^new\thttps://github.com/.*/discussions/new?category=game-requests&title=mirrorsedge.exe&body=.*played%2010%20min' <<<\"\$r\" &&
         grep -q '/issues/new?template=game-report.yml&title=%5Bgame%5D%20mirrorsedge.exe&game=mirrorsedge.exe&exe=mirrorsedge.exe&gpu=AMD%20Radeon' <<<\"\$p\" &&
+        grep -q '&version=vrdual%20.*%2C%20built%20.*%28layer%20' <<<\"\$p\" &&
         grep -q '&notes=Played%2010%20min.*built-in' <<<\"\$p\" || { echo \"\$r\"; echo \"\$p\"; false; }"
     label="docs/CONFIG.md lists every config key"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
