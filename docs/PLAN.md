@@ -104,6 +104,105 @@ optional guided calibration flow that shows one post at a time, asks
 Culling for the original camera, an eye passing through a near wall, parallax
 occlusion mapping and other screen-space post effects. Revisit after B2.
 
+## J. Sponsors and early access (decided 2026-10-21)
+
+No DRM: no keys, device limits or per-device e-mail login. The public code is
+Apache-2.0, a fork removes any check, and data files get copied anyway.
+Sponsors pay for time and service, not for exclusive access.
+
+- Early access lives in a private repo attached to a GitHub Sponsors tier
+  (GitHub grants and revokes access itself; auth = the user's GitHub account
+  via `gh`). Builds of the early channel are release assets there.
+- Two dimensions of early:
+  - feature: a new capability (e.g. legacy-game tweaks: shader injection,
+    resolution, textures);
+  - game: per-game work (profile, fix or game-specific feature for one game).
+- Everything early becomes public (Apache-2.0) **3 months after its first
+  early release**. No funding goal to speed it up. The clock starts at release,
+  not at "maturity" (subjective, could be postponed forever); an immature
+  feature goes public behind an experimental flag, off by default.
+- A dud is published too: anything that was in early goes public at the
+  3-month mark even if dropped, as archived code (`attic/` or a tag; not
+  built, not maintained) with a note on why it failed. No silent removal:
+  the promise stays checkable without exceptions.
+- Bug fixes are never early: they go public at once. VR basics (world scale,
+  FOV, HUD distance, stability) are public, not early.
+- No CLA: early code is written by the owner only, so it can carry a
+  source-available licence (no redistribution, converts to Apache-2.0 at the
+  change date). Outside PRs go to the public repo.
+- Fetching is a host-side CLI job (`vrdual profiles sync` into a local cache);
+  the layer stays passive and the Steam wrapper only reads the cache.
+- To keep merges cheap, early features plug into small public extension points
+  (shader hooks, overlay panels, config sections) from their own directories;
+  going public means moving the directory.
+- Store-neutral: a profile bought for one game works for that game from any
+  store (Steam, GOG, Epic, ...). Sponsorship never depends on a store.
+
+## K. Stores and launchers
+
+The layer does not know where a game came from. Profiles are keyed by the
+executable name (`kAppProfiles`: `mirrorsedge.exe`); store ids (Steam appid,
+GOG product id, Epic app name, umu `GAMEID`) are optional aliases only, so
+nothing locks profiles to Steam. GOG (DRM-free, legacy catalogue) is the
+reference store for legacy-game tweaks: tests reproduce without a Steam account.
+
+| source | how it starts on Linux | vrdual hook |
+|---|---|---|
+| GOG native Linux build | directly | `vrdual run -- ./start.sh` (works today) |
+| GOG / Epic Windows build | Heroic (gogdl / legendary), Lutris, Bottles, `umu-run` (Proton outside Steam) | Heroic "wrapper command", Lutris "command prefix", umu: plain wrapper |
+| Steam | Flatpak, pressure-vessel | `vrdual steam-install` (done) |
+
+Heroic as a Flatpak likely has Steam's problems (private `/dev/shm`, own
+`$HOME`) and needs a `heroic-install` twin of `steam-install` (untested:
+Heroic/Lutris/umu are not installed on fractal). Epic: DRM is rarely the
+problem (Denuvo usually lets Vulkan layers load, ReShade works); anti-cheat
+(EAC, BattlEye) in online games is. Offline only, warning in the docs.
+`docs/GAMES.md` should name the store/build per row: GOG and Steam builds of
+one game can differ.
+
+## L. "Who else to support" (idea, 2026-10-21)
+
+Show the open-source projects the user's game session depends on that accept
+sponsors: fair to the ecosystem and an answer to "vrdual is a money grab".
+
+- What: the stack actually used, detected, not guessed: engine name from
+  `VkApplicationInfo` (DXVK, vkd3d-proton, Zink), Wine/Proton, Mesa driver,
+  XR runtime (WiVRn, Monado), launcher (Heroic, Lutris, umu), plus a curated
+  per-game list (source ports, unofficial patches, e.g. OpenMW).
+- Data: a curated public file mapping component → project + funding link;
+  links come from each project's own `FUNDING.yml`. No paid placement, no
+  affiliate links, vrdual listed like the others, not first.
+- Where: `vrdual thanks` (stdout data) and an item in the `_` menu; maybe a
+  credits panel in the `vrdual-xr` overlay, off by default. Never during
+  play, never unprompted, no telemetry, no network unless asked.
+- Needs: the layer to record the engine name in the frame header (it already
+  sees `VkApplicationInfo`; still passive).
+
+## M. User feedback without a server (decided 2026-10-21)
+
+A server of our own is not worth it for a non-commercial project (cost, plus
+GDPR duties: an IP or install id is personal data). GitHub is the backend.
+
+- Game and feature requests: GitHub Discussions, categories "Game requests"
+  and "Feature ideas", one discussion per game/feature, ranked by native
+  upvotes. `vrdual request` searches for an existing one first, else opens a
+  prefilled `discussions/new?category=…&title=…&body=…` URL in the browser
+  (no token, no `gh`). Sponsor weight: private sponsor repo or a label, by
+  hand while the volume is small.
+- "No profile" moment: when a game starts without a profile, the host side
+  (CLI/overlay, never the layer) offers to report it, prefilled with what the
+  user would not type: exe, store id, engine (DXVK/vkd3d/Zink), Mesa, GPU,
+  vrdual version.
+- Stats are opt-in per send: a local log (`~/.local/state/vrdual/games.tsv`:
+  exe, store, play time, works or not) useful to the user alone;
+  `vrdual report` shows exactly what will be sent and opens a prefilled issue
+  form (`.github/ISSUE_TEMPLATE/game-report.yml`, fields set by query string).
+  Nothing is sent in the background. The reports feed `docs/GAMES.md`.
+- Not: background telemetry, third-party endpoints (Cloudflare Workers,
+  Plausible), anything sent from the layer.
+- Unverified: Discussions prefill parameters behave like issue prefill;
+  practical URL limit (~8 KB) fits a report.
+
 ## Roadmap
 
 | milestone | content | exit criterion |

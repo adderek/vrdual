@@ -18,6 +18,19 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     from a private repository, which GitHub Sponsors tiers can grant access to)
     (the public code is Apache-2.0 since 2026-10-20: anything in it can be
     copied, so gated profiles must live outside this repository).
+    Model since 2026-10-21: sponsorware, see `docs/PLAN.md` §J (early per
+    feature and per game, public after 3 months). First step:
+    `vrdual profiles sync` into a local cache, then auto-pick by exe name
+    (store ids as aliases, PLAN §K).
+11. Non-Steam launchers (PLAN §K): GOG native via `vrdual run`, Heroic /
+    Lutris / umu wrapper command, `heroic-install` if Heroic is a Flatpak;
+    store/build column in `docs/GAMES.md`.
+12. `vrdual thanks` (PLAN §L): open-source projects in the user's stack that
+    accept sponsors; engine name into the frame header.
+13. User feedback without a server (PLAN §M): `vrdual request` (Discussions
+    prefill), `vrdual report` + local `games.tsv` log, issue form
+    `game-report.yml`, "no profile" prompt. Owner enables the Discussions
+    categories in the repo settings.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
