@@ -176,6 +176,41 @@ inline bool scene_disparity(const uint8_t* L, const uint8_t* R, uint32_t w, uint
 
 // Blends the cursor over a w x h image (BGRA or RGBA bytes), hotspot at its
 // position shifted right by dx pixels.
+// Stereo window at the picture's edges. An eye camera moved by dx shifts what
+// it sees by -P00*dx/depth in NDC, near things most. At the edge the shifted
+// view shows a strip the game never drew for its own camera (culled objects,
+// pop-in, clear colour), and a near object cut by the edge is seen by one eye
+// only (flicker). Masking that strip is the "floating window" of 3D cinema.
+// Returns the strip for an eye camera at dx metres (signed, + = right, head
+// offset included): width in pixels for things at `dist` metres, negative =
+// at the left edge (camera moved left: the view shifts right).
+inline int edge_band(float hfov_deg, float dx, float dist, uint32_t w) {
+    if (dist <= 0 || w == 0) return 0;
+    float p00 = 1.0f / tanf(hfov_deg * 0.5f * float(M_PI) / 180.0f);
+    float px = p00 * fabsf(dx) / dist * float(w) / 2;
+    int b = int(lroundf(std::fmin(px, float(w) / 4)));
+    return dx < 0 ? -b : b;
+}
+
+// Darkens the strip: `band` columns black at the edge, then a linear fade over
+// as many more. band < 0: left edge, > 0: right edge; both = also the other edge.
+inline void edge_mask(uint8_t* img, uint32_t w, uint32_t h, int band, bool both) {
+    int b = band < 0 ? -band : band;
+    if (b == 0 || w == 0) return;
+    for (int side = 0; side < 2; ++side) {
+        bool left = (band < 0) != (side == 1);
+        if (side == 1 && !both) break;
+        for (int i = 0; i < 2 * b && i < int(w); ++i) {
+            int x = left ? i : int(w) - 1 - i;
+            unsigned k = i < b ? 0 : unsigned(256 * (i - b + 1) / (b + 1));  // 0 = black .. 256 = untouched
+            for (uint32_t y = 0; y < h; ++y) {
+                uint8_t* p = img + (size_t(y) * w + size_t(x)) * 4;
+                p[0] = uint8_t(p[0] * k >> 8), p[1] = uint8_t(p[1] * k >> 8), p[2] = uint8_t(p[2] * k >> 8);
+            }
+        }
+    }
+}
+
 inline void cursor_draw(uint8_t* img, uint32_t w, uint32_t h, bool bgra, const Cursor& c, int dx) {
     int x0 = c.x + dx - int(c.hot_x), y0 = c.y - int(c.hot_y);
     for (uint32_t y = 0; y < c.h; ++y) {

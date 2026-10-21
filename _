@@ -725,6 +725,9 @@ PA
             kill \$g \$p; wait
             [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && grep -q 'new frame sequence' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
                 grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
+        label="openxr: edge mask at each eye's outer edge (ipd 64 mm, hfov 90, 960 px: 15 px)"
+        check bash -c "grep -q 'eye 0: edge mask 15 px at the left edge' '$tmp/xr5.log' && grep -q 'eye 1: edge mask 15 px at the right edge' '$tmp/xr5.log' ||
+            { grep 'edge mask' '$tmp/xr5.log'; false; }"
         label="openxr: play log has one line per game process, no-profile hint"
         check bash -c "f='$tmp/state/vrdual/games.tsv'; [[ \$(grep -cE \$'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}\t[0-9]+\tvrdual-cube\t[^\t]+\tnone\$' \"\$f\") -ge 2 ]] &&
             grep -q \"no vrdual profile for 'vrdual-cube'\" '$tmp/xr5.log' || { cat \"\$f\"; false; }"

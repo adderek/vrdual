@@ -320,6 +320,15 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
   flip y in the projection). Render-only: the game's camera and collision stay.
   `vrdual set head_x 0.05` sets it by hand.
 
+Stereo window (`edge_mask`, default `outer`): an eye camera moved by dx shifts
+its view by `−P00·dx/depth` (NDC), so at the eye's outer edge it shows a strip
+the game never drew for its own camera (culled objects, pop-in, clear colour)
+and near objects that the other eye does not see (flicker). `vrdual-xr`
+blacks out that strip and fades the next one of the same width, per eye and
+per frame from the control block (IPD, anchor, hfov, head lean). Width = the
+shift of things at `edge_mask_dist` metres (`edge_band()`/`edge_mask()` in
+`common/vrdual_frames.hpp`, both checked in `vrdual-input-test`).
+
 Selftest's OpenXR check uses a Monado build at `build/monado/` (in-process
 runtime, `XRT_FEATURE_SERVICE=OFF`; copy `libopenxr_monado.so` + a json there,
 or point `VRDUAL_XR_TEST_RUNTIME` at one); skipped otherwise. `make clean`

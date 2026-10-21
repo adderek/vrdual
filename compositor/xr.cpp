@@ -819,6 +819,9 @@ static int run(int argc, char** argv) {
     vrdual::Cursor cur;
     uint32_t cur_logged = 0;
     bool cur_auto = true, cur_d_ok = false;  // cursor_depth auto; disparity known
+    int edge_mode = 1;        // edge_mask: 0 off, 1 outer, 2 both
+    int edge_band_logged[2] = {0, 0};
+    float edge_dist = 1;       // edge_mask_dist, metres
     float cur_d = 0;                          // smoothed scene disparity under the cursor, px
     Overlay ov;
     float overlay_time = vrdual::load_settings({}).f("overlay_time");
@@ -951,6 +954,8 @@ static int run(int argc, char** argv) {
             scr.sy = std::clamp(st.f("screen_scale_y"), 0.1f, 10.0f);
             overlay_time = st.f("overlay_time");
             cur_auto = st.s("cursor_depth") != "hud";
+            edge_mode = st.s("edge_mask") == "off" ? 0 : st.s("edge_mask") == "both" ? 2 : 1;
+            edge_dist = st.f("edge_mask_dist");
             cur_d_ok = false;
             notify(prof == "none" ? "game started, no profile (vrdual request)" : "game started");
             grab = vrdual::ScreenGrab{};
@@ -1110,6 +1115,21 @@ static int run(int argc, char** argv) {
                     } else {
                         const uint8_t* p = src[e]->px.data();
                         for (size_t i = 0; i < n; i += 4) { o.map[i] = p[i + 2]; o.map[i + 1] = p[i + 1]; o.map[i + 2] = p[i]; o.map[i + 3] = p[i + 3]; }
+                    }
+                }
+                // stereo window: mask the strip at each eye's edge that its shifted view gets wrong
+                if (edge_mode && !ctl) ctl = vrdual::ctl_open(session, nullptr);
+                if (edge_mode && ctl) {
+                    vrdual_ctl k = vrdual::ctl_read(ctl);
+                    for (int e = 0; e < 2; ++e) {
+                        float dx = vrdual::eye_dx(vrdual_anchor_name(k.anchor), swap ? 1 - e : e, k.ipd) + k.head_x;
+                        int band = vrdual::edge_band(k.hfov, dx, edge_dist, out[e].w);
+                        if (band != edge_band_logged[e]) {
+                            fprintf(stderr, "[xr] eye %d: edge mask %d px at the %s edge%s (edge_mask_dist %g m)\n", e, band < 0 ? -band : band,
+                                    band < 0 ? "left" : "right", edge_mode == 2 ? " (+ the other edge)" : "", edge_dist);
+                            edge_band_logged[e] = band;
+                        }
+                        vrdual::edge_mask(out[e].map, out[e].w, out[e].h, band, edge_mode == 2);
                     }
                 }
                 // the game's X11 cursor (not in its swapchain). cursor_depth auto: at the

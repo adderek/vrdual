@@ -60,6 +60,8 @@ map_x = KEY_E
 | `cursor_depth` | `auto` | `auto` `hud` | auto = at the depth of the scene under the pointer (both eye images matched there; kept on flat areas); hud = at `hud_depth` |
 | `lockstep` | `1` | `0` `1` | hold each frame until the other eye has it |
 | `lockstep_timeout_ms` | `250` | ms | give up waiting after this |
+| `edge_mask` | `outer` | `outer` `both` `off` | `vrdual xr`: black strip, then a fade, at each eye's outer edge (left eye: left, right eye: right), the "floating window" of 3D cinema. Each eye's shifted view shows a strip there the game never drew for its own camera (culled objects, pop-in, odd colours) and near objects seen by one eye only (flicker). `both` = also the inner edge (vignette) |
+| `edge_mask_dist` | `1` | meters | strip width = how far the eye shift moves things this near (hfov 90°, IPD 68 mm: 1 m → 33 px of 1920, 0.5 m → 65 px); follows IPD, anchor, hfov and head lean live |
 | `cached_wp` | `0` | `0` `1` | mirror mode: track the game's writes to cached (driver-mapped) GPU memory instead of comparing all of it every submit. **Fast** where DXVK d3d9 keeps hundreds of MB mapped (CoJ Gunslinger: 24 → 0.1 ms/submit), but **breaks games that read files straight into that memory** (the kernel's writes fail; Alice: Madness Returns shows black flickering objects). Choose per game: fast with bugs, or slow without |
 | `left_gpu` | `pci:0000:06:00.0` | `pci:…`, index, name substring | GPU for the left eye (and the game in mirror mode) |
 | `right_gpu` | `pci:0000:0b:00.0` | same | GPU for the right eye |

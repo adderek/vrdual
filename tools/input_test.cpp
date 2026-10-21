@@ -272,6 +272,25 @@ int main() {
         for (int i = 0; i < 6; ++i) { chord(true); seen += w.controls() + ","; }
         expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,tune,", ("cycle: " + seen).c_str());
     }
+    {  // stereo window at the edges (common/vrdual_frames.hpp)
+        int l = edge_band(90, -0.034f, 1, 1920), r = edge_band(90, 0.034f, 1, 1920);
+        expect(l == -33 && r == 33, "edge band: ipd 68 mm, hfov 90, things at 1 m -> 33 px, left eye at the left edge");
+        expect(edge_band(90, -0.034f, 0.5f, 1920) == -65, "edge band: nearer things -> wider (0.5 m: 65 px)");
+        expect(edge_band(90, 0, 1, 1920) == 0, "edge band: unshifted eye (anchor left/right) -> none");
+        std::vector<uint8_t> img(40 * 2 * 4, 200);
+        edge_mask(img.data(), 40, 2, -5, false);
+        auto px = [&](int x, int y) { return img[(size_t(y) * 40 + x) * 4]; };
+        bool black = true;
+        for (int x = 0; x < 5; ++x) black &= px(x, 0) == 0 && px(x, 1) == 0;
+        bool ramp = true;
+        for (int x = 5; x < 9; ++x) ramp &= px(x, 0) < px(x + 1, 0) && px(x + 1, 0) < 200;
+        bool rest = true;
+        for (int x = 10; x < 40; ++x) rest &= px(x, 0) == 200;
+        expect(black && ramp && rest && img[3] == 200, "edge mask: 5 px black, fade over 5 px, rest and alpha untouched");
+        std::vector<uint8_t> b(40 * 4, 200);
+        edge_mask(b.data(), 40, 1, 5, true);
+        expect(b[39 * 4] == 0 && b[0] == 0 && b[20 * 4] == 200, "edge mask both: right band + mirrored left band");
+    }
     // uinput round trip with a virtual pad
     {
         Uinput u;

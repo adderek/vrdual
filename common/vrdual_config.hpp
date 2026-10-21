@@ -44,6 +44,8 @@ static const Key kKeys[] = {
     {"cursor_depth", "auto", "vrdual-xr cursor depth: auto (the scene under it) | hud (at hud_depth)"},
     {"lockstep", "1", "hold each frame until the other eye has it"},
     {"lockstep_timeout_ms", "250", "give up waiting for the other eye after this"},
+    {"edge_mask", "outer", "vrdual-xr: mask the strip at each eye's edge its shifted view gets wrong: outer | both | off"},
+    {"edge_mask_dist", "1", "edge_mask: strip width = the eye shift of things this near, meters"},
     {"cached_wp", "0", "mirror: write tracking for cached memory (fast; breaks games that read files straight into it)"},
     {"left_gpu", "pci:0000:06:00.0", "GPU for the left eye (pci:..., index or name)"},
     {"right_gpu", "pci:0000:0b:00.0", "GPU for the right eye"},
