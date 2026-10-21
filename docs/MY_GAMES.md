@@ -1073,4 +1073,59 @@ TODO (no easy way to extract list)
 
 ## Origin / EA
 
+| game | VR | platform | vrdual |
+| A way out | | |
+| Alice Madness Returns | | |
+| Battlefield 1942 | | |
+| Battlefield 3 | | |
+| Bejeweled 3 | | |
+| Burnout paradise | | |
+| Command & conquer: red alert | | |
+| Red alert 2: Yuri's revenge | | |
+| Crysis 2 | | |
+| Crysis 3 | | |
+| Dead in bermuda | | |
+| Dead space 3 | | |
+| Dead space | | |
+| Dragon age: Inquisition | | |
+| Dragon age: Origins | | |
+| Dungeon keeper | | |
+| FC 25 | | |
+| FC 24 | | |
+| FIFA 23 | | |
+| FIFA 10 | | |
+| FIFA 13 | | |
+| FIFA 17 | | |
+| FIFA 18 | | |
+| FIFA 21 | | |
+| FIFA 22 | | |
+| GRID Legends | | |
+| Jade empire: Special edition | | |
+| Mass effect 2 | | |
+| Mass effect legendary edition | | |
+| Medal of honor | | |
+| Medal of honor pacific assault | | |
+| Mirror's edge | | |
+| NFS Heat | | |
+| NFS Most wanted | | |
+| Peggle | | |
+| Plants vs zombies | | |
+| Plants vs zombies garden warfare | | |
+| Populous | | |
+| Sim city 2000 | | |
+| Star wars Jedi fallen order | | |
+| Star wars Jedi survivor | | |
+| Star wars battlefront | | |
+| Star wars battlefront II | | |
+| Star wars squadrons | | |
+| Syberia II | | |
+| The sims 2 ultimate collection | | |
+| The sims 4 | | |
+| Theme hospital | | |
+| Ultima VIII | | |
+| Unravel | | |
+| Unravel two | | |
+| Wing commander III: Heart of the tiger | | |
+| Zumba's revenge | | |
+
 TODO (no easy way to extract list)
