@@ -3,6 +3,7 @@
 
   frame_hash.py /dev/shm/vrdual-SESSION-EYE            frame index, pixel hash
   frame_hash.py --cursor /dev/shm/vrdual-SESSION-EYE   cursor: x y w h serial
+  frame_hash.py --alpha /dev/shm/vrdual-SESSION-EYE    lowest alpha byte
 
 Reads the header of common/vrdual_shm.h directly (no pairing with the other
 eye), e.g. to see that the left eye still changes after the mirror stopped.
@@ -15,6 +16,7 @@ SLOTS = 4
 HDR_BYTES = 4096 + 64 * 64 * 4  # VRDUAL_HDR_BYTES (v4)
 CURSOR = 304                    # offsetof(vrdual_shm_header, cursor_seq), static_assert in the layer
 cursor = sys.argv[1] == "--cursor"
+alpha = sys.argv[1] == "--alpha"
 with open(sys.argv[-1], "rb") as f:
     hdr = f.read(4096)
     magic, version, w, h, stride = struct.unpack_from("<5I", hdr, 0)
@@ -31,4 +33,7 @@ with open(sys.argv[-1], "rb") as f:
     seq, fr, _ = struct.unpack_from("<QQQ", hdr, 48 + 24 * (frame % SLOTS))
     f.seek(HDR_BYTES + (frame % SLOTS) * slot_bytes)
     px = f.read(h * stride)
+if alpha:
+    print(min(px[3::4]))
+    sys.exit(0)
 print(frame, hashlib.sha1(px).hexdigest()[:12])

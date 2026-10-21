@@ -4,7 +4,11 @@
 // Animation is driven by the frame index, so two instances stay in sync.
 //
 //   vrdual-cube [--frames N] [--size WxH] [--title T] [--scene cubes|calib] [--bda] [--extra-window]
+//              [--clear-alpha A] [--late-verts N]
 //
+// --late-verts N: vertices zero until frame N, then written into the same
+// mapping (the mirror must push writes long after the first sync).
+// --clear-alpha A: background alpha (games leave 0; the layer exports 1).
 // --extra-window: a second, small swapchain created after the main one and
 // presented every frame too (like wined3d's helper windows).
 //
@@ -69,6 +73,8 @@ int main(int argc, char** argv) {
     int frames = 0, W = 960, H = 720;
     std::string title = "vrdual-cube", scene = "cubes";
     bool bda = false, extra = false;
+    float clear_alpha = 1;
+    int late_verts = 0;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &W, &H);
@@ -76,6 +82,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) scene = argv[++i];
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
+        else if (!strcmp(argv[i], "--late-verts") && i + 1 < argc) late_verts = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--clear-alpha") && i + 1 < argc) clear_alpha = (float)atof(argv[++i]);
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     SDL_Window* win = SDL_CreateWindow(title.c_str(), W, H, SDL_WINDOW_VULKAN);
@@ -356,7 +364,8 @@ int main(int argc, char** argv) {
     } else {
         vkMapMemory(dev, vmem, 0, VK_WHOLE_SIZE, 0, &p);
     }
-    memcpy(p, verts.data(), verts.size() * 4);
+    if (late_verts) memset(p, 0, verts.size() * 4);
+    else memcpy(p, verts.data(), verts.size() * 4);
     uint32_t nverts = uint32_t(verts.size() / 6);
 
     // --- frame loop --------------------------------------------------------
@@ -463,6 +472,7 @@ int main(int argc, char** argv) {
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) running = false;
         int f = int(frame % FIF);
         vkWaitForFences(dev, 1, &inflight[f], VK_TRUE, UINT64_MAX);
+        if (late_verts && frame == uint64_t(late_verts)) memcpy(p, verts.data(), verts.size() * 4);
         uint32_t ii;
         VkResult ar = vkAcquireNextImageKHR(dev, sc, UINT64_MAX, acquired[f], VK_NULL_HANDLE, &ii);
         if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) { fprintf(stderr, "acquire: %d\n", ar); break; }
@@ -472,7 +482,7 @@ int main(int argc, char** argv) {
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         vkBeginCommandBuffer(cb, &bi);
         VkClearValue cv[2];
-        cv[0].color = {{0.05f, 0.06f, 0.09f, 1}};
+        cv[0].color = {{0.05f, 0.06f, 0.09f, clear_alpha}};
         cv[1].depthStencil = {1, 0};
         VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr, rp, fbs[ii], {{0, 0}, ext}, 2, cv};
         vkCmdBeginRenderPass(cb, &rbi, VK_SUBPASS_CONTENTS_INLINE);

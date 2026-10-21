@@ -115,6 +115,21 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   at each submit/flush/unmap the changed 8-byte words go to A and B. Cached
   (readback) mappings are A's real ones; changes are copied to B. After a
   mirror stop the shadows keep being copied to A (the app still writes them).
+  Dirty tracking: shadows are registered with userfaultfd (async
+  write-protect); each push asks `PAGEMAP_SCAN` for the pages written since
+  the last one (re-protecting them in the same call) and diffs only those. A
+  new mapping starts with one full diff. No kernel support (< 6.7), a sandbox
+  refusing userfaultfd, or `VRDUAL_DIRTY=0`: full diff from the first changed
+  page, as before. Cached mappings are the driver's own (VM_PFNMAP: no
+  userfaultfd, no soft-dirty) and get the full diff; DXVK d3d9 keeps hundreds
+  of MB there (CoJ Gunslinger: 288 MB, 23 ms/submit). Tried and dropped
+  2026-10-21: importing our own registered pages into A as the cached memory
+  (`VK_EXT_external_memory_host`). amdgpu makes it a userptr BO; every
+  write-protect fires its MMU notifier, the BO is revalidated with
+  `hmm_range_fault` for write, which unprotects all its pages: scans then
+  report ~100 MB "written" per submit (slower than the full diff), and B
+  cannot always replay the userptr's device address. The log line `memory sync … MB mapped, … MB diffed; full diff … (… cached) …,
+  dirty scan …, transient maps …` shows where a push spends its time.
   32-bit processes (or `VRDUAL_TRANSIENT_MAPS=1`) map A-under-a-shadow and B
   only while a push copies changed pages: two persistent buffers per mapping
   instead of four, else large games exhaust the 4 GB address space (Alice
@@ -151,7 +166,7 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   reporting 1.3; `VRDUAL_CLAMP_API=1` to force).
 - Debug knobs: `VRDUAL_MIRROR_TRACE=N` (log first N mirrored calls),
   `VRDUAL_FILTER=0`, `VRDUAL_KEEP_EXT=...`, `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_SHADOW=0`,
-  `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_MIRROR_FAIL_AT=N` (stop the mirror at the
+  `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (no dirty tracking), `VRDUAL_MIRROR_FAIL_AT=N` (stop the mirror at the
   Nth memory sync, for tests).
 
 ## Steam (Flatpak or native) and OpenGL games
@@ -407,8 +422,8 @@ why `vrdual gpus` walks the bridge chain. Why it matters for VR:
 - **Per-eye mode = two app instances.** Only deterministic apps line up; use
   mirror mode (`VRDUAL_EYE=both`) for games.
 - **Mirror mode**: identical GPUs only; synchronous B waits make the app run at
-  the slower GPU's pace; the memory diff scans all mapped memory per submit
-  (≈1 ms per 10 MB — large engines will need dirty tracking); Wayland-native
+  the slower GPU's pace; without dirty tracking the memory diff scans all
+  mapped memory per submit (≈1 ms per 10 MB), cached mappings always; Wayland-native
   GL apps through Zink fail (hidden dma-buf/external memory), X11/XWayland ones
   work; host-reads of non-cached mappings see the app's own writes only.
 - **Culling** is done by the app for its original camera; objects at the frustum

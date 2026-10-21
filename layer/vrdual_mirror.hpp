@@ -84,6 +84,8 @@ struct Mem {
     char* last = nullptr;    // what A and B hold, as last pushed
     size_t cap = 0;          // bytes mmap'd for shadow/last
     VkDeviceSize cap_off = 0;
+    bool tracked = false;    // shadow registered for dirty tracking
+    bool synced = false;     // tracked and fully pushed once: scans list every later write
 };
 
 struct Template {
@@ -111,7 +113,10 @@ struct MDev {
     std::unordered_map<uint64_t, Template> templates;
     std::unordered_set<VkCommandBuffer> secondary;
     std::unordered_set<uint64_t> pending;  // fences with a B submit not yet waited for
-    uint64_t pushed_bytes = 0, push_ns = 0, pushes = 0;
+    uint64_t pushed_bytes = 0, push_ns = 0, pushes = 0, diffed_bytes = 0;
+    // where a push spends its time (per 600 pushes, logged with the memory sync line)
+    uint64_t full_bytes = 0, full_cached_bytes = 0, full_ns = 0, scan_ns = 0, map_ns = 0;
+    std::vector<std::pair<size_t, size_t>> ranges;  // push_one scratch (offset, length)
 };
 
 static MDev* mdev_of(void* k) {
@@ -312,6 +317,65 @@ static size_t first_change(const char* src, const char* last, size_t len) {
     return SIZE_MAX;
 }
 
+// Dirty tracking for shadows: userfaultfd async write-protect + PAGEMAP_SCAN
+// (Linux 6.7). One scan returns the pages written since the previous one and
+// write-protects them again, so a push diffs only those instead of every
+// mapped byte (DXVK games: ~26 ms/submit over 336 MB). The kernel resolves the
+// write faults itself: no signal handler, no thread. Off (full diff) when the
+// kernel or a sandbox refuses; VRDUAL_DIRTY=0 forces it off.
+struct DirtyTrack { int uffd = -1, pagemap = -1; };
+static const DirtyTrack& dirty_track() {
+    static const DirtyTrack d = [] {
+        DirtyTrack t;
+        if (!strcmp(env("VRDUAL_DIRTY", "1"), "0")) { logf("mirror: dirty tracking off (VRDUAL_DIRTY=0)"); return t; }
+        int u = (int)syscall(SYS_userfaultfd, O_CLOEXEC | O_NONBLOCK | UFFD_USER_MODE_ONLY);
+        uffdio_api api{UFFD_API, UFFD_FEATURE_WP_ASYNC | UFFD_FEATURE_WP_UNPOPULATED, 0};
+        int pm = u < 0 ? -1 : open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
+        const char* why = u < 0 ? "userfaultfd" : ioctl(u, UFFDIO_API, &api) < 0 ? "UFFDIO_API" : pm < 0 ? "/proc/self/pagemap" : nullptr;
+        if (why) {
+            logf("mirror: dirty tracking off (%s: %s), full memory diff", why, strerror(errno));
+            if (u >= 0) close(u);
+            if (pm >= 0) close(pm);
+            return t;
+        }
+        t.uffd = u, t.pagemap = pm;
+        logf("mirror: dirty tracking on (userfaultfd write-protect)");
+        return t;
+    }();
+    return d;
+}
+
+static bool dirty_register(char* p, size_t n) {
+    const DirtyTrack& d = dirty_track();
+    if (d.uffd < 0) return false;
+    uffdio_register r{{uint64_t(uintptr_t(p)), n}, UFFDIO_REGISTER_MODE_WP, 0};
+    if (ioctl(d.uffd, UFFDIO_REGISTER, &r) == 0) return true;
+    static std::atomic<bool> logged{false};
+    if (!logged.exchange(true)) logf("mirror: UFFDIO_REGISTER failed (%s), those shadows use the full diff", strerror(errno));
+    return false;
+}
+
+// Appends the written ranges of [p, p + n) as (offset, length) and
+// write-protects them again. False: scan failed, the caller diffs everything.
+static bool dirty_scan(char* p, size_t n, std::vector<std::pair<size_t, size_t>>& out) {
+    page_region v[64];
+    uint64_t base = uintptr_t(p), start = base, end = base + n;
+    while (start < end) {
+        pm_scan_arg a{};
+        a.size = sizeof a;
+        a.flags = PM_SCAN_WP_MATCHING | PM_SCAN_CHECK_WPASYNC;
+        a.start = start, a.end = end;
+        a.vec = uintptr_t(v), a.vec_len = 64;
+        a.category_mask = a.return_mask = PAGE_IS_WRITTEN;
+        long k = ioctl(dirty_track().pagemap, PAGEMAP_SCAN, &a);
+        if (k < 0) return false;
+        for (long i = 0; i < k; ++i) out.push_back({size_t(v[i].start - base), size_t(v[i].end - v[i].start)});
+        if (a.walk_end <= start) return false;
+        start = a.walk_end;
+    }
+    return true;
+}
+
 // 32-bit processes run out of address space with four mappings per mapped
 // allocation (A, B, shadow, last): there A (under a shadow) and B are mapped
 // only while a push copies changed pages.
@@ -327,11 +391,31 @@ static void push_one(MDev* md, uint64_t amem, Mem& m) {
     bool to_a = !m.cached, to_b = md->live;
     const char* src = m.cached ? m.amap : m.shadow;
     if (!m.mapped || !src || (!to_a && !to_b)) return;
-    size_t first = first_change(src, m.last, m.len);
-    if (first == SIZE_MAX) return;
+    // Ranges to diff: the written pages of a tracked shadow, else everything
+    // from the first changed page. A scan that fails falls back to a full diff.
+    auto& rs = md->ranges;
+    rs.clear();
+    uint64_t t0 = now_ns();
+    size_t len = size_t(m.len);
+    bool scanned = m.tracked && dirty_scan(m.shadow, (len + 4095) & ~size_t(4095), rs);
+    for (auto& r : rs) r.second = std::min(r.second, len - std::min(r.first, len));  // last page
+    if (m.tracked && !scanned) m.tracked = m.synced = false;
+    uint64_t t1 = now_ns();
+    md->scan_ns += t1 - t0;
+    if (!m.synced) {
+        rs.clear();
+        size_t first = first_change(src, m.last, m.len);
+        if (first != SIZE_MAX) rs.push_back({first, m.len - first});
+        m.synced = m.tracked;  // protected before this diff: later writes show up in scans
+        md->full_bytes += m.len;
+        if (m.cached) md->full_cached_bytes += m.len;
+        md->full_ns += now_ns() - t1;
+    }
+    if (rs.empty()) return;
     VkDevice adev = md->dd->device;
     char *a = to_a ? m.amap : nullptr, *b = to_b ? m.bmap : nullptr;
     bool a_tmp = to_a && !a, b_tmp = to_b && !b;
+    uint64_t t2 = now_ns();
     if (a_tmp && md->a.MapMemory(adev, u2h<VkDeviceMemory>(amem), m.off, m.len, 0, (void**)&a) < 0) {
         a = nullptr;
         logf("mirror: cannot map app memory for a shadow push (%llu MB) — data lost", (unsigned long long)(m.len >> 20));
@@ -340,15 +424,21 @@ static void push_one(MDev* md, uint64_t amem, Mem& m) {
         b = nullptr;
         mirror_fail(md, "vkMapMemory failed on B");
     }
-    word_diff_copy(src + first, m.last + first, m.len - first, a ? a + first : nullptr, b ? b + first : nullptr);
+    uint64_t t3 = now_ns();
+    for (auto& r : rs) {
+        word_diff_copy(src + r.first, m.last + r.first, r.second, a ? a + r.first : nullptr, b ? b + r.first : nullptr);
+        md->diffed_bytes += r.second;
+    }
     if (!m.coherent) {
         VkMappedMemoryRange ra{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, u2h<VkDeviceMemory>(amem), m.off, VK_WHOLE_SIZE};
         VkMappedMemoryRange rb{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, u2h<VkDeviceMemory>(m.bmem), m.off, VK_WHOLE_SIZE};
         if (a) md->a.FlushMappedMemoryRanges(adev, 1, &ra);
         if (b) md->b.FlushMappedMemoryRanges(md->bdev, 1, &rb);
     }
+    uint64_t t4 = now_ns();
     if (a_tmp && a) md->a.UnmapMemory(adev, u2h<VkDeviceMemory>(amem));
     if (b_tmp && b) md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem));
+    md->map_ns += (t3 - t2) + (now_ns() - t4);
 }
 
 static void push_memory(MDev* md) {
@@ -361,8 +451,14 @@ static void push_memory(MDev* md) {
         if (kv.second.mapped) { push_one(md, kv.first, kv.second); bytes += kv.second.len; }
     md->pushed_bytes += bytes;
     md->push_ns += now_ns() - t0;
-    if (++md->pushes % 600 == 0)
-        logf("mirror: memory sync %.2f ms/submit avg over %.1f MB mapped", md->push_ns / 1e6 / 600, bytes / 1048576.0), md->push_ns = 0;
+    if (++md->pushes % 600 == 0) {
+        const double k = 600 * 1048576.0, n = 600 * 1e6;
+        logf("mirror: memory sync %.2f ms/submit avg over %.1f MB mapped, %.1f MB diffed; full diff %.1f MB (%.1f MB cached) %.2f ms, "
+             "dirty scan %.2f ms, transient maps %.2f ms",
+             md->push_ns / n, bytes / 1048576.0, md->diffed_bytes / k, md->full_bytes / k, md->full_cached_bytes / k, md->full_ns / n,
+             md->scan_ns / n, md->map_ns / n);
+        md->push_ns = md->diffed_bytes = md->full_bytes = md->full_cached_bytes = md->full_ns = md->scan_ns = md->map_ns = 0;
+    }
 }
 
 static void free_shadow(Mem& m) {
@@ -370,6 +466,7 @@ static void free_shadow(Mem& m) {
     if (m.last) munmap(m.last, m.cap);
     m.shadow = m.last = nullptr;
     m.cap = 0;
+    m.tracked = m.synced = false;  // munmap unregistered it
 }
 
 static char* anon(size_t n) {
@@ -495,7 +592,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory m
         }
         m.cap = cap;
         m.cap_off = off;
+        m.tracked = m.shadow && dirty_register(m.shadow, cap);
     }
+    m.synced = false;  // a new mapping starts with a full diff
     m.amap = (char*)*pp;
     m.a_released = tmp && !m.cached;
     if (m.a_released) {  // the app writes the shadow; A is mapped per push

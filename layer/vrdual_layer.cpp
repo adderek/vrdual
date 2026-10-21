@@ -22,7 +22,11 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <link.h>
+#include <linux/fs.h>
+#include <linux/userfaultfd.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -318,7 +322,11 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     s.seq++;  // odd: writing
     __sync_synchronize();
     s.frame = frame;
-    memcpy((char*)hd + VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes, pixels, n);
+    // Alpha forced to 1: games leave it undefined (Call of Juarez Gunslinger: 0
+    // everywhere) and present opaque, but WiVRn shows alpha 0 as black.
+    auto* d = (uint32_t*)((char*)hd + VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes);
+    auto* p = (const uint32_t*)pixels;
+    for (size_t i = 0; i < n / 4; ++i) d[i] = p[i] | 0xff000000u;
     s.present_ns = now_ns();
     __sync_synchronize();
     s.seq++;

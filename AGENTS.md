@@ -133,6 +133,16 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   `flatpak run com.valvesoftware.Steam steam://rungameid/<appid>`. gdb cannot
   attach across pressure-vessel's PID namespace; bisect via the wrapper.
 
+- Games may leave the swapchain's alpha at 0 (Call of Juarez Gunslinger;
+  Hogwarts Legacy: only the GUI has alpha 1). WiVRn shows alpha 0 as black,
+  so the layer exports alpha forced to 1 (selftest `--clear-alpha 0` check).
+- Mirror memory sync was a full `memcmp` of all mapped memory per submit
+  (26 ms over 336 MB). Shadows now use userfaultfd async write-protect +
+  `PAGEMAP_SCAN`; works inside Flatpak Steam here (unprivileged, needs
+  `UFFD_USER_MODE_ONLY` since `vm.unprivileged_userfaultfd = 0`). Cached
+  (driver-mapped) memory still gets the full diff; importing tracked host
+  pages into A was tried and fails on amdgpu userptr (ARCHITECTURE "Host memory").
+
 - `glslc` segfaults on `GL_EXT_buffer_reference_uvec2` with constant operands;
   `glslangValidator -V` works.
 - SPIR-V inserts must respect section order: capabilities → extensions →

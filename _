@@ -321,9 +321,11 @@ vrdual_selftest() {
     # 3. Mirror mode: ONE process, the app sees one GPU, the layer replays on the other.
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
-        "$B/vrdual-cube" --scene calib --title "selftest mirror" >"$tmp/mirror.log" 2>&1 &
+        "$B/vrdual-cube" --scene calib --clear-alpha 0 --title "selftest mirror" >"$tmp/mirror.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images' "$tmp/mirror.log" && break; sleep 0.1; done
     label="mirror: app sees 1 GPU, twin on 0b"; check bash -c "grep -q 'app sees 1 GPU' '$tmp/mirror.log' && grep -q 'twin device on .*0000:0b:00.0' '$tmp/mirror.log'"
+    label="mirror: app clears alpha 0, frame file alpha 255"
+    check bash -c "for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --alpha /dev/shm/vrdual-$sess-0) && break; sleep 0.1; done; [ \"\$a\" = 255 ]"
     label="mirror: default ipd 64mm"; check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m1.png' && $M '$tmp/m1.png' --ipd 0.064 --anchor center"
     set_live ipd=0.2
     label="mirror: live ipd 200mm";   check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m2.png' && $M '$tmp/m2.png' --ipd 0.2 --anchor center"
@@ -336,12 +338,16 @@ vrdual_selftest() {
     # A, replayed on B) and vkMapMemory2. Wrong addresses on B = garbage right eye.
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
-        "$B/vrdual-cube" --scene calib --bda --title "selftest bda" >"$tmp/bda.log" 2>&1 &
+        "$B/vrdual-cube" --scene calib --bda --late-verts 60 --title "selftest bda" >"$tmp/bda.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images' "$tmp/bda.log" && break; sleep 0.1; done
-    label="mirror bda: addresses replayed, ipd 64mm"
-    check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'device addresses replayed' '$tmp/bda.log' && snap '$tmp/bda.png' &&
+    # Vertices are written at frame 60, long after the first sync: with dirty
+    # tracking on, only a scan that sees that write gets them to B (right eye).
+    label="mirror bda: addresses replayed, late vertex write reaches B (dirty tracking on), ipd 64mm"
+    check bash -c "grep -q 'device addresses replayed' '$tmp/bda.log' && grep -q 'dirty tracking on' '$tmp/bda.log' &&
+        '$B/vrdual-compositor' --session $sess --snapshot '$tmp/bda.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
         $M '$tmp/bda.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/bda.log' || { cat '$tmp/bda.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
     else
         say "SKIP  two-GPU checks (no GPU at 0000:0b:00.0)"
     fi
@@ -385,8 +391,9 @@ vrdual_selftest() {
         rm -f /dev/shm/vrdual-$sess-*
         env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_SESSION=$sess VRDUAL_EYE=both "$gl" --title "selftest zink" >"$tmp/gl.log" 2>&1 &
-        label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped"
+        label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped, dirty tracking on"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
+            grep -q 'dirty tracking on' '$tmp/gl.log' &&
             [ \"\$(magick '$tmp/g.png' -crop 50%x100% +repage -format '%#\n' info: | sort -u | wc -l)\" = 2 ]"
         # the X11 cursor goes out with the frames (games with a hardware cursor)
         label="cursor $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): X11 cursor image in the frame header"
