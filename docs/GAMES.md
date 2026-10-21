@@ -57,8 +57,14 @@ do not upset the inner ear; `world_scale` can shrink them further.
 | Trine | fairy-tale 2.5D with many layers, strong depth | little camera movement | built-in stereoscopic 3D (side by side) in Trine 1–3 |
 | Batman: Arkham Asylum / City | stereo classic of the 3D Vision era, third person, well known | UE3 D3D9 via DXVK: Alice's cached-memory trade-off until TODO 3 | none found (Arkham VR is a separate PS VR / PC VR game) |
 | Tomb Raider (2013) / Rise of the Tomb Raider | spectacular vistas, third person | D3D11 / D3D12, heavier | Rise: only the Blood Ties DLC in VR; full game via generic stereo tools |
+| Alien: Isolation (Epic) | the best-known flat-to-VR horror: slow, atmospheric, first person (`head_look = edge`) | D3D11 deferred renderer: screen-space effects may be off | MotherVR (Windows only): on Linux vrdual would be the only route |
+| Cities: Skylines / Planet Zoo / Jurassic World Evolution / RollerCoaster Tycoon 3 | builders seen from above look like a model on a table; mouse play, the system cursor is drawn at the scene's depth (works in Hospital Tycoon) | Cities: Skylines has a native Linux (OpenGL → Zink) build | none found |
+| LEGO Builder's Journey (Epic) | a pure diorama | Unity; ray tracing off | vorpX reported in the classic mode only |
 
-Second wave: BioShock Infinite, Dishonored, Shadow of Mordor, Metro 2033 Redux,
+First round (2026-10-22): LEGO Marvel Super Heroes or LEGO Batman 3, Alien:
+Isolation, one builder (Cities: Skylines or Planet Zoo), Little Nightmares.
+
+Second wave: Dead Space (2008), Mass Effect Legendary Edition, Unravel Two, BioShock Infinite, Dishonored, Shadow of Mordor, Metro 2033 Redux,
 Stray, Ghost of a Tale, Spyro Reignited, Grow Home; first-person ones for
 `head_look`. DOOM (2016) is native Vulkan (no DXVK, no cached-memory issue): a
 good test of the Vulkan path, too fast for a showcase.
