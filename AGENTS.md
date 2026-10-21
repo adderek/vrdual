@@ -142,8 +142,11 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   (26 ms over 336 MB). Shadows now use userfaultfd async write-protect +
   `PAGEMAP_SCAN`; works inside Flatpak Steam here (unprivileged, needs
   `UFFD_USER_MODE_ONLY` since `vm.unprivileged_userfaultfd = 0`). Cached
-  (driver-mapped) memory still gets the full diff; importing tracked host
-  pages into A was tried and fails on amdgpu userptr (ARCHITECTURE "Host memory").
+  (driver-mapped) memory gets the full diff unless `cached_wp = 1` (mprotect +
+  SIGSEGV write tracking): fast, but kernel writes into a protected page fail
+  with EFAULT (games reading files straight into GPU memory: Alice's textures
+  flicker black), so it is per game. Importing tracked host pages into A was
+  tried and fails on amdgpu userptr (ARCHITECTURE "Host memory").
 
 - `glslc` segfaults on `GL_EXT_buffer_reference_uvec2` with constant operands;
   `glslangValidator -V` works.

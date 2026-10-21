@@ -377,17 +377,19 @@ static bool dirty_scan(char* p, size_t n, std::vector<std::pair<size_t, size_t>>
     return true;
 }
 
-// Write tracking for cached mappings (VRDUAL_CACHED_WP=0 turns it off). They
+// Write tracking for cached mappings (config cached_wp, off by default). They
 // are the driver's own (VM_PFNMAP: no userfaultfd), and DXVK d3d9 keeps
 // hundreds of MB there (CoJ Gunslinger: 288 MB, 23 ms/submit of memcmp for
 // ~0.1 MB of changes). The mapping is made read-only per block; the first
-// write faults, our SIGSEGV handler sets the block's bit and makes it
-// writable again. A push swaps the bits to 0, re-protects those blocks, then
+// write faults, our SIGSEGV handler makes the block writable again and then
+// sets its bit. A push swaps the bits to 0, re-protects those blocks, then
 // diffs them: a write after the swap either lands before the re-protect (read
 // by the diff) or faults again (next push). Faults that are not ours go to the
 // previous handler (Wine's). The handler uses no libc and no TLS: in Wine the
-// segment registers may be the Windows ones. Risk: the kernel writing into a
-// protected block (read(2) straight into the buffer) gets EFAULT, not a fault.
+// segment registers may be the Windows ones. The kernel writing into a
+// protected block (read(2) straight into the buffer) gets EFAULT, not a fault,
+// and the data never arrive: Alice: Madness Returns (UE3 texture streaming)
+// shows black flickering objects in both eyes. Hence opt-in per game.
 namespace wp {
 constexpr int kSlots = 1024, kWords = 64;  // up to 4096 blocks per mapping
 struct Slot {
@@ -423,10 +425,13 @@ static void on_segv(int sig, siginfo_t* si, void* uc) {
             size_t n = g_slots[i].len.load(std::memory_order_relaxed), k = g_slots[i].blk.load(std::memory_order_relaxed);
             if (!b || a < b || a >= b + n || !k) continue;
             size_t j = (a - b) / k;
+            // Unprotect first, then set the bit. The other order loses writes:
+            // a push taking the bit and re-protecting in between would be undone
+            // by our unprotect, leaving a writable block with no bit.
+            if (raw_mprotect(b + j * k, std::min(k, n - j * k), PROT_READ | PROT_WRITE) != 0) break;
             g_slots[i].bits[j / 64].fetch_or(uint64_t(1) << (j % 64), std::memory_order_acq_rel);
             g_faults.fetch_add(1, std::memory_order_relaxed);
-            if (raw_mprotect(b + j * k, std::min(k, n - j * k), PROT_READ | PROT_WRITE) == 0) return;
-            break;
+            return;
         }
     if (g_prev.sa_flags & SA_SIGINFO) {
         g_prev.sa_sigaction(sig, si, uc);
@@ -439,7 +444,7 @@ static void on_segv(int sig, siginfo_t* si, void* uc) {
 
 static bool enabled() {
     static const bool e = [] {
-        if (!strcmp(env("VRDUAL_CACHED_WP", "1"), "0")) { logf("mirror: cached write tracking off (VRDUAL_CACHED_WP=0)"); return false; }
+        if (!g_cfg.cached_wp) return false;  // default: full diff (correct, slower)
         struct sigaction sa{};
         sigaction(SIGSEGV, nullptr, &g_prev);
         sa.sa_sigaction = on_segv;
@@ -450,7 +455,7 @@ static bool enabled() {
             return false;
         }
         g_installed = true;
-        logf("mirror: cached write tracking on (mprotect + SIGSEGV; VRDUAL_CACHED_WP=0 turns it off)");
+        logf("mirror: cached write tracking on (cached_wp = 1: fast; games reading files straight into GPU memory break)");
         return true;
     }();
     return e;

@@ -22,9 +22,10 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   headset.
 - Live IPD, anchor, world scale and HUD depth (`vrdual live|set|save`),
   per-game config sections, calibration scene.
-- Mirror memory sync: dirty tracking (userfaultfd) for app-written memory,
-  write tracking for driver-mapped cached memory: DXVK d3d9 games went from
-  16–24 ms to ~0.1 ms per submit.
+- Mirror memory sync: dirty tracking (userfaultfd) for app-written memory;
+  optional per game (`cached_wp = 1`) write tracking for driver-mapped cached
+  memory: DXVK d3d9 games from 16–24 ms to ~0.1 ms per submit, but games that
+  read files straight into that memory then show black flickering textures.
 - Exported frames are opaque (games leaving alpha 0 showed black).
 - Games: see docs/GAMES.md.
 

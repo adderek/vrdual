@@ -60,6 +60,7 @@ map_x = KEY_E
 | `cursor_depth` | `auto` | `auto` `hud` | auto = at the depth of the scene under the pointer (both eye images matched there; kept on flat areas); hud = at `hud_depth` |
 | `lockstep` | `1` | `0` `1` | hold each frame until the other eye has it |
 | `lockstep_timeout_ms` | `250` | ms | give up waiting after this |
+| `cached_wp` | `0` | `0` `1` | mirror mode: track the game's writes to cached (driver-mapped) GPU memory instead of comparing all of it every submit. **Fast** where DXVK d3d9 keeps hundreds of MB mapped (CoJ Gunslinger: 24 → 0.1 ms/submit), but **breaks games that read files straight into that memory** (the kernel's writes fail; Alice: Madness Returns shows black flickering objects). Choose per game: fast with bugs, or slow without |
 | `left_gpu` | `pci:0000:06:00.0` | `pci:…`, index, name substring | GPU for the left eye (and the game in mirror mode) |
 | `right_gpu` | `pci:0000:0b:00.0` | same | GPU for the right eye |
 | `log` | `1` | `0` `1` | layer log to stderr (Proton log for Steam games) |
@@ -112,7 +113,7 @@ in front of the face (films). Controls, always on:
 | `deadzone` | `0.15` | 0..1 | stick dead zone |
 | `lstick` | `wasd` | `wasd` `arrows` `none` | left stick in mouse mode |
 | `map_<button>` | per mode | `KEY_*` `BTN_*` `none` | buttons `a b x y l3 r3 lt rt lg rg menu`, e.g. `map_a = KEY_ENTER`, `map_b = KEY_ESC` |
-| `head_look` | `off` | `off` `mouse` `edge` | head turns the game camera: 1:1 mouse, or turn while looking past the dead zone |
+| `head_look` | `off` | `off` `mouse` `edge` | head turns the game camera: `mouse` = 1:1 (natural for games where you point with the mouse; in first-person games it takes getting used to, and pairs well with a controller: the stick turns slowly and imprecisely, the head adds quick precise turns); `edge` = turn while looking past the dead zone (easier start in first-person games) |
 | `head_deadzone` | `15` | degrees | edge mode dead zone |
 | `head_rate` | `120` | deg/s | edge mode turn rate at 45° past the dead zone |
 | `head_counts_per_deg` | `10` | mouse counts | per degree of game camera turn; calibrate per game |
@@ -150,6 +151,5 @@ Debugging only: `VRDUAL_FILTER=0` (no GPU / capability filter),
 `VRDUAL_HIDE_FEATURES=0`, `VRDUAL_CLAMP_API=1`, `VRDUAL_TRACE_EXTS=1` (log
 enabled device extensions), `VRDUAL_MIRROR_TRACE=N` (log the first N mirrored
 calls), `VRDUAL_SHADOW=0`, `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (full memory
-diff, no userfaultfd), `VRDUAL_CACHED_WP=0` (mirror: no write tracking for cached
-mappings, full diff), `VRDUAL_MIRROR_FAIL_AT=N`
+diff, no userfaultfd), `VRDUAL_MIRROR_FAIL_AT=N`
 (selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest).

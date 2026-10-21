@@ -67,6 +67,7 @@ struct Config {
     bool mirror = false;       // VRDUAL_EYE=both: one process, twin device on mirror_gpu
     bool skip_w1 = true;
     bool export_frames = true;
+    bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
     bool lockstep = true;
     bool live = true;          // wanted; per device it also needs bufferDeviceAddress
@@ -118,6 +119,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
     c.export_frames = st.i("export") != 0;
+    c.cached_wp = st.i("cached_wp") != 0;
     c.cursor = st.i("cursor") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
     c.lockstep_timeout_ms = st.i("lockstep_timeout_ms");

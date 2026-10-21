@@ -11,7 +11,7 @@ not confirmed or weak; **broken** = crash or no picture.
 | game (Steam appid) | path | status | settings | notes |
 |---|---|---|---|---|
 | Zen Bound 2 (61600) | native GL → Zink | works | | first game tested in the Quest |
-| Alice: Madness Returns (19680) | Proton, D3D9 | works | | also single GPU |
+| Alice: Madness Returns (19680) | Proton, D3D9 (UE3, DXVK, 32-bit) | works | `cached_wp`: pick fast or correct (see notes) | also single GPU. Two-GPU mirror: with `cached_wp = 1` fast (memory sync 16 → 0.2 ms/submit) but black flickering shadows/objects, mostly on the character, in both eyes (UE3 streams textures straight into GPU memory, those reads fail); with `cached_wp = 0` (default) no such artefacts (a few small flickers, maybe something else) but much slower. Worse with dynamic shadows on and with `head_look = mouse` than with `edge`. `head_look` mouse and edge both work (2026-10-21) |
 | Portal 2 (620) | native GL → Zink | works | `-windowed -w 1920 -h 1080` | fullscreen picks the portrait 2880x5120 |
 | LEGO Harry Potter 1-4 (21130) | Proton | works | turn off video effects | a "ghost" with effects on (likely DoF) |
 | Tomb Raider III (225320) | Proton | works | windowed / 1920x1080 | |
