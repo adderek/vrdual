@@ -52,6 +52,7 @@ automatically.
 | `_` / `vrdual` | implementation + human menu / machine CLI (sources `_`) |
 | `tools/build_info.sh`, `common/vrdual_version.h` | build identity (version from `git describe`, ISO build time, machine) compiled into every binary; `vrdual version` |
 | `docs/GAMES.md` | per-game status and settings (update after testing a game) |
+| `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
 ## Commands
 

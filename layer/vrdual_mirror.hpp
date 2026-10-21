@@ -135,6 +135,7 @@ struct MDev {
     // write-back (GPU results into the shadows the app reads)
     struct BufBind { uint64_t mem = 0; VkDeviceSize off = 0, size = 0; };
     std::unordered_map<uint64_t, BufBind> bufs;                    // A buffer -> memory binding
+    std::unordered_map<uint64_t, VkFormat> imgs;                   // A image -> format (copy extents)
     std::unordered_map<VkCommandBuffer, std::vector<MemRange>> cbw;  // ranges a command buffer writes
     std::vector<Writeback> wbs;                                    // submitted, not yet copied back
     std::vector<VkFence> fence_pool;                               // our fences for submits without one
@@ -231,13 +232,92 @@ static void hook_CmdCopyBuffer2(MDev* md, VkCommandBuffer cb, const VkCopyBuffer
     for (uint32_t i = 0; i < ci->regionCount; ++i)
         wb_note(md, cb, ci->dstBuffer, ci->pRegions[i].dstOffset, ci->pRegions[i].dstOffset + ci->pRegions[i].size);
 }
-// image -> buffer: from the region's offset to the buffer's end (the exact
-// extent needs the image format; readback buffers are small)
-static void hook_CmdCopyImageToBuffer(MDev* md, VkCommandBuffer cb, VkImage, VkImageLayout, VkBuffer dst, uint32_t n, const VkBufferImageCopy* r) {
-    for (uint32_t i = 0; i < n; ++i) wb_note(md, cb, dst, r[i].bufferOffset, kToEnd);
+// Texel block of a format as copied to a buffer: width, height, bytes (for
+// the given aspect). false = not known here: the copy then counts to the
+// buffer's end.
+static bool fmt_block(VkFormat f, VkImageAspectFlags aspect, uint32_t& bw, uint32_t& bh, uint32_t& bytes) {
+    bw = bh = 1;
+    if (aspect & VK_IMAGE_ASPECT_STENCIL_BIT) return bytes = 1, true;
+    switch (f) {
+    case VK_FORMAT_R8_UNORM: case VK_FORMAT_R8_SNORM: case VK_FORMAT_R8_UINT: case VK_FORMAT_R8_SINT: case VK_FORMAT_R8_SRGB:
+    case VK_FORMAT_S8_UINT:
+        return bytes = 1, true;
+    case VK_FORMAT_R8G8_UNORM: case VK_FORMAT_R8G8_SNORM: case VK_FORMAT_R8G8_UINT: case VK_FORMAT_R8G8_SINT: case VK_FORMAT_R16_UNORM:
+    case VK_FORMAT_R16_SNORM: case VK_FORMAT_R16_UINT: case VK_FORMAT_R16_SINT: case VK_FORMAT_R16_SFLOAT: case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_D16_UNORM_S8_UINT: case VK_FORMAT_R5G6B5_UNORM_PACK16: case VK_FORMAT_B5G6R5_UNORM_PACK16:
+    case VK_FORMAT_R4G4B4A4_UNORM_PACK16: case VK_FORMAT_B4G4R4A4_UNORM_PACK16: case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+    case VK_FORMAT_R5G5B5A1_UNORM_PACK16: case VK_FORMAT_B5G5R5A1_UNORM_PACK16: case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
+        return bytes = 2, true;
+    case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_R8G8B8A8_SNORM: case VK_FORMAT_R8G8B8A8_UINT: case VK_FORMAT_R8G8B8A8_SINT:
+    case VK_FORMAT_R8G8B8A8_SRGB: case VK_FORMAT_B8G8R8A8_UNORM: case VK_FORMAT_B8G8R8A8_SRGB: case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32: case VK_FORMAT_A2R10G10B10_UNORM_PACK32: case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32: case VK_FORMAT_R16G16_UNORM: case VK_FORMAT_R16G16_SNORM: case VK_FORMAT_R16G16_UINT:
+    case VK_FORMAT_R16G16_SINT: case VK_FORMAT_R16G16_SFLOAT: case VK_FORMAT_R32_UINT: case VK_FORMAT_R32_SINT: case VK_FORMAT_R32_SFLOAT:
+    case VK_FORMAT_D32_SFLOAT: case VK_FORMAT_X8_D24_UNORM_PACK32: case VK_FORMAT_D24_UNORM_S8_UINT: case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return bytes = 4, true;  // depth aspects of D24/D32 formats copy as 4 bytes
+    case VK_FORMAT_R16G16B16A16_UNORM: case VK_FORMAT_R16G16B16A16_SNORM: case VK_FORMAT_R16G16B16A16_UINT:
+    case VK_FORMAT_R16G16B16A16_SINT: case VK_FORMAT_R16G16B16A16_SFLOAT: case VK_FORMAT_R32G32_UINT: case VK_FORMAT_R32G32_SINT:
+    case VK_FORMAT_R32G32_SFLOAT:
+        return bytes = 8, true;
+    case VK_FORMAT_R32G32B32A32_UINT: case VK_FORMAT_R32G32B32A32_SINT: case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return bytes = 16, true;
+    case VK_FORMAT_BC1_RGB_UNORM_BLOCK: case VK_FORMAT_BC1_RGB_SRGB_BLOCK: case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: case VK_FORMAT_BC4_UNORM_BLOCK: case VK_FORMAT_BC4_SNORM_BLOCK:
+        return bw = bh = 4, bytes = 8, true;
+    case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_UNORM_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK:
+    case VK_FORMAT_BC5_UNORM_BLOCK: case VK_FORMAT_BC5_SNORM_BLOCK: case VK_FORMAT_BC6H_UFLOAT_BLOCK: case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+    case VK_FORMAT_BC7_UNORM_BLOCK: case VK_FORMAT_BC7_SRGB_BLOCK:
+        return bw = bh = 4, bytes = 16, true;
+    default:
+        return false;
+    }
+}
+
+// Byte range [off, end) an image -> buffer copy region writes, kToEnd if the
+// format is unknown here.
+static void copy_extent(VkFormat f, const VkBufferImageCopy& r, VkDeviceSize& off, VkDeviceSize& end) {
+    off = r.bufferOffset;
+    uint32_t bw, bh, bytes;
+    if (!fmt_block(f, r.imageSubresource.aspectMask, bw, bh, bytes)) { end = kToEnd; return; }
+    VkDeviceSize row = (VkDeviceSize(r.bufferRowLength ? r.bufferRowLength : r.imageExtent.width) + bw - 1) / bw;
+    VkDeviceSize rows = (VkDeviceSize(r.bufferImageHeight ? r.bufferImageHeight : r.imageExtent.height) + bh - 1) / bh;
+    VkDeviceSize slices = VkDeviceSize(std::max(1u, r.imageExtent.depth)) * std::max(1u, r.imageSubresource.layerCount);
+    VkDeviceSize w = (r.imageExtent.width + bw - 1) / bw, h = (r.imageExtent.height + bh - 1) / bh;
+    if (!w || !h) { end = off; return; }
+    end = off + bytes * ((slices - 1) * row * rows + (h - 1) * row + w);
+}
+
+static VkFormat img_format(MDev* md, VkImage img) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto it = md->imgs.find(h2u(img));
+    return it == md->imgs.end() ? VK_FORMAT_UNDEFINED : it->second;
+}
+static void hook_after_CreateImage(MDev* md, VkDevice, const VkImageCreateInfo* ci, const VkAllocationCallbacks*, VkImage* img, VkResult r) {
+    if (r < 0) return;
+    std::lock_guard<std::mutex> l(md->lock);
+    md->imgs[h2u(*img)] = ci->format;
+}
+static void hook_DestroyImage(MDev* md, VkDevice, VkImage img, const VkAllocationCallbacks*) {
+    std::lock_guard<std::mutex> l(md->lock);
+    md->imgs.erase(h2u(img));
+}
+static void hook_CmdCopyImageToBuffer(MDev* md, VkCommandBuffer cb, VkImage img, VkImageLayout, VkBuffer dst, uint32_t n, const VkBufferImageCopy* r) {
+    VkFormat f = img_format(md, img);
+    for (uint32_t i = 0; i < n; ++i) {
+        VkDeviceSize o, e;
+        copy_extent(f, r[i], o, e);
+        wb_note(md, cb, dst, o, e);
+    }
 }
 static void hook_CmdCopyImageToBuffer2(MDev* md, VkCommandBuffer cb, const VkCopyImageToBufferInfo2* ci) {
-    for (uint32_t i = 0; i < ci->regionCount; ++i) wb_note(md, cb, ci->dstBuffer, ci->pRegions[i].bufferOffset, kToEnd);
+    VkFormat f = img_format(md, ci->srcImage);
+    for (uint32_t i = 0; i < ci->regionCount; ++i) {
+        const VkBufferImageCopy2& r2 = ci->pRegions[i];
+        VkBufferImageCopy r{r2.bufferOffset, r2.bufferRowLength, r2.bufferImageHeight, r2.imageSubresource, r2.imageOffset, r2.imageExtent};
+        VkDeviceSize o, e;
+        copy_extent(f, r, o, e);
+        wb_note(md, cb, ci->dstBuffer, o, e);
+    }
 }
 static void hook_CmdFillBuffer(MDev* md, VkCommandBuffer cb, VkBuffer dst, VkDeviceSize off, VkDeviceSize size, uint32_t) {
     wb_note(md, cb, dst, off, size == VK_WHOLE_SIZE ? kToEnd : off + size);
@@ -245,9 +325,11 @@ static void hook_CmdFillBuffer(MDev* md, VkCommandBuffer cb, VkBuffer dst, VkDev
 static void hook_CmdUpdateBuffer(MDev* md, VkCommandBuffer cb, VkBuffer dst, VkDeviceSize off, VkDeviceSize size, const void*) {
     wb_note(md, cb, dst, off, off + size);
 }
-static void hook_CmdCopyQueryPoolResults(MDev* md, VkCommandBuffer cb, VkQueryPool, uint32_t, uint32_t, VkBuffer dst, VkDeviceSize off,
-                                         VkDeviceSize, VkQueryResultFlags) {
-    wb_note(md, cb, dst, off, kToEnd);
+// stride * count covers every result (stride >= one result's size)
+static void hook_CmdCopyQueryPoolResults(MDev* md, VkCommandBuffer cb, VkQueryPool, uint32_t, uint32_t count, VkBuffer dst, VkDeviceSize off,
+                                         VkDeviceSize stride, VkQueryResultFlags flags) {
+    VkDeviceSize one = (flags & VK_QUERY_RESULT_64_BIT) ? 8 : 4;
+    wb_note(md, cb, dst, off, stride && count ? off + stride * (count - 1) + std::max(stride, one) : kToEnd);
 }
 static void hook_CmdExecuteCommands(MDev* md, VkCommandBuffer cb, uint32_t n, const VkCommandBuffer* sec) {
     std::lock_guard<std::mutex> l(md->lock);

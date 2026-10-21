@@ -11,8 +11,9 @@
 // --verts-file: the late vertex write is a pread(2) from a file straight into
 // the mapping, i.e. done by the kernel (UE3 texture streaming does that).
 // --readback: every frame vkCmdFillBuffer writes the frame number into a
-// HOST_CACHED buffer; after the frame's fence the app checks it can read it
-// ("readback: N ok, M bad" every 100 frames).
+// HOST_CACHED buffer, and a 4x4 image cleared to a frame colour is copied
+// there with vkCmdCopyImageToBuffer; after the frame's fence the app checks
+// both, the image's last texel too ("readback: N ok, M bad" every 100 frames).
 // --cached: vertices in a 1 MB HOST_CACHED buffer (mirror: VRDUAL_CACHED_WP
 // tracks whole pages).
 // --clear-alpha A: background alpha (games leave 0; the layer exports 1).
@@ -389,6 +390,7 @@ int main(int argc, char** argv) {
     }
     // --readback: GPU fills, the app reads (one 256-byte slot per frame in flight)
     VkBuffer rbuf = VK_NULL_HANDLE;
+    VkImage rimg = VK_NULL_HANDLE;
     volatile uint32_t* rbp = nullptr;
     uint64_t rb_ok = 0, rb_bad = 0;
     if (readback) {
@@ -407,6 +409,20 @@ int main(int argc, char** argv) {
         void* rp;
         CK(vkMapMemory(dev, rmem, 0, VK_WHOLE_SIZE, 0, &rp));
         rbp = (volatile uint32_t*)rp;
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType = VK_IMAGE_TYPE_2D;
+        ici.format = VK_FORMAT_R8G8B8A8_UNORM;
+        ici.extent = {4, 4, 1};
+        ici.mipLevels = ici.arrayLayers = 1;
+        ici.samples = VK_SAMPLE_COUNT_1_BIT;
+        ici.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        CK(vkCreateImage(dev, &ici, nullptr, &rimg));
+        VkMemoryRequirements imr;
+        vkGetImageMemoryRequirements(dev, rimg, &imr);
+        VkMemoryAllocateInfo iai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, imr.size, memtype(imr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+        VkDeviceMemory imem;
+        CK(vkAllocateMemory(dev, &iai, nullptr, &imem));
+        vkBindImageMemory(dev, rimg, imem, 0);
     }
     uint32_t nverts = uint32_t(verts.size() / 6);
 
@@ -519,7 +535,8 @@ int main(int argc, char** argv) {
             else if (pread(vfd, p, verts.size() * 4, 0) != ssize_t(verts.size() * 4)) fprintf(stderr, "vrdual-cube: pread into the mapping: %s\n", strerror(errno));
         }
         if (readback && frame >= uint64_t(FIF)) {  // this slot was filled FIF frames ago, its fence just waited
-            if (rbp[f * 64] == uint32_t(frame - FIF + 1)) ++rb_ok;
+            uint32_t v = uint32_t(frame - FIF + 1), px = 0xff000000u | (v & 0xff) | (v & 0xff) << 8;  // RGBA8 clear colour
+            if (rbp[f * 64] == v && rbp[512 + f * 16] == px && rbp[512 + f * 16 + 15] == px) ++rb_ok;
             else ++rb_bad;
             if (frame % 100 == 0) fprintf(stderr, "readback: %llu ok, %llu bad\n", (unsigned long long)rb_ok, (unsigned long long)rb_bad);
         }
@@ -533,6 +550,26 @@ int main(int argc, char** argv) {
         vkBeginCommandBuffer(cb, &bi);
         if (readback) {
             vkCmdFillBuffer(cb, rbuf, VkDeviceSize(f) * 256, 256, uint32_t(frame + 1));
+            float c = float((frame + 1) & 0xff) / 255.0f;
+            VkClearColorValue ccv{{c, c, 0, 1}};
+            VkImageSubresourceRange sr{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkImageMemoryBarrier ib{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            ib.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            ib.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ib.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            ib.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            ib.srcQueueFamilyIndex = ib.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            ib.image = rimg;
+            ib.subresourceRange = sr;
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
+            vkCmdClearColorImage(cb, rimg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &ccv, 1, &sr);
+            ib.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ib.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            ib.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
+            VkBufferImageCopy bic{2048 + VkDeviceSize(f) * 64, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {4, 4, 1}};
+            vkCmdCopyImageToBuffer(cb, rimg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rbuf, 1, &bic);
             VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
             vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
         }
