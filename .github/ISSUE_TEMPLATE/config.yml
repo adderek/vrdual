@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / how do I run X
+    url: https://github.com/adderek/vrdual/discussions/categories/q-a
+    about: Setup and usage questions. Answers get marked and stay findable.
+  - name: Request a game
+    url: https://github.com/adderek/vrdual/discussions/categories/game-requests
+    about: One discussion per game. Upvote an existing one instead of commenting +1.
+  - name: Feature idea
+    url: https://github.com/adderek/vrdual/discussions/categories/feature-ideas
+    about: Ideas and wishes, ranked by upvotes.

@@ -1,0 +1,33 @@
+name: Bug
+description: vrdual itself misbehaves (not specific to one game; for games use "Game report").
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands, config (`vrdual-ctl config show`)
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: vrdual version
+      description: output of `vrdual version`
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: GPU(s), driver, distro, session
+      placeholder: 2x RX 7900 XTX, Mesa 26.0, Arch, GNOME Wayland
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      render: text

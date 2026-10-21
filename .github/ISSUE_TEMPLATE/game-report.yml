@@ -1,0 +1,85 @@
+# Field ids are part of the contract with `vrdual report`, which prefills
+# them by query string (?template=game-report.yml&exe=...). Don't rename.
+name: Game report
+description: How a game runs with vrdual (works or not). Feeds docs/GAMES.md.
+title: "[game] "
+labels: [game-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `vrdual report` fills most fields for you. Nothing is sent without this form.
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      placeholder: Mirror's Edge
+    validations:
+      required: true
+  - type: input
+    id: exe
+    attributes:
+      label: Executable
+      placeholder: mirrorsedge.exe
+    validations:
+      required: true
+  - type: dropdown
+    id: store
+    attributes:
+      label: Store / build
+      options: [Steam, GOG, Epic, other, native Linux build]
+    validations:
+      required: true
+  - type: input
+    id: store_id
+    attributes:
+      label: Store id
+      description: Steam appid, GOG product id, Epic app name, umu GAMEID
+  - type: input
+    id: launcher
+    attributes:
+      label: Launcher
+      placeholder: Steam (Flatpak) / Heroic / Lutris / umu-run / direct
+  - type: dropdown
+    id: status
+    attributes:
+      label: Result
+      options: [works, works with tweaks, starts but broken stereo, crashes or does not start]
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: vrdual mode
+      options: [mirror (one process, two GPUs), two processes, single GPU]
+  - type: input
+    id: engine
+    attributes:
+      label: Graphics path
+      placeholder: DXVK d3d9 / vkd3d-proton / Zink (OpenGL) / native Vulkan
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU(s) and driver
+      placeholder: 2x RX 7900 XTX, Mesa 26.0
+  - type: input
+    id: hmd
+    attributes:
+      label: Headset and runtime
+      placeholder: Quest 3S via WiVRn / none (SBS window)
+  - type: input
+    id: version
+    attributes:
+      label: vrdual version
+      description: output of `vrdual version`
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings that helped
+      description: world_scale, hud_depth, ipd, game options (windowed, resolution)
+      render: ini
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: What looks wrong, where it crashes, log excerpts
