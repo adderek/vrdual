@@ -42,6 +42,27 @@ gamescope's `DISPLAY` back inside the container.
 gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%
 ```
 
+## To test: showcase candidates (2026-10-21)
+
+From [MY_GAMES.md](MY_GAMES.md) (owned): picked for looking good in stereo on a
+fixed screen, a calm camera, Proton D3D9/D3D11 or native Vulkan, and no
+anti-cheat. Third-person "diorama" games look like a model in front of you and
+do not upset the inner ear; `world_scale` can shrink them further.
+
+| game | why | risk | other VR route (as found 2026-10-21) |
+|---|---|---|---|
+| LEGO Marvel Super Heroes / LEGO Batman 3 / LEGO The Hobbit | LEGO Harry Potter already works; toy bricks on the desk; for everyone | post effects (DoF) off | none found (no VR mod, no vorpX profile confirmed) |
+| Little Nightmares | dark miniature diorama, ideal scale and pace | UE4: likely 10-bit backbuffer (`r.DefaultBackBufferPixelFormat=0`, see Hogwarts) | UEVR (generic, Windows); a separate VR game, Little Nightmares VR: Altered Echoes (2026) |
+| Unravel / Unravel Two | photoreal small scale, calm | unknown engine path | Geo-11 (generic DX11 stereo, Windows) reported to work |
+| Trine | fairy-tale 2.5D with many layers, strong depth | little camera movement | built-in stereoscopic 3D (side by side) in Trine 1–3 |
+| Batman: Arkham Asylum / City | stereo classic of the 3D Vision era, third person, well known | UE3 D3D9 via DXVK: Alice's cached-memory trade-off until TODO 3 | none found (Arkham VR is a separate PS VR / PC VR game) |
+| Tomb Raider (2013) / Rise of the Tomb Raider | spectacular vistas, third person | D3D11 / D3D12, heavier | Rise: only the Blood Ties DLC in VR; full game via generic stereo tools |
+
+Second wave: BioShock Infinite, Dishonored, Shadow of Mordor, Metro 2033 Redux,
+Stray, Ghost of a Tale, Spyro Reignited, Grow Home; first-person ones for
+`head_look`. DOOM (2016) is native Vulkan (no DXVK, no cached-memory issue): a
+good test of the Vulkan path, too fast for a showcase.
+
 ## Tuning a new game
 
 1. **Resolution**: the desktop here is portrait (2880x5120). Use windowed
