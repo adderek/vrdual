@@ -834,6 +834,12 @@ static int run(int argc, char** argv) {
     };
     bool running = false;
     long submitted = 0, uploads = 0;
+    // stats line (VRDUAL_XR_STATS seconds): headset frames, those without a new
+    // game frame, age of the shown frames (layer publish -> our upload), L/R skew
+    long sub_reported = 0, repeats = 0, aged = 0;
+    double age_sum = 0, age_max = 0, skew_sum = 0;
+    bool new_pair = false;
+    const double stats_every = getenv("VRDUAL_XR_STATS") ? atof(getenv("VRDUAL_XR_STATS")) : 5;
     uint64_t shown = 0;
     int live = -1;  // game frames fresh? -1 = not reported yet
     bool blanked = false;
@@ -1070,9 +1076,18 @@ static int run(int argc, char** argv) {
                 blanked = true;
                 fprintf(stderr, "[xr] blank frame submitted\n");
             }
+            new_pair = got;
             if (got) {
                 shown = F + 1;
                 blanked = false;
+                const vrdual_slot &sl = L.hdr->slots[F % VRDUAL_SLOTS], &sr = R.hdr->slots[F % VRDUAL_SLOTS];
+                if (sl.frame == F && sr.frame == F && sl.present_ns && sr.present_ns) {
+                    double age = vrdual::now_s() - double(sl.present_ns) * 1e-9;
+                    age_sum += age;
+                    age_max = std::max(age_max, age);
+                    skew_sum += fabs(double(sl.present_ns) - double(sr.present_ns)) * 1e-9;
+                    ++aged;
+                }
                 vrdual::Eye* src[2] = {swap ? &R : &L, swap ? &L : &R};
                 for (int e = 0; e < 2; ++e) {
                     EyeOut& o = out[e];
@@ -1310,10 +1325,19 @@ static int run(int argc, char** argv) {
         fe.layers = layers.data();
         XR_CHECK(xrEndFrame(s, &fe));
         if (game_layer) ++submitted;  // overlay-only frames don't count
+        if (game_layer && !new_pair) ++repeats;
+        new_pair = false;
         double t = vrdual::now_s();
-        if (t - t_report > 5) {
-            fprintf(stderr, "[xr] %ld frames submitted, %ld new game frames (%.1f/s)\n", submitted, uploads, uploads / (t - t_report));
-            uploads = 0;
+        if (stats_every > 0 && t - t_report > stats_every) {
+            double dt = t - t_report;
+            fprintf(stderr, "[xr] %ld frames submitted, %ld new game frames (%.1f/s), headset %.1f Hz, %ld without a new game frame",
+                    submitted, uploads, uploads / dt, (submitted - sub_reported) / dt, repeats);
+            if (aged) fprintf(stderr, ", frame age %.1f ms avg / %.1f max (layer publish -> upload), L-R %.1f ms", age_sum / aged * 1e3, age_max * 1e3,
+                              skew_sum / aged * 1e3);
+            fprintf(stderr, "\n");
+            uploads = repeats = aged = 0;
+            age_sum = age_max = skew_sum = 0;
+            sub_reported = submitted;
             t_report = t;
         }
         if (max_frames >= 0 && submitted >= max_frames) { fprintf(stderr, "[xr] %ld frames submitted\n", submitted); g_quit = g_user_quit = 1; }

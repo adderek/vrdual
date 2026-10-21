@@ -155,4 +155,5 @@ enabled device extensions), `VRDUAL_MIRROR_TRACE=N` (log the first N mirrored
 calls), `VRDUAL_SHADOW=0`, `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (full memory
 diff, no userfaultfd), `VRDUAL_CACHED_SHADOW=0` (mirror: cached memory
 mapped directly, full diff every submit), `VRDUAL_MIRROR_FAIL_AT=N`
-(selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest).
+(selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest), `VRDUAL_XR_STATS=S` (`vrdual xr`
+stats line every S seconds, default 5, 0 = off).

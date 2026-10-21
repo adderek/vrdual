@@ -336,6 +336,12 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
   flip y in the projection). Render-only: the game's camera and collision stay.
   `vrdual set head_x 0.05` sets it by hand.
 
+Stats, every 5 s in the `vrdual xr` log (`VRDUAL_XR_STATS` seconds): `N frames
+submitted, M new game frames (game fps), headset … Hz, … without a new game
+frame (repeats), frame age … ms avg / … max (layer publish -> upload), L-R …
+ms` (publish skew of the two eyes). The age starts when the layer publishes,
+which with double-buffered readback is one game frame after it rendered.
+
 Stereo window (`edge_mask`, default `outer`): an eye camera moved by dx shifts
 its view by `−P00·dx/depth` (NDC), so at the eye's outer edge it shows a strip
 the game never drew for its own camera (culled objects, pop-in, clear colour)
