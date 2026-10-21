@@ -1065,7 +1065,72 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 
 ## Epic games
 
-TODO (no easy way to extract list)
+| Alan wake's american nightmare | | |
+| Alien: isolation | | |
+| Assasin's creed: Odyssey | | |
+| Assasin's creed: origins | | |
+| Assasin's creed: syndicate | | |
+| Bioshock 2 remastered | | |
+| Bioshock infinite | | |
+| Borderlands 2 | | |
+| Borderlands 3 | | |
+| Borderlands the pre-sequel | | |
+| Cities skylines | | |
+| Control | | |
+| Cyberpunk 2077 | | |
+| Dead by daylight | | |
+| Dead island 2 | | |
+| Death stranding | | |
+| Destiny 2 | | |
+| Dishonored definitive edition | | |
+| Dishonored death of the outsiders | | |
+| Dying light | | |
+| Elite dangerous | | |
+| Fallout 3: GOTY | | |
+| Fallout | | |
+| Fallout: New vegas | | |
+| Galactic civilizations III | | |
+| Gamedec definitive edition | | |
+| Ghost busters remastered | | |
+| GTA V | | |
+| Heavy rain | | |
+| Hell let loose | | |
+| Homeworlds: dessert of Kharak | | |
+| Jennifer wilde unlikely revolutionaries | | |
+| Jurrasic world evolution | | |
+| Just cause 4 | | |
+| LEGO Builders journey | | |
+| Metro 2033 redux | | |
+| Metro last light redux | | |
+| Never alone (Kisima Ingitchuna) | | |
+| Offworld trading company | | |
+| Orwell: keeping an eye on you | | |
+| payday 2 | | |
+| prey | | |
+| Rage 2 | | |
+| Railway empire | | |
+| Red dead redemption II | | |
+| Rise of the tomb raider | | |
+| Rollercoaster tycoon 3 complete edition | | |
+| Saints row IV remastered | | |
+| Shadow of the tomb raider definitive edition | | |
+| Shadow tactics Blades of the shogun | | |
+| Shadowrun returns | | |
+| Star wars squadrons | | |
+| Star wars Battlefront II celebration edition | | |
+| Surviving mars | | |
+| Calisto protocol | | |
+| The elder scrolls online | | |
+| The evil within | | |
+| The evil within 2 | | |
+| The talos principle | | |
+| Tomb raider GOTY | | |
+| Total war: Warhammer | | |
+| Vampyr | | |
+| Watch dogs | | |
+| Watch dogs 2 | | |
+| Wolfenstein: the new order | | |
+| XCOM 2 | | |
 
 | game | VR | platform | vrdual |
 |---|---|---|---|
