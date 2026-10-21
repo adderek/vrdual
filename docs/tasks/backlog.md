@@ -4,6 +4,9 @@
   double-buffer the params (two vec4 slots, index flipped at present), or accept.
 - Compositor keys are only tested through `vrdual-ctl`; add an SDL event
   injection path (e.g. `--keys "Up Up W"`) so selftest can cover them.
+- Readback: the CPU copy into /dev/shm (~0.8 ms per frame for two 1080p eyes)
+  could go if the GPU wrote into the frame file (host-pointer import of the
+  slot, alpha forced by the readers). Small gain, amdgpu userptr risk: later.
 - Readback: 10-bit and FP16 swapchains go through a blit to 8-bit since
   2026-10-21; HDR colour spaces (PQ / scRGB above 1) are not tone-mapped.
 - `vrdual gpus` "behind-switch" heuristic counts bridge hops (>4); the Navi31

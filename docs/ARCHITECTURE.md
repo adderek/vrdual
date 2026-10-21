@@ -514,7 +514,14 @@ why `vrdual gpus` walks the bridge chain. Why it matters for VR:
   one frame.
 - Compositor keys were exercised through the same code path as `vrdual-ctl set`,
   but not by pressing keys in a window (no display automation here).
-- Synchronous readback at present (adds latency). Swapchains: 8-bit RGBA/BGRA
+- Readback at present is double-buffered: frame N's copy runs on the GPU while
+  frame N-1 is published (one frame later in the frame files; the game no
+  longer waits for its copy). testapp 1920x1080 mirror: 6.6 -> 4.0 ms per
+  frame; what is left is mostly GPU A's PCIe x4 link moving 8 MB per frame
+  (~2.4 ms of GPU time, in the background; at 90 fps ~20 % of the link) and
+  ~0.8 ms of CPU copies into /dev/shm. Alternate-eye rendering (one GPU)
+  still waits for its copy: the eye params flip only after the frame.
+  Swapchains: 8-bit RGBA/BGRA
   copied as they are; 10-bit UNORM (A2B10G10R10/A2R10G10B10, what UE4 picks
   even with HDR off) and FP16 are blitted into an 8-bit image first (FP16 into
   sRGB, which encodes its linear values); HDR colour spaces are not tone-mapped

@@ -178,13 +178,22 @@ struct Readback {
     VkDeviceMemory conv_mem = VK_NULL_HANDLE;
 };
 
-// Command buffer + sync for the readback copy, on the presenting queue family.
+// Command buffers + sync for the readback copies, on the presenting queue
+// family. Two slots: frame N's copy runs on the GPU while frame N-1, whose copy
+// is done, is published (the game no longer waits for its frame's copy).
 struct CopyRes {
     uint32_t family = UINT32_MAX;
     VkCommandPool pool = VK_NULL_HANDLE;
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
-    VkSemaphore sem = VK_NULL_HANDLE;
+    VkCommandBuffer cmd[2] = {};
+    VkFence fence[2] = {};
+    VkSemaphore sem[2] = {};
+    struct Pending {  // a submitted copy waiting to be published
+        bool on = false;
+        uint64_t frame = 0, sc = 0;
+        int eye = 0;
+        Readback* rb = nullptr;
+        size_t bytes = 0;
+    } pend[2];
 };
 
 // Live eye params: vec4 in host-visible memory, address baked into shaders.
@@ -207,11 +216,11 @@ struct SwapchainData {
     std::vector<VkImage> images;
     uint32_t pixfmt = 0;  // 0 = not exportable
     uint32_t xwin = 0;    // X11 window of the surface (cursor export), 0 = unknown
-    Readback rb;
+    Readback rb[2];  // copy slots (CopyRes)
     // mirror: device B stand-ins for the swapchain images
     std::vector<VkImage> b_images;
     std::vector<VkDeviceMemory> b_mem;
-    Readback b_rb;
+    Readback b_rb[2];
 };
 
 namespace mirror { struct MDev; }
@@ -855,8 +864,10 @@ static void free_readback(const Dispatch& d, VkDevice dev, Readback& rb) {
 }
 
 static void free_copy_res(const Dispatch& d, VkDevice dev, CopyRes& cr) {
-    if (cr.fence) d.DestroyFence(dev, cr.fence, nullptr);
-    if (cr.sem) d.DestroySemaphore(dev, cr.sem, nullptr);
+    for (int k = 0; k < 2; ++k) {
+        if (cr.fence[k]) d.DestroyFence(dev, cr.fence[k], nullptr);
+        if (cr.sem[k]) d.DestroySemaphore(dev, cr.sem[k], nullptr);
+    }
     if (cr.pool) d.DestroyCommandPool(dev, cr.pool, nullptr);
     cr = CopyRes{};
 }
@@ -865,7 +876,8 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroyDevice(VkDevice dev, const VkAlloca
     DeviceData* dd = dev_of(key(dev));
     logf("device destroyed: %d vertex shaders patched, %d modules untouched, %llu frames", dd->ep.patched, dd->ep.skipped, (unsigned long long)dd->frame);
     if (dd->md) mirror::destroy_twin(dd);
-    for (auto& kv : dd->swapchains) free_readback(dd->d, dev, kv.second.rb);
+    for (auto& kv : dd->swapchains)
+        for (auto& rb : kv.second.rb) free_readback(dd->d, dev, rb);
     free_param_buffer(dd->d, dev, dd->ep);
     free_copy_res(dd->d, dev, dd->cr);
     dd->d.DestroyDevice(dev, alloc);
@@ -1024,7 +1036,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateSwapchainKHR(VkDevice dev, const
     if (s.pixfmt) {
         VkPhysicalDeviceMemoryProperties mp;
         dd->inst->GetPhysicalDeviceMemoryProperties(dd->phys, &mp);
-        if (!create_readback(dd->d, dev, mp, s.extent, s.rb, conv)) {
+        if (!create_readback(dd->d, dev, mp, s.extent, s.rb[0], conv) || !create_readback(dd->d, dev, mp, s.extent, s.rb[1], conv)) {
+            for (auto& rb : s.rb) free_readback(dd->d, dev, rb);
             logf("readback alloc failed — export disabled");
             s.pixfmt = 0;
         }  // the frame file is opened by the first present (shm_claim)
@@ -1035,14 +1048,16 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateSwapchainKHR(VkDevice dev, const
     return VK_SUCCESS;
 }
 
+static void drop_pending(const Dispatch& d, VkDevice dev, CopyRes& cr, const Readback* rb);
+
 static VKAPI_ATTR void VKAPI_CALL vrd_DestroySwapchainKHR(VkDevice dev, VkSwapchainKHR sc, const VkAllocationCallbacks* alloc) {
     DeviceData* dd = dev_of(key(dev));
     {
         std::lock_guard<std::mutex> l(g_lock);
         auto it = dd->swapchains.find(sc);
         if (it != dd->swapchains.end()) {
-            if (dd->cr.fence) dd->d.WaitForFences(dev, 1, &dd->cr.fence, VK_TRUE, UINT64_MAX);
-            free_readback(dd->d, dev, it->second.rb);
+            drop_pending(dd->d, dev, dd->cr, it->second.rb);
+            for (auto& rb : it->second.rb) free_readback(dd->d, dev, rb);
             if (dd->md) mirror::destroy_swapchain_twin(dd, it->second);
             dd->swapchains.erase(it);
         }
@@ -1064,24 +1079,50 @@ static bool ensure_copy_res(const Dispatch& d, VkDevice dev, PFN_vkSetDeviceLoad
     VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     ai.commandPool = cr.pool;
     ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    ai.commandBufferCount = 1;
-    d.AllocateCommandBuffers(dev, &ai, &cr.cmd);
-    // Layer-allocated dispatchable object: must carry the loader's dispatch
-    // pointer (not needed on the mirror device, which bypasses the loader).
-    if (sld) sld(dev, cr.cmd);
+    ai.commandBufferCount = 2;
+    d.AllocateCommandBuffers(dev, &ai, cr.cmd);
     VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-    d.CreateFence(dev, &fci, nullptr, &cr.fence);
     VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    d.CreateSemaphore(dev, &sci, nullptr, &cr.sem);
+    for (int k = 0; k < 2; ++k) {
+        // Layer-allocated dispatchable object: must carry the loader's dispatch
+        // pointer (not needed on the mirror device, which bypasses the loader).
+        if (sld) sld(dev, cr.cmd[k]);
+        d.CreateFence(dev, &fci, nullptr, &cr.fence[k]);
+        d.CreateSemaphore(dev, &sci, nullptr, &cr.sem[k]);
+    }
     cr.family = family;
     return true;
 }
 
-// Copies a presentable image into rb, waiting on `waits` first; optionally
-// signals cr.sem for the real present. Synchronous: returns after the copy.
-static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, CopyRes& cr, VkImage img, VkExtent2D ext, Readback& rb,
-                             uint32_t nwait, const VkSemaphore* waits, bool signal) {
-    VkCommandBuffer cb = cr.cmd;
+// Waits for slot k's copy and publishes it (g_shm_lock held), if this
+// swapchain still owns the frame files (their size is its size).
+static void finish_readback(const Dispatch& d, VkDevice dev, CopyRes& cr, int k) {
+    auto& p = cr.pend[k];
+    if (!p.on) return;
+    p.on = false;
+    d.WaitForFences(dev, 1, &cr.fence[k], VK_TRUE, UINT64_MAX);
+    if (!p.rb->coherent) {
+        VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, p.rb->mem, 0, VK_WHOLE_SIZE};
+        d.InvalidateMappedMemoryRanges(dev, 1, &mr);
+    }
+    if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes);
+}
+
+// A swapchain going away: forget its copies still in flight (not published).
+static void drop_pending(const Dispatch& d, VkDevice dev, CopyRes& cr, const Readback* rb) {
+    for (int k = 0; k < 2; ++k)
+        if (cr.pend[k].on && (cr.pend[k].rb == &rb[0] || cr.pend[k].rb == &rb[1])) {
+            d.WaitForFences(dev, 1, &cr.fence[k], VK_TRUE, UINT64_MAX);
+            cr.pend[k].on = false;
+        }
+}
+
+// Copies a presentable image into rb with slot k, waiting on `waits` first;
+// optionally signals cr.sem[k] for the real present. wait: returns after the
+// copy (else after the submit; finish_readback waits).
+static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, CopyRes& cr, int k, VkImage img, VkExtent2D ext, Readback& rb,
+                             uint32_t nwait, const VkSemaphore* waits, bool signal, bool wait) {
+    VkCommandBuffer cb = cr.cmd[k];
     d.ResetCommandBuffer(cb, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1134,12 +1175,12 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     si.commandBufferCount = 1;
     si.pCommandBuffers = &cb;
     si.signalSemaphoreCount = signal ? 1 : 0;
-    si.pSignalSemaphores = &cr.sem;
-    d.ResetFences(dev, 1, &cr.fence);
-    VkResult r = d.QueueSubmit(queue, 1, &si, cr.fence);
+    si.pSignalSemaphores = &cr.sem[k];
+    d.ResetFences(dev, 1, &cr.fence[k]);
+    VkResult r = d.QueueSubmit(queue, 1, &si, cr.fence[k]);
     if (r != VK_SUCCESS) { logf("copy submit failed: %d", r); return false; }
-    // PoC: synchronous readback. Costs latency; a real build double-buffers.
-    d.WaitForFences(dev, 1, &cr.fence, VK_TRUE, UINT64_MAX);
+    if (!wait) return true;
+    d.WaitForFences(dev, 1, &cr.fence[k], VK_TRUE, UINT64_MAX);
     if (!rb.coherent) {
         VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, rb.mem, 0, VK_WHOLE_SIZE};
         d.InvalidateMappedMemoryRanges(dev, 1, &mr);
@@ -1175,9 +1216,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     }
 
     // The copy consumes the app's "render finished" semaphores; present then
-    // waits on ours instead.
-    if (!copy_to_readback(dd->d, dd->device, queue, dd->cr, s->images[pi->pImageIndices[0]], s->extent, s->rb,
-                          pi->waitSemaphoreCount, pi->pWaitSemaphores, true)) {
+    // waits on ours instead. Two slots: this frame's copy runs while the
+    // previous frame (copied meanwhile) is published. Alternate-eye rendering
+    // waits for its copy instead: the eye params flip only after the frame.
+    int k = int(frame & 1);
+    size_t bytes = size_t(s->extent.width) * s->extent.height * 4;
+    finish_readback(dd->d, dd->device, dd->cr, k);  // slot free (normally done a frame ago)
+    if (!copy_to_readback(dd->d, dd->device, queue, dd->cr, k, s->images[pi->pImageIndices[0]], s->extent, s->rb[k],
+                          pi->waitSemaphoreCount, pi->pWaitSemaphores, true, dd->aer)) {
         el.unlock();
         return dd->d.QueuePresentKHR(queue, pi);
     }
@@ -1189,19 +1235,20 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     if (dd->aer) {
         // Pair F = frames 2F (left) and 2F+1 (right). The copy waited for this
         // frame's rendering, so the next frame's draws read the other eye's params.
-        shm_publish(dd->ep.eye, frame / 2, s->rb.map, size_t(s->extent.width) * s->extent.height * 4);
+        shm_publish(dd->ep.eye, frame / 2, s->rb[k].map, bytes);
         dd->ep.eye = int(dd->frame & 1);
         push_params(dd->ep);
         el.unlock();
     } else {
-        shm_publish(g_cfg.eye, frame, s->rb.map, size_t(s->extent.width) * s->extent.height * 4);
+        dd->cr.pend[k] = {true, frame, sc_id(pi->pSwapchains[0]), g_cfg.eye, &s->rb[k], bytes};
+        finish_readback(dd->d, dd->device, dd->cr, k ^ 1);  // frame - 1
         el.unlock();
-        lockstep_wait(frame);
+        if (frame) lockstep_wait(frame - 1);
     }
 
     VkPresentInfoKHR pi2 = *pi;
     pi2.waitSemaphoreCount = 1;
-    pi2.pWaitSemaphores = &dd->cr.sem;
+    pi2.pWaitSemaphores = &dd->cr.sem[k];
     return dd->d.QueuePresentKHR(queue, &pi2);
 }
 

@@ -1600,14 +1600,17 @@ static void create_swapchain_twin(DeviceData* dd, const VkSwapchainCreateInfoKHR
         s.b_mem.push_back(bm);
         record_handle(ai, bi);
     }
-    if (s.pixfmt && !create_readback(md->b, md->bdev, md->bmp, s.extent, s.b_rb, conv_format_of(s.format)))
+    if (s.pixfmt && !(create_readback(md->b, md->bdev, md->bmp, s.extent, s.b_rb[0], conv_format_of(s.format)) &&
+                      create_readback(md->b, md->bdev, md->bmp, s.extent, s.b_rb[1], conv_format_of(s.format)))) {
+        for (auto& rb : s.b_rb) free_readback(md->b, md->bdev, rb);
         logf("mirror: readback alloc failed on B — right eye not exported");
+    }
     logf("mirror: swapchain %ux%u, %zu twin images on B", s.extent.width, s.extent.height, s.b_images.size());
 }
 
 static void destroy_swapchain_twin(DeviceData* dd, SwapchainData& s) {
     MDev* md = dd->md;
-    if (md->bcr.fence) md->b.WaitForFences(md->bdev, 1, &md->bcr.fence, VK_TRUE, kBWaitNs);
+    drop_pending(md->b, md->bdev, md->bcr, s.b_rb);
     md->b.DeviceWaitIdle(md->bdev);
     for (size_t i = 0; i < s.b_images.size(); ++i) {
         forget_handle(s.images[i]);
@@ -1616,7 +1619,7 @@ static void destroy_swapchain_twin(DeviceData* dd, SwapchainData& s) {
     }
     s.b_images.clear();
     s.b_mem.clear();
-    free_readback(md->b, md->bdev, s.b_rb);
+    for (auto& rb : s.b_rb) free_readback(md->b, md->bdev, rb);
 }
 
 // Present on A = "frame done" on B: consume B's wait semaphores, copy the B
@@ -1631,11 +1634,17 @@ static void present_twin(DeviceData* dd, VkQueue queue, uint32_t family, const V
     for (uint32_t i = 0; i < pi->waitSemaphoreCount; ++i) waits.push_back(xl_handle(pi->pWaitSemaphores[i]));
     std::lock_guard<std::mutex> l(md->qlock);
     bool done = false;
-    if (own == kNewOwner && s->b_rb.buf) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, md->bname.c_str(), md->bpci.c_str());
-    if (own && s->b_rb.buf && pi->pImageIndices[0] < s->b_images.size() && ensure_copy_res(md->b, md->bdev, nullptr, family, md->bcr)) {
-        done = copy_to_readback(md->b, md->bdev, bq, md->bcr, s->b_images[pi->pImageIndices[0]], s->extent, s->b_rb,
-                                uint32_t(waits.size()), waits.data(), false);
-        if (done) shm_publish(1, frame, s->b_rb.map, size_t(s->extent.width) * s->extent.height * 4);
+    if (own == kNewOwner && s->b_rb[0].buf) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, md->bname.c_str(), md->bpci.c_str());
+    if (own && s->b_rb[0].buf && pi->pImageIndices[0] < s->b_images.size() && ensure_copy_res(md->b, md->bdev, nullptr, family, md->bcr)) {
+        // like A: this frame's copy in slot k, the previous frame published
+        int k = int(frame & 1);
+        finish_readback(md->b, md->bdev, md->bcr, k);
+        done = copy_to_readback(md->b, md->bdev, bq, md->bcr, k, s->b_images[pi->pImageIndices[0]], s->extent, s->b_rb[k],
+                                uint32_t(waits.size()), waits.data(), false, false);
+        if (done) {
+            md->bcr.pend[k] = {true, frame, sc_id(pi->pSwapchains[0]), 1, &s->b_rb[k], size_t(s->extent.width) * s->extent.height * 4};
+            finish_readback(md->b, md->bdev, md->bcr, k ^ 1);
+        }
     }
     if (!done && !waits.empty()) {
         std::vector<VkPipelineStageFlags> st(waits.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
