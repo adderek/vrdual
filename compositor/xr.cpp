@@ -972,7 +972,7 @@ static int run(int argc, char** argv) {
             tune.dz = ic.deadzone;
             tune_on = ic.input == "tune";
             tune_seeded = false;
-            if (tune_on) fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo\n");
+            if (tune_on) fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults)\n");
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
             else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m, scale %g x %g\n", screen_name(scr.mode), scr.fov, scr.dist, scr.sx, scr.sy);
             lean_ref = false;
@@ -1026,7 +1026,10 @@ static int run(int argc, char** argv) {
                     vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = tune.v[0]; w.hud_depth = tune.v[1]; w.hfov = tune.v[2]; });
                 if (r & (vrdual::TUNE_SETTLED | vrdual::TUNE_RESET))
                     fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g\n", r & vrdual::TUNE_RESET ? " (undo)" : "", tune.v[0], tune.v[1], tune.v[2]);
-                if (r & vrdual::TUNE_CHANGED) notify(r & vrdual::TUNE_RESET ? "tune: back to the start values" : "tune", false);
+                if (r & vrdual::TUNE_CHANGED) notify(!(r & vrdual::TUNE_RESET) ? "tune"
+                                                   : tune.undone_to == vrdual::Tuner::UNDO_SAVED ? "tune: back to the saved values"
+                                                   : tune.undone_to == vrdual::Tuner::UNDO_START ? "tune: back to the start values"
+                                                   : "tune: back to the defaults", false);
                 if (r & vrdual::TUNE_SAVE) {
                     tune_save(k.app, tune.v);
                     notify(std::string("tune: saved into [app:") + k.app + "]", false);
@@ -1040,7 +1043,7 @@ static int run(int argc, char** argv) {
                     tune = vrdual::Tuner{};
                     tune.dz = icfg.deadzone;
                     tune_seeded = false;
-                    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo\n");
+                    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults)\n");
                 }
                 tune_on = t;
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
+#include <set>
 #include <thread>
 
 #include "../common/vrdual_frames.hpp"
@@ -199,9 +200,25 @@ int main() {
         expect(std::fabs(t.v[2] - 100) < 0.01f, "tune: right stick x -> hfov 20 deg/s");
         c.rx = 0; c.a = true;
         expect((t.step(c, 0.1) & TUNE_SAVE) && !(t.step(c, 0.1) & TUNE_SAVE), "tune: a -> one save");
-        c.a = false; c.b = true;
+        c.a = false;
+        t.step(c, 0.1);
+        c.ly = 1;
+        t.step(c, 0.5);
+        c.ly = 0; c.b = true;
         r = t.step(c, 0.1);
-        expect((r & TUNE_RESET) && t.v[0] == 50 && t.v[1] == 0 && t.v[2] == 90, "tune: b -> start values");
+        expect((r & TUNE_RESET) && t.undone_to == Tuner::UNDO_SAVED && std::fabs(t.v[2] - 100) < 0.01f && t.v[1] == 0,
+               "tune: change after save, b -> saved values");
+        c.b = false; t.step(c, 0.1); c.b = true;
+        r = t.step(c, 0.1);
+        expect((r & TUNE_RESET) && t.undone_to == Tuner::UNDO_START && t.v[0] == 50 && t.v[1] == 0 && t.v[2] == 90, "tune: b again -> start values");
+        c.b = false; t.step(c, 0.1); c.b = true;
+        r = t.step(c, 0.1);
+        expect((r & TUNE_RESET) && t.undone_to == Tuner::UNDO_DEFAULTS && t.v[0] == 1 && t.v[2] == 90, "tune: b third time -> defaults");
+        Tuner u;
+        u.v[0] = u.start[0] = 50;
+        u.v[0] = 70;
+        c.b = true;
+        expect((u.step(c, 0.1) & TUNE_RESET) && u.v[0] == 50, "tune: nothing saved, b -> start values");
     }
 
     {  // cursor depth: the scene's disparity under the pointer (block matching)
@@ -293,6 +310,26 @@ int main() {
     }
     // uinput round trip with a virtual pad
     {
+        // a running vrdual-xr has a pad of the same name: only a node that appears now is ours
+        auto pad_nodes = [] {
+            std::set<std::string> s;
+            if (DIR* d = opendir("/sys/class/input")) {
+                while (dirent* e = readdir(d)) {
+                    if (strncmp(e->d_name, "event", 5)) continue;
+                    std::ifstream f(std::string("/sys/class/input/") + e->d_name + "/device/name");
+                    std::string n;
+                    std::getline(f, n);
+                    // a real 360 pad would be on a usb path; virtual devices live under /devices/virtual
+                    char buf[512];
+                    ssize_t l = readlink((std::string("/sys/class/input/") + e->d_name).c_str(), buf, sizeof buf - 1);
+                    if (n == Uinput::name(DEV_PAD) && l > 0 && std::string(buf, l).find("virtual") != std::string::npos)
+                        s.insert(e->d_name);
+                }
+                closedir(d);
+            }
+            return s;
+        };
+        std::set<std::string> before = pad_nodes();
         Uinput u;
         bool made = u.emit({{DEV_PAD, EV_ABS, ABS_X, 0}});
         if (!made && u.error().find("No such device") != std::string::npos) {
@@ -304,21 +341,8 @@ int main() {
         std::string node;
         for (int i = 0; i < 40 && node.empty(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            if (DIR* d = opendir("/sys/class/input")) {
-                while (dirent* e = readdir(d)) {
-                    if (strncmp(e->d_name, "event", 5)) continue;
-                    std::ifstream f(std::string("/sys/class/input/") + e->d_name + "/device/name");
-                    std::string n;
-                    std::getline(f, n);
-                    if (n == Uinput::name(DEV_PAD)) {
-                        // ours: a real 360 pad would be on a usb path; virtual devices live under /devices/virtual
-                        char buf[512];
-                        ssize_t l = readlink((std::string("/sys/class/input/") + e->d_name).c_str(), buf, sizeof buf - 1);
-                        if (l > 0 && std::string(buf, l).find("virtual") != std::string::npos) node = std::string("/dev/input/") + e->d_name;
-                    }
-                }
-                closedir(d);
-            }
+            for (const std::string& e : pad_nodes())
+                if (!before.count(e)) node = "/dev/input/" + e;
         }
         int fd = node.empty() ? -1 : open(node.c_str(), O_RDONLY | O_NONBLOCK);
         if (fd < 0) {

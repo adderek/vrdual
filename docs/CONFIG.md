@@ -128,7 +128,7 @@ in front of the face (films). Controls, always on:
 | right stick up / down | `hud_depth` farther / nearer, ×2 per second (from infinity: down starts at 100 m; past 100 m back to infinity) |
 | right stick left / right | `hfov` ±20°/s |
 | a | save the three into `[app:NAME]` (and the Steam copy of the config) |
-| b | back to the values the game started with |
+| b | undo: back to the last saved values; again: to the values the game started with; again: to the defaults (`world_scale` 1, `hud_depth` 0, `hfov` 90) |
 
 Default buttons in mouse mode: a = Enter, b = Esc, x = Space, y = Tab,
 l3 = Alt, r3 = middle click, lt = Shift, rt = left click, lg = Ctrl,

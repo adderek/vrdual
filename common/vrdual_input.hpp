@@ -211,14 +211,19 @@ struct ScreenGrab {
 //   left stick y   world_scale  x2 per second at full deflection (up = more depth)
 //   right stick y  hud_depth    x2 per second (up = farther; past 100 m = 0 = infinity)
 //   right stick x  hfov         20 deg/s
-//   a              save the three into [app:NAME]     b  back to the start values
-// step() returns TUNE_* bits; the caller seeds v[] from the control block.
+//   a              save the three into [app:NAME]
+//   b              undo: back to the last saved values; pressed again, to the
+//                  values the game started with, then to the built-in defaults
+// step() returns TUNE_* bits (undone_to says where b went); the caller seeds
+// v[] and start[] from the control block.
 enum { TUNE_CHANGED = 1, TUNE_SETTLED = 2, TUNE_SAVE = 4, TUNE_RESET = 8 };
 struct Tuner {
     enum { WORLD_SCALE, HUD_DEPTH, HFOV };
     float v[3] = {1, 0, 90};
     float start[3] = {1, 0, 90};
-    bool moving = false, a = false, b = false;
+    float saved[3] = {NAN, NAN, NAN};  // NAN = not saved in this session
+    enum { UNDO_SAVED, UNDO_START, UNDO_DEFAULTS } undone_to = UNDO_SAVED;
+    bool moving = false, a = false, b = false, undid = false;
     float dz = 0.15f;
 
     int step(const Controls& c, double dt) {
@@ -241,9 +246,20 @@ struct Tuner {
         if (memcmp(old, v, sizeof v)) r |= TUNE_CHANGED;
         if (moving && !now) r |= TUNE_SETTLED;
         moving = now;
-        if (idle && c.a && !a) r |= TUNE_SAVE;
+        if (idle && c.a && !a) {
+            memcpy(saved, v, sizeof v);
+            r |= TUNE_SAVE;
+        }
         if (idle && c.b && !b) {
-            memcpy(v, start, sizeof v);
+            // first press: saved; each press with nothing moved since: one step further
+            static const float defaults[3] = {1, 0, 90};
+            const float* to[3] = {saved, start, defaults};
+            int i = undid && !memcmp(v, to[undone_to], sizeof v) ? undone_to + 1 : 0;
+            while (i < UNDO_DEFAULTS && (to[i][0] != to[i][0] || !memcmp(v, to[i], sizeof v))) ++i;  // unsaved or no-op
+            if (i > UNDO_DEFAULTS) i = UNDO_SAVED + (saved[0] != saved[0]);  // wrap around
+            undone_to = decltype(undone_to)(i);
+            memcpy(v, to[i], sizeof v);
+            undid = true;
             r |= TUNE_RESET | TUNE_CHANGED;
         }
         a = c.a;
