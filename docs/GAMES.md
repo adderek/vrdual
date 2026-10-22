@@ -11,14 +11,14 @@ not confirmed or weak; **broken** = crash or no picture.
 | game (Steam appid) | path | status | settings | notes |
 |---|---|---|---|---|
 | Zen Bound 2 (61600) | native GL → Zink | works | | first game tested in the Quest |
-| Alice: Madness Returns (19680) | Proton, D3D9 (UE3, DXVK, 32-bit) | works | `cached_wp`: pick fast or correct (see notes) | also single GPU. Two-GPU mirror: with `cached_wp = 1` fast (memory sync 16 → 0.2 ms/submit) but black flickering shadows/objects, mostly on the character, in both eyes (UE3 streams textures straight into GPU memory, those reads fail); with `cached_wp = 0` (default) no such artefacts (a few small flickers, maybe something else) but much slower. Worse with dynamic shadows on and with `head_look = mouse` than with `edge`. `head_look` mouse and edge both work (2026-10-21) |
+| Alice: Madness Returns (19680) | Proton, D3D9 (UE3, DXVK, 32-bit) | works | | also single GPU. Two-GPU mirror: fast and without the black flickering shadows/objects since cached memory is shadowed with write-back (2026-10-22; maybe slightly slower than `cached_wp = 1`, which was fast but flickered). `head_look` mouse and edge both work (2026-10-21) |
 | Portal 2 (620) | native GL → Zink | works | `-windowed -w 1920 -h 1080` | fullscreen picks the portrait 2880x5120 |
 | LEGO Harry Potter 1-4 (21130) | Proton | works | turn off video effects | a "ghost" with effects on (likely DoF) |
 | Tomb Raider III (225320) | Proton | works | windowed / 1920x1080 | |
 | Psychonauts (3830) | native GL → Zink | works | `skip_w1 = 0` (built-in) | draws the scene with `w == 1`; one SIGSEGV seen, not analysed |
 | Mirror's Edge (17410) | Proton, D3D9 (UE3) | works | `world_scale = 50`, `hud_depth = 1` (built-in); launch in a 1920x1080 gamescope window (below) | confirmed 2026-10-20; stereo works but less impressive than expected |
-| Hogwarts Legacy (990080) | Proton, D3D12 (UE4) | works | special configuration (sponsor profile) | impressive stereo; slow on Linux (vkd3d-proton + mirror memory sync ~12 ms/submit); screenshots show only the GUI, the game image is black; no native VR (a UEVR mod exists for Windows); confirmed 2026-10-21 |
-| Call of Juarez: Gunslinger (204450) | Proton, DXVK d3d9 (32-bit) | works | special configuration (sponsor profile) | game leaves alpha 0 (black in the HMD before the layer forced alpha 1); weak depth at default settings; mirror memory sync 24 ms → 0.13 ms/submit with cached write tracking; confirmed 2026-10-21 |
+| Hogwarts Legacy (990080) | Proton, D3D12 (UE4) | works | special configuration (sponsor profile) | impressive stereo; fast since the cached-memory write tracking (2026-10-22; before: mirror memory sync ~12 ms/submit); screenshots show only the GUI, the game image is black; no native VR (a UEVR mod exists for Windows); confirmed 2026-10-21 |
+| Call of Juarez: Gunslinger (204450) | Proton, DXVK d3d9 (32-bit) | works | special configuration (sponsor profile) | game leaves alpha 0 (black in the HMD before the layer forced alpha 1); weak depth at default settings; mirror memory sync 24 ms → 0.13 ms/submit with cached write tracking; confirmed 2026-10-21, fast 2026-10-22 |
 | Firewatch (383870) | Unity | runs | landscape resolution | the portrait desktop cuts the menu |
 | Skyrim (72850) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | weak depth at scale 1; long loading |
 | Fallout: New Vegas (22380) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | HUD shown; `hud_depth` not confirmed yet |
@@ -28,6 +28,8 @@ not confirmed or weak; **broken** = crash or no picture.
 | Portal (400) | native GL → Zink | broken | | crash on level load (NULL GL buffer map), also with Zink alone |
 | Shadow Warrior (233130) | native GL → Zink | retest | | SIGBUS in the 2026-10-19 frame export (reverted 55c0b81); window scaling issues |
 | Hospital Tycoon (11590) | Proton | works | gamescope 1920x1080 (below) | crashes (NULL read in the game) on the portrait desktop; system cursor drawn by `vrdual xr` at the scene's depth (`cursor_depth = auto`), confirmed 2026-10-20 |
+| Little Nightmares (424840) | Proton, D3D11 (UE4, DXVK) | runs | gamescope 1920x1080 (below); `world_scale = 1` | dark, no wow: at 1 the eye shift is ~mono for UE units (cm); higher values make the eyes render differently (screen-space effects?), not checked which; micro stutter in the HMD, smooth on the monitor (gamescope nested refresh is 60 Hz); a first start showed a black screen once; segfault at exit in `vkDestroySwapchainKHR` (call into an unloaded library), 2026-10-22 |
+| Planet Zoo (703080) | Proton, D3D11 (DXVK) | works | no gamescope; in-game window 1920x1080 (fullscreen picks the portrait 2880x5120) | without gamescope: menus and a zoo, no crash, confirmed 2026-10-22. With gamescope: once glibc "double free or corruption (!prev)" ~10 s in on DXVK's `dxvk-queue` thread (not seen with `VRDUAL_CACHED_SHADOW=0`; write-back copied 0 MB, so the readback shadow is the suspect), once gamescope itself died entering a zoo; gamescope without vrdual fine. Keep `VRDUAL_BACKTRACE=1` set: an abort then logs its native frames |
 
 Single GPU (RTX 5070 Ti, host "sharkoon", alternate-eye): Alice: Madness
 Returns, Zen Bound 2, Overlord (same Zink glow).
