@@ -20,6 +20,7 @@
 #include <vulkan/vulkan.h>
 
 #include <dlfcn.h>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <link.h>
 #include <signal.h>
@@ -27,6 +28,7 @@
 #include <linux/userfaultfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -107,8 +109,49 @@ static std::string exe_name() {
     return s ? s + 1 : buf;
 }
 
+// VRDUAL_BACKTRACE=1: on SIGABRT (glibc "double free", assert) log the
+// aborting thread's native frames as module + offset (addr2line them), then
+// hand the signal on. Debugging aid for crashes whose core is not readable.
+static struct sigaction g_abrt_prev;
+static void on_abrt(int sig, siginfo_t* si, void* uc) {
+    void* f[48];
+    int n = backtrace(f, 48);
+    char name[16] = {};
+    prctl(PR_GET_NAME, name);
+    char line[600];
+    int l = snprintf(line, sizeof line, "[vrdual] SIGABRT in thread '%s', %d frames:\n", name, n);
+    if (write(2, line, size_t(l)) < 0) {}
+    for (int i = 0; i < n; ++i) {
+        Dl_info d{};
+        if (dladdr(f[i], &d) && d.dli_fname)
+            l = snprintf(line, sizeof line, "[vrdual]   #%d %s + 0x%lx\n", i, d.dli_fname, (unsigned long)((char*)f[i] - (char*)d.dli_fbase));
+        else
+            l = snprintf(line, sizeof line, "[vrdual]   #%d %p\n", i, f[i]);
+        if (write(2, line, size_t(l)) < 0) {}
+    }
+    if (g_abrt_prev.sa_flags & SA_SIGINFO) {
+        if (g_abrt_prev.sa_sigaction) g_abrt_prev.sa_sigaction(sig, si, uc);
+    } else if (g_abrt_prev.sa_handler != SIG_IGN && g_abrt_prev.sa_handler != SIG_DFL) {
+        g_abrt_prev.sa_handler(sig);
+    } else {
+        signal(SIGABRT, SIG_DFL);
+        raise(SIGABRT);
+    }
+}
+static void backtrace_on_abort() {
+    if (strcmp(env("VRDUAL_BACKTRACE", "0"), "1")) return;
+    void* warm[1];
+    backtrace(warm, 1);  // loads the unwinder now, not inside the handler
+    struct sigaction sa{};
+    sa.sa_sigaction = on_abrt;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGABRT, &sa, &g_abrt_prev) == 0) logf("SIGABRT backtrace on (VRDUAL_BACKTRACE=1)");
+}
+
 static void load_config(const VkApplicationInfo* app) {
     Config& c = g_cfg;
+    backtrace_on_abort();
     std::string eye = env("VRDUAL_EYE", "");
     c.mirror = eye == "both" || eye == "mirror" || eye == "LR";
     c.eye = c.mirror || eye == "left" || eye == "L" || eye == "0" ? 0 : eye == "right" || eye == "R" || eye == "1" ? 1 : -1;

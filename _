@@ -636,6 +636,17 @@ vrdual_selftest() {
         kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
     fi
 
+    # 4c. VRDUAL_BACKTRACE=1: SIGABRT logs native frames (module + offset), then the app dies as before.
+    if [[ -x $B/vrdual-gltest ]]; then
+        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+            VRDUAL_BACKTRACE=1 "$B/vrdual-gltest" --title "selftest abort" >"$tmp/bt.log" 2>&1 &
+        local bp=$!
+        for i in $(seq 100); do grep -q GL_RENDERER "$tmp/bt.log" && break; sleep 0.1; done
+        local brc=0; kill -ABRT $bp 2>/dev/null; wait $bp 2>/dev/null || brc=$?
+        label="backtrace: SIGABRT logs the frames, the app still aborts"
+        check bash -c "(( $brc == 134 )) && grep -q 'SIGABRT in thread' '$tmp/bt.log' && grep -q '#0 .*libVkLayer_vrdual.so + 0x' '$tmp/bt.log' || { echo rc $brc; cat '$tmp/bt.log'; false; }"
+    fi
+
     # 4b. Input mapping (controllers -> pad / mouse / keys) and a uinput pad round trip.
     label="input: mapper scenarios$( "$B/vrdual-input-test" 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped: module not loaded)' || echo ', uinput pad read back')"
     check "$B/vrdual-input-test"
