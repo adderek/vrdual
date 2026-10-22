@@ -207,6 +207,47 @@ GDPR duties: an IP or install id is personal data). GitHub is the backend.
 - Unverified: Discussions prefill parameters behave like issue prefill;
   practical URL limit (~8 KB) fits a report.
 
+## N. Foveated rendering (idea, 2026-10-22)
+
+No eye tracking (Quest 3S), so only fixed foveation (centre of the view) is
+possible. Two shapes were considered.
+
+**N1 quad views (rejected).** Like Varjo / `XR_VARJO_quad_views`: per eye a
+low-res wide view plus a high-res inset, composited; on 4 GPUs one view per
+GPU. Potential: the inset costs a fraction of full-res pixels, peripheral
+detail is cheap, and it parallelises across GPUs the same way the eyes do.
+The patch side is nearly free: scaling clip.xy by k next to the existing
+clip.x shift gives the inset projection. Rejected because, app-unaware:
+
+- each view is another game instance (one process per view, like the eyes):
+  4 copies of game logic, RAM/VRAM and lockstep instead of 2;
+- screen-space effects (bloom, SSAO, DOF, vignette, TAA jitter) and LOD
+  selection depend on FOV and resolution, so inset and background disagree
+  at the seam; fixing that needs engine knowledge;
+- the game picks the render resolution; a low-res peripheral view means
+  lying about the swapchain extent (UI, cursor, `shm_claim` all affected);
+- the HUD must be excluded from the zoom; the `w==1` skip catches only part.
+
+It pays off where the engine renders the views itself (OpenXR quad views on
+mobile HMD SoCs), not when the layer must fake it.
+
+**N2 fixed foveation via injected VRS (candidate, not scheduled).** The
+layer adds a `VK_KHR_fragment_shading_rate` attachment (RADV supports it on
+RDNA3) to the scene passes: 1×1 in the centre, 2×2 / 4×4 at the edges. One
+GPU, one process, layer stays passive. Limits: saves fragment shading only
+(not geometry, not compute-based lighting); the scene passes must be guessed
+(render target sized like the swapchain, skip UI/post); mirror mode must
+replay it. Expected gain 10–30 % in pixel-bound games (literature, not
+measured here).
+
+Entry criterion: a measured GPU frame time over the frame budget in a
+specific game, most likely in single-GPU alternate-eye mode (B4), where the
+budget halves. Current titles (Zen Bound 2, Portal 2, Alice) are light for
+a 7900 XTX; our costs are mirror sync, the Gen3 x4 link and readback.
+Stream bandwidth is WiVRn's job (it has its own foveated encoding,
+unverified). Until then the in-game resolution slider or FSR is the cheaper
+lever.
+
 ## Roadmap
 
 | milestone | content | exit criterion |
