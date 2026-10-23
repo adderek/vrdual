@@ -405,6 +405,24 @@ vrdual_snapshot() {
     vrdual_run --snapshot "$out" --at "${2:-150}" -- "$B/vrdual-cube" --frames 100000
 }
 
+# SBS screenshots -> wiggle GIFs (left/right eye alternating) next to them,
+# for the README. Args: PNG files or dirs (default screenshots/). A PNG that
+# already has a .gif is skipped. stdout: the GIFs written.
+vrdual_wiggle() {
+    local f g dx; local -a pngs=()
+    (($#)) || set -- "$VRDUAL_ROOT/screenshots"
+    shopt -s nullglob
+    for f in "$@"; do if [[ -d $f ]]; then pngs+=("$f"/*.png); else pngs+=("$f"); fi; done
+    shopt -u nullglob
+    for f in "${pngs[@]}"; do
+        g=${f%.png}.gif
+        [[ -e $g ]] && { say "skip  $g (exists)"; continue; }
+        dx=$(python3 -I "$VRDUAL_ROOT/tools/wiggle.py" "$f" "$g") || { say "FAIL  $f"; continue; }
+        say "wrote $g (eyes aligned at dx=$dx px)"
+        echo "$g"
+    done
+}
+
 # Automated verification; exit 0 = everything passed. Opens two small windows
 # for ~20 s (one per GPU). Uses an empty temporary config, session "selftest".
 vrdual_selftest() {
@@ -779,6 +797,9 @@ PA
     else
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
     fi
+    label="wiggle: SBS png -> 2-frame gif, existing gif skipped"
+    check bash -c "cp '$VRDUAL_ROOT/docs/sbs-example.png' '$tmp/w.png' && cd '$VRDUAL_ROOT' && source ./_ &&
+        [[ \$(vrdual_wiggle '$tmp') == '$tmp/w.gif' ]] && [[ \$(identify '$tmp/w.gif' | wc -l) == 2 ]] && [[ -z \$(vrdual_wiggle '$tmp') ]]"
     unset VRDUAL_CONFIG XDG_STATE_HOME
     if ((fails)); then say "selftest: $fails FAILED"; return 1; fi
     say "selftest: all passed"
@@ -797,6 +818,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
   snapshot [out.png] [frame]    same, but save one paired SBS frame and exit
+  wiggle [PNG|DIR...]           SBS screenshots -> wiggle GIFs next to them (default
+                                  screenshots/; skips PNGs that already have a .gif)
   steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
                                   the launch option:  .../vrdual/run %command%
   view [--session S]            SBS window of a running game (finds Flatpak Steam sessions)
@@ -825,7 +848,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
