@@ -18,6 +18,18 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ![Hospital tycoon](screenshots/HospitalTycoon-4.gif)
 ![Lego Harry Potter 1-4](screenshots/LegoHarry.gif)
 ![Mafia I](screenshots/Mafia.gif)
+![Hogwarts Legacy](screenshots/HogwartsLegacy_2.gif)
+![Hogwarts Legacy](screenshots/HogwartsLegacy_1.gif)
+![LEGO Marvel Super Heroes](screenshots/LegoMarvel4.gif)
+![LEGO Marvel Super Heroes](screenshots/LegoMarvel.gif)
+![LEGO Marvel Super Heroes](screenshots/LegoMarvel2.gif)
+![LEGO Marvel Super Heroes](screenshots/LegoMarvel3.gif)
+![Fable Anniversary](screenshots/FableAnniversary_1.gif)
+![Fable Anniversary](screenshots/FableAnniversary_2.gif)
+![Mirror's Edge](screenshots/MirrorsEdge.gif)
+![Alan Wake's American Nightmare](screenshots/AlanWakeAmericanNightmare.gif)
+![Duke Nukem Forever](screenshots/DukeNukem4ever_1.gif)
+![Civilization V](screenshots/CivV_1.gif)
 
 ## Requirements
 

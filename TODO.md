@@ -37,6 +37,11 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     integration): `nvapi.dll` stand-in, per-eye stereo parameter texture,
     NVIDIA's shift model; fixes shadows / screen-space effects, one and two
     GPUs. Research first (logging-only stand-in).
+16. Skip intro videos (owner's idea 2026-10-23): `vrdual intro off|on GAME`
+    renames the logo videos listed in the game's profile (`.orig` suffix,
+    reversible; Steam file verification restores them). Data per game lives in
+    the sponsor profiles (first: Overlord, `Video/Title_*.bik`); the command
+    itself is public.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

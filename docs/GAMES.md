@@ -3,7 +3,7 @@
 Status per game, dual GPU (2x RX 7900 XTX, host "fractal") unless noted.
 Launch option for all: `/home/adderek/vrdual/run %command%` (from
 `vrdual steam-install`); `vrdual xr` runs once for all games. Last update
-2026-10-21.
+2026-10-23.
 
 Status: **works** = stereo in the HMD confirmed; **runs** = renders, stereo
 not confirmed or weak; **broken** = crash or no picture.
@@ -17,13 +17,23 @@ not confirmed or weak; **broken** = crash or no picture.
 | Tomb Raider III (225320) | Proton | works | windowed / 1920x1080 | |
 | Psychonauts (3830) | native GL → Zink | works | `skip_w1 = 0` (built-in) | draws the scene with `w == 1`; one SIGSEGV seen, not analysed |
 | Mirror's Edge (17410) | Proton, D3D9 (UE3) | works | `world_scale = 50`, `hud_depth = 1` (built-in); launch in a 1920x1080 gamescope window (below) | confirmed 2026-10-20; stereo works but less impressive than expected |
-| Hogwarts Legacy (990080) | Proton, D3D12 (UE4) | works | special configuration (sponsor profile) | impressive stereo; fast since the cached-memory write tracking (2026-10-22; before: mirror memory sync ~12 ms/submit); screenshots show only the GUI, the game image is black; no native VR (a UEVR mod exists for Windows); confirmed 2026-10-21 |
+| Hogwarts Legacy (990080) | Proton, D3D12 (UE4) | works | special configuration (sponsor profile) | impressive stereo; fast since the cached-memory write tracking (2026-10-22; before: mirror memory sync ~12 ms/submit); early screenshots showed only the GUI (game image black), the 2026-10-23 ones are fine; no native VR (a UEVR mod exists for Windows); confirmed 2026-10-21 |
 | Call of Juarez: Gunslinger (204450) | Proton, DXVK d3d9 (32-bit) | works | special configuration (sponsor profile) | game leaves alpha 0 (black in the HMD before the layer forced alpha 1); weak depth at default settings; mirror memory sync 24 ms → 0.13 ms/submit with cached write tracking; confirmed 2026-10-21, fast 2026-10-22 |
+| Aliens: Colonial Marines (49540) | Proton, D3D9 (UE3, DXVK, 32-bit `ACM.exe`) | works | none saved | runs OK; old game, so modest graphics; confirmed 2026-10-23 |
+| Duke Nukem Forever (57900) | Proton, D3D9 (DXVK, 32-bit `DukeForever.exe`) | runs | none: ran at `world_scale = 1` (Unreal-derived engine, try ~50) | medium effect; some levels are shader-heavy, problems expected there. The layer sees `app=''` (wine-preloader), so `vrdual save` wrote `[app:wine-preloader]`, which then matches every 32-bit Proton game without its own profile (seen in Deus Ex: HR); 1680x1050 under gamescope, 2026-10-23 |
+| Deus Ex: Human Revolution (28050) | Proton, D3D9 (DXVK, 32-bit `dxhr.exe`) | works | | confirmed 2026-10-23 (a first attempt showed nothing in the HMD, cause unknown, then it worked). Layer sees `exe='wine-preloader'` and picked the `[app:wine-preloader]` profile (saved during Duke Nukem Forever) |
+| Fable Anniversary (288470) | Proton, D3D9 (UE3, DXVK, 32-bit) | works | `world_scale` ~10–13 (tuned live), `hfov` ~91 | confirmed 2026-10-23. `vrdual save` wrote into `[app:wine-preloader]` (the profile it had matched by exe), not `[app:Fable Anniversary.exe]`, although the layer knew the app name |
+| Tomb Raider GOTY (2013, 203160) | Proton (forced: Proton Experimental), D3D11 (DXVK, 32-bit `TombRaider.exe`) | works | `world_scale` < 10, best ~2 | looks better in the HMD than in screenshots. At larger scales objects shift too far into the depth. The native Linux build (Feral) does not start: `libicui18n.so.51` missing (game.log), so force Proton. Picked the `[app:wine-preloader]` profile; confirmed 2026-10-23 |
 | Firewatch (383870) | Unity | runs | landscape resolution | the portrait desktop cuts the menu |
 | Skyrim (72850) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | weak depth at scale 1; long loading |
 | Fallout: New Vegas (22380) | Proton, D3D9 | runs | `world_scale = 70` (built-in, not tuned) | HUD shown; `hud_depth` not confirmed yet |
 | Tomb Raider II (225300) | Proton | runs | `input = mouse` (a = Enter, b = Esc) | the menu wants keys, pad buttons do nothing |
-| Overlord (11450) | native GL → Zink | runs | | green glow at the bottom: Zink bug, also without vrdual |
+| Overlord (11450) | native GL → Zink | runs | `hud_depth` ~2 (subtitles); Mesa ≤ 26.2: `ZINK_DEBUG=noreorder` | Zink bugs, also without vrdual: flashing squares on the loading screen (fixed in Mesa 26.2.5), green glow after the new-game video (gone in Mesa main since MR 45178, 0786a9511, which only flushes less often: with the old flush interval main still glows, only at some camera angles); subtitles sit at infinity with `hud_depth = 0`, doubled against the near scene; default 800x600 window, camera odd with the mouse; crash on exit with every driver (game bug), 2026-10-23 |
+| LEGO Marvel Super Heroes (249130) | Proton, D3D9 (DXVK) | works | `world_scale` ~0.1, `hud_depth` ~75 (user config, `[app:LEGOMARVEL.exe]`) | gamescope 1920x1080; confirmed 2026-10-23 |
+| LEGO Batman 3 (313690) | Proton, D3D9 (DXVK) | works | `world_scale` ~0.1 | gamescope 1920x1080; the launcher can start `LEGOBatman3.exe` (D3D9) or `LEGOBatman3_DX11.EXE`: a profile saved for one does not apply to the other; confirmed 2026-10-23 |
+| Magicka (42910) | Proton, XNA on Wine Mono | broken | | reaches the menu, black screen when a game loads (the layer log shows submits continuing, no error). Log full of Mono TLS/HTTP errors (dead Paradox servers: 308/403), likely harmless. Not yet checked without vrdual, 2026-10-23 |
+| Civilization V (8930) | native GL → Zink (`Civ5XP`) | runs | user profile `[app:Civ5XP]`, `world_scale` ~0.1 | stereo not impressive; crash to desktop after a while (game.log ends in normal mirror stats, no error; not analysed, not checked without vrdual), 2026-10-23 |
+| Unravel (1225560) | Proton, via EA app (`steam2ea://`) | broken | | CTD at start. Not anti-cheat: the game's 2nd `vkCreateDevice` (the 1st device was created and destroyed, 0 frames) faults right after the mirror's twin device is created: `err:vulkan:vkCreateDevice Exception 0xc0000005 in Unix call`, ip = a heap address (0x5555…, a call through a garbage pointer, likely in the layer). The EA app (`EADesktop.exe`) loads the layer too. Log `steam-1225560.log`; not checked with `VRDUAL_EYE=left` or without vrdual, 2026-10-23 |
 | Tomb Raider I (224960) | DOSBox | broken | | flat 2D image, no stereo; exits in windowed mode / on alt+tab |
 | Portal (400) | native GL → Zink | broken | | crash on level load (NULL GL buffer map), also with Zink alone |
 | Shadow Warrior (233130) | native GL → Zink | retest | | SIGBUS in the 2026-10-19 frame export (reverted 55c0b81); window scaling issues |
