@@ -37,7 +37,7 @@ vrdual_gpus() {
     done
 }
 
-vrdual_clean() { rm -f /dev/shm/vrdual-* "$FLATPAK_SHM"/vrdual-* 2>/dev/null; say "removed vrdual-* from /dev/shm (and Flatpak Steam's)"; }
+vrdual_clean() { rm -f /dev/shm/vrdual-* "$FLATPAK_SHM"/vrdual-* "$HEROIC_SHM"/vrdual-* 2>/dev/null; say "removed vrdual-* from /dev/shm (and Flatpak Steam's, Heroic's)"; }
 
 # vrdual_run [--left-gpu G] [--right-gpu G] [--session S] [--snapshot PNG --at N] -- APP ARGS...
 # Starts the compositor and two copies of APP (one per eye/GPU). All VRDUAL_*
@@ -92,16 +92,21 @@ vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@"; }
 # ------------------------------------------------------------ steam / HMD --
 STEAM_FLATPAK="$HOME/.var/app/com.valvesoftware.Steam"
 FLATPAK_SHM="/run/user/$(id -u)/.flatpak/com.valvesoftware.Steam/dev-shm"
+# Heroic (Flatpak, per-app-dev-shm) runs Epic/GOG games with the same wrapper
+HEROIC_SHM="/run/user/$(id -u)/.flatpak/com.heroicgameslauncher.hgl/dev-shm"
 
-# Frame files and control block of a game inside Flatpak Steam live in its
-# private /dev/shm. Exports VRDUAL_SHM_DIR when that is where session S is
-# (or will be: Flatpak Steam runs and /dev/shm has nothing for S).
+# Frame files and control block of a game inside Flatpak Steam (or Heroic)
+# live in its private /dev/shm. Exports VRDUAL_SHM_DIR when that is where
+# session S is (or will be: Flatpak Steam runs and /dev/shm has nothing for S).
 pick_shm() {
     [[ -n ${VRDUAL_SHM_DIR:-} ]] && return 0
     local s="${VRDUAL_SESSION:-default}" a
     for a in "$@"; do [[ ${prev:-} == --session ]] && s=$a; prev=$a; done
     unset prev
-    if [[ ! -e /dev/shm/vrdual-$s-ctl && -d $FLATPAK_SHM/ ]]; then
+    if [[ ! -e /dev/shm/vrdual-$s-ctl && -e $HEROIC_SHM/vrdual-$s-ctl ]]; then
+        export VRDUAL_SHM_DIR=$HEROIC_SHM
+        say "session '$s': using Flatpak Heroic's /dev/shm ($HEROIC_SHM)"
+    elif [[ ! -e /dev/shm/vrdual-$s-ctl && -d $FLATPAK_SHM/ ]]; then
         export VRDUAL_SHM_DIR=$FLATPAK_SHM
         say "session '$s': using Flatpak Steam's /dev/shm ($FLATPAK_SHM)"
     fi
@@ -118,8 +123,9 @@ vrdual_steam_install() {
         host=$HOME/.local/share/vrdual; inside=$host
     fi
     mkdir -p "$host/layer"
-    cp "$B/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual64.so"
-    cp "$B/lib32/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual32.so"
+    # new inode (cp + mv): running games keep their mapping of the old file
+    cp "$B/libVkLayer_vrdual.so" "$host/layer/.new64" && mv -f "$host/layer/.new64" "$host/layer/libVkLayer_vrdual64.so"
+    cp "$B/lib32/libVkLayer_vrdual.so" "$host/layer/.new32" && mv -f "$host/layer/.new32" "$host/layer/libVkLayer_vrdual32.so"
     local bits
     for bits in 32 64; do
         sed -e "s|\"./libVkLayer_vrdual.so\"|\"./libVkLayer_vrdual$bits.so\",\n        \"library_arch\": \"$bits\"|" \
@@ -142,10 +148,20 @@ export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-mesa}"
 # Host config copy (steam-install); Proton games log to ~/.var/app/…Steam/steam-<appid>.log
 [ -f "$d/vrdual.conf" ] && export VRDUAL_CONFIG="${VRDUAL_CONFIG:-$d/vrdual.conf}"
 export PROTON_LOG="${PROTON_LOG:-1}"
+# Heroic + umu: Proton names its log steam-0-….log for every game; one dir per game
+if [ -n "$HEROIC_APP_NAME" ] && [ -n "$PROTON_LOG_DIR" ]; then
+    export PROTON_LOG_DIR="$PROTON_LOG_DIR/vrdual-$HEROIC_APP_NAME"
+    mkdir -p "$PROTON_LOG_DIR"
+fi
+# gamescope around a Flatpak launcher (Heroic + umu): the container start
+# resets DISPLAY to the desktop's; umu-shim (patched by steam-install) puts
+# gamescope's back from VRDUAL_DISPLAY inside the container.
+[ -n "$GAMESCOPE_WAYLAND_DISPLAY" ] && export VRDUAL_DISPLAY="${VRDUAL_DISPLAY:-$DISPLAY}"
 # native games (no Proton): stderr incl. the layer log -> game.log next to this
 case "$*" in *proton*) exec "$@" ;; *) exec "$@" 2>"$d/game.log" ;; esac
 WRAP
     chmod +x "$host/run"
+    umu_shim_patch
     if [[ -f $(vrdual-config-path) ]]; then
         cp "$(vrdual-config-path)" "$host/vrdual.conf"
         say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"
@@ -157,6 +173,17 @@ WRAP
     echo "$inside/run %command%"
 }
 vrdual-config-path() { "$B/vrdual-ctl" path; }
+
+# umu (Heroic, Lutris) runs this shim inside the Steam Runtime container. umu
+# writes it only when missing, so the inserted line stays; it acts only when
+# the vrdual wrapper ran inside gamescope (VRDUAL_DISPLAY set).
+UMU_SHIM="$HOME/.local/share/umu/umu-shim"
+umu_shim_patch() {
+    [[ -f $UMU_SHIM ]] || return 0
+    grep -q VRDUAL_DISPLAY "$UMU_SHIM" && return 0
+    sed -i '1a # vrdual: gamescope display, reset by the Flatpak container start\n[ -n "${VRDUAL_DISPLAY}" ] \&\& { export DISPLAY="${VRDUAL_DISPLAY}"; unset WAYLAND_DISPLAY; }' "$UMU_SHIM"
+    say "patched $UMU_SHIM (gamescope DISPLAY for umu games)"
+}
 
 # Warns when the layer or config copy Steam games load differs from build/ or
 # the host config (forgot `vrdual steam-install`: the game runs the old one).
@@ -206,8 +233,9 @@ vrdual_xr() {
         case $a in --no-start-wivrn) start=0 ;; --restart-wivrn) restart=1 ;; --no-audio) audio=0 ;; *) args+=("$a") ;; esac
     done
     set -- "${args[@]}"
-    # follows the game between host /dev/shm and Flatpak Steam's, across games
-    if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM"; fi
+    # follows the game between host /dev/shm, Flatpak Steam's and Heroic's,
+    # across games (Heroic's dir exists only while Heroic runs)
+    if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM:$HEROIC_SHM"; fi
     steam_layer_check
     if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
         local w
@@ -305,8 +333,18 @@ vrdual_wivrn() {
         opts+=(--no-publish-service)
         say "avahi-daemon not running: headset will not find the PC by itself — add it by IP: $(ip -4 -o addr show scope global | awk '$2 !~ /docker|veth|br-/ {sub("/.*","",$4); print $4; exit}')"
     }
+    # The game's GPU (06) also runs the desktop and gamescope: there WiVRn's
+    # compositor + encoder got 9.4 Hz under AC Origins. Mesa's device-select
+    # layer puts this GPU first; vrdual-xr follows (xrGetVulkanGraphicsDevice2KHR).
+    local gpu tag env=()
+    gpu=$("$B/vrdual-ctl" show 2>/dev/null | awk '$1 == "wivrn_gpu" {print $2}')
+    case ${gpu:=pci:0000:0b:00.0} in
+    pci:*) tag=${gpu#pci:}; env=(--env=DRI_PRIME=pci-${tag//[:.]/_}); say "wivrn-server on GPU $gpu (config key wivrn_gpu)" ;;
+    default) ;;
+    *) say "wivrn_gpu = $gpu: not pci:... or default, ignored" ;;
+    esac
     local rc=0
-    flock -n -E 75 "$lock" flatpak run --command=wivrn-server io.github.wivrn.wivrn "${opts[@]}" "$@" || rc=$?
+    flock -n -E 75 "$lock" flatpak run "${env[@]}" --command=wivrn-server io.github.wivrn.wivrn "${opts[@]}" "$@" || rc=$?
     ((rc == 75)) && say "wivrn-server already started by another vrdual (lock $lock)"
     return $rc
 }
@@ -503,6 +541,14 @@ vrdual_selftest() {
         ! awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | grep -q app: && grep -q '^\[app:' '$tmp/save.conf'"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 
+    # Wine: /proc/self/exe = the preloader, argv[0] = the Windows path; matches the built-in [app:upc.exe]
+    label="stereo = 0 (launchers, by Wine argv[0]): layer passive in mirror mode, app renders, no frame files"
+    rm -f /dev/shm/vrdual-$sess-*
+    cp "$B/vrdual-cube" "$tmp/wine64-preloader"
+    check bash -c "env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        bash -c 'exec -a \"C:\\\\Ubisoft\\\\upc.exe\" \"\$0\" \"\$@\"' '$tmp/wine64-preloader' --frames 30 --size 320x240 --title 'selftest stereo off' >'$tmp/off.log' 2>&1 &&
+        grep -q \"exe='wine64-preloader upc.exe': stereo = 0, layer passive\" '$tmp/off.log' && ! grep -q 'twin device' '$tmp/off.log' && ! ls /dev/shm/vrdual-$sess-0 2>/dev/null"
+
     # 3. Mirror mode: ONE process, the app sees one GPU, the layer replays on the other.
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
@@ -510,6 +556,10 @@ vrdual_selftest() {
     for i in $(seq 100); do grep -q 'twin images' "$tmp/mirror.log" && break; sleep 0.1; done
     label="build info: layer logs version, ISO build time and this machine"
     check grep -qE "^\[vrdual:LR\] vrdual [^ ]+, built [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4} on $(uname -n) \(64-bit layer\)$" "$tmp/mirror.log"
+    # Destroy/Free wrappers translate the handle before A frees it (A may hand the value to a new object on another thread)
+    label="mirror: Destroy/Free wrappers translate handles before A's call"
+    check awk '/^static .* m_(Destroy|Free)[A-Za-z0-9]*\(/ { f = $0; a = 0 } f && /^    (VkResult r = )?md->a\./ { a = 1 }
+        f && a && /c\.xl\(|xl_handle\(/ { print "late translation in " f; bad = 1 } /^}/ { f = "" } END { exit bad }' "$B/mirror_gen.hpp" "$VRDUAL_ROOT/layer/vrdual_mirror.hpp"
     label="mirror: app sees 1 GPU, twin on 0b"; check bash -c "grep -q 'app sees 1 GPU' '$tmp/mirror.log' && grep -q 'twin device on .*0000:0b:00.0' '$tmp/mirror.log'"
     label="mirror: app clears alpha 0, frame file alpha 255"
     check bash -c "for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --alpha /dev/shm/vrdual-$sess-0) && break; sleep 0.1; done; [ \"\$a\" = 255 ]"
@@ -663,6 +713,14 @@ vrdual_selftest() {
         local brc=0; kill -ABRT $bp 2>/dev/null; wait $bp 2>/dev/null || brc=$?
         label="backtrace: SIGABRT logs the frames, the app still aborts"
         check bash -c "(( $brc == 134 )) && grep -q 'SIGABRT in thread' '$tmp/bt.log' && grep -q '#0 .*libVkLayer_vrdual.so + 0x' '$tmp/bt.log' || { echo rc $brc; cat '$tmp/bt.log'; false; }"
+        # SIGSEGV: also the faulting ip, then the previous handler (here the default: core, rc 139)
+        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+            VRDUAL_BACKTRACE=1 "$B/vrdual-gltest" --title "selftest segv" >"$tmp/bts.log" 2>&1 &
+        bp=$!
+        for i in $(seq 100); do grep -q GL_RENDERER "$tmp/bts.log" && break; sleep 0.1; done
+        brc=0; kill -SEGV $bp 2>/dev/null; wait $bp 2>/dev/null || brc=$?
+        label="backtrace: SIGSEGV logs ip + frames, the app still dies"
+        check bash -c "(( $brc == 139 )) && grep -q 'SIGSEGV in thread' '$tmp/bts.log' && grep -q ' ip .* + 0x' '$tmp/bts.log' || { echo rc $brc; cat '$tmp/bts.log'; false; }"
     fi
 
     # 4b. Input mapping (controllers -> pad / mouse / keys) and a uinput pad round trip.
@@ -713,6 +771,15 @@ PA
     check bash -c "export PATH='$tmp/fakew':\$PATH XDG_RUNTIME_DIR='$tmp/fakew'; '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1 & sleep 0.5
         out=\$('$VRDUAL_ROOT/vrdual' wivrn-restart 2>&1); rc=\$?; wait
         [[ \$rc == 0 ]] && grep -q stopping <<<\"\$out\" && grep -q 'starting wivrn-server' <<<\"\$out\" && grep -qx -- '-x wivrn-server' '$tmp/fakew/killed' || { echo \"rc=\$rc \$out\"; false; }"
+    label="vrdual wivrn: server on 0b by default (DRI_PRIME), wivrn_gpu from the conf, default leaves it to Vulkan"
+    mkdir -p "$tmp/fakeg" && printf '#!/bin/sh\nexit 1\n' >"$tmp/fakeg/pgrep" && printf '#!/bin/sh\necho "$*" >>%s/fakeg/args\n' "$tmp" >"$tmp/fakeg/flatpak" && chmod +x "$tmp/fakeg/"*
+    printf '[global]\nwivrn_gpu = pci:0000:06:00.0\n' >"$tmp/fakeg/w.conf"
+    check bash -c "export PATH='$tmp/fakeg':\$PATH XDG_RUNTIME_DIR='$tmp/fakeg'; rm -f '$tmp/fakeg/args'
+        VRDUAL_CONFIG=/nonexistent '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1; VRDUAL_CONFIG='$tmp/fakeg/w.conf' '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1
+        VRDUAL_CONFIG='$tmp/fakeg/w.conf' VRDUAL_WIVRN_GPU=default '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1
+        sed -n 1p '$tmp/fakeg/args' | grep -q -- '^run --env=DRI_PRIME=pci-0000_0b_00_0 --command=wivrn-server' &&
+        sed -n 2p '$tmp/fakeg/args' | grep -q -- '^run --env=DRI_PRIME=pci-0000_06_00_0 --command=wivrn-server' &&
+        sed -n 3p '$tmp/fakeg/args' | grep -q -- '^run --command=wivrn-server' || { cat '$tmp/fakeg/args'; false; }"
     label="vrdual wivrn: a second start loses the lock"
     check bash -c "export PATH='$tmp/nopgrep':\$PATH XDG_RUNTIME_DIR='$tmp'; '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1 & p=\$!; sleep 0.5
         '$VRDUAL_ROOT/vrdual' wivrn 2>&1 | tee '$tmp/w2.log'; rc=\${PIPESTATUS[0]}; wait \$p
@@ -787,10 +854,14 @@ PA
             [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && grep -q 'new frame sequence' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
                 grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
         label="openxr: stats line (game fps, headset Hz, frame age, L-R skew)"
-        check grep -qE 'new game frames \([0-9.]+/s\), headset [0-9.]+ Hz, [0-9]+ without a new game frame, frame age [0-9.]+ ms avg / [0-9.]+ max \(layer publish -> upload\), L-R [0-9.]+ ms' "$tmp/xr5.log"
+        check grep -qE 'new game frames \([0-9.]+/s\), headset [0-9.]+ Hz, [0-9]+ without a new game frame, frame age [0-9.]+ ms avg / [0-9.]+ max \(layer publish -> upload\), L-R [0-9.]+ ms, per headset frame: xrWaitFrame [0-9.]+ ms, our work [0-9.]+ ms avg / [0-9.]+ max \(xrBeginFrame [0-9.]+, input .* xrEndFrame [0-9.]+\)' "$tmp/xr5.log"
         label="openxr: edge mask at each eye's outer edge (ipd 64 mm, hfov 90, 960 px: 15 px)"
         check bash -c "grep -q 'eye 0: edge mask 15 px at the left edge' '$tmp/xr5.log' && grep -q 'eye 1: edge mask 15 px at the right edge' '$tmp/xr5.log' ||
             { grep 'edge mask' '$tmp/xr5.log'; false; }"
+        label="openxr: staging in cached memory, edge mask phase under 2 ms (write-combined reads: 89 ms per frame)"
+        check bash -c "[[ \$(grep -c 'swapchain, .* images.*, staging cached' '$tmp/xr5.log') -ge 2 ]] &&
+            grep -o 'edge [0-9.]*, cursor' '$tmp/xr5.log' | awk '{ n++; if (\$2 >= 2) bad++ } END { exit !(n && !bad) }' ||
+            { grep -E 'staging|our work' '$tmp/xr5.log'; false; }"
         label="openxr: play log has one line per game process, no-profile hint"
         check bash -c "f='$tmp/state/vrdual/games.tsv'; [[ \$(grep -cE \$'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}\t[0-9]+\tvrdual-cube\t[^\t]+\tnone\$' \"\$f\") -ge 2 ]] &&
             grep -q \"no vrdual profile for 'vrdual-cube'\" '$tmp/xr5.log' || { cat \"\$f\"; false; }"
@@ -798,8 +869,13 @@ PA
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
     fi
     label="wiggle: SBS png -> 2-frame gif, existing gif skipped"
-    check bash -c "cp '$VRDUAL_ROOT/docs/sbs-example.png' '$tmp/w.png' && cd '$VRDUAL_ROOT' && source ./_ &&
-        [[ \$(vrdual_wiggle '$tmp') == '$tmp/w.gif' ]] && [[ \$(identify '$tmp/w.gif' | wc -l) == 2 ]] && [[ -z \$(vrdual_wiggle '$tmp') ]]"
+    # own dir: $tmp holds the other checks' snapshots
+    check bash -c "mkdir -p '$tmp/wig' && cp '$VRDUAL_ROOT/docs/sbs-example.png' '$tmp/wig/w.png' && cd '$VRDUAL_ROOT' && source ./_ &&
+        [[ \$(vrdual_wiggle '$tmp/wig') == '$tmp/wig/w.gif' ]] && [[ \$(identify '$tmp/wig/w.gif' | wc -l) == 2 ]] && [[ -z \$(vrdual_wiggle '$tmp/wig') ]]"
+    label="umu-shim patch: once, restores gamescope's DISPLAY from VRDUAL_DISPLAY"
+    check bash -c "printf '#!/bin/sh\nexec \"\$@\"\n' >'$tmp/umu-shim' && chmod +x '$tmp/umu-shim' && cd '$VRDUAL_ROOT' && source ./_ &&
+        UMU_SHIM='$tmp/umu-shim' && umu_shim_patch 2>/dev/null && umu_shim_patch 2>/dev/null && [[ \$(grep -c VRDUAL_DISPLAY '$tmp/umu-shim') == 1 ]] &&
+        [[ \$(DISPLAY=:0 VRDUAL_DISPLAY=:7 '$tmp/umu-shim' sh -c 'echo \$DISPLAY') == :7 ]] && [[ \$(DISPLAY=:0 '$tmp/umu-shim' sh -c 'echo \$DISPLAY') == :0 ]]"
     unset VRDUAL_CONFIG XDG_STATE_HOME
     if ((fails)); then say "selftest: $fails FAILED"; return 1; fi
     say "selftest: all passed"

@@ -314,6 +314,14 @@ is connected. `vrdual wivrn-restart` (or `vrdual xr --restart-wivrn`) stops
 the server, waits for its lock and starts it in the background; a running
 `vrdual xr` reconnects.
 
+The server runs on `0000:0b:00.0` (`DRI_PRIME` for Mesa's device-select
+layer; config key `wivrn_gpu`, `default` = Vulkan's choice), and
+`vrdual-xr` follows it. AC Origins (smooth on the monitor) got 9.4 Hz in
+the headset with the server on 06 and 10.2 Hz on 0b, so the GPU was not the
+cause. The phase split in the stats showed the edge mask taking 89 ms per
+frame: the staging buffers were write-combined memory and the mask reads
+pixels back column by column. Staging now prefers HOST_CACHED (2026-10-26).
+
 ### Input and head motion (in `vrdual-xr`)
 
 The game is identified by `app` in the frame file header (v2; VkApplicationInfo
@@ -342,7 +350,11 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
 Stats, every 5 s in the `vrdual xr` log (`VRDUAL_XR_STATS` seconds): `N frames
 submitted, M new game frames (game fps), headset … Hz, … without a new game
 frame (repeats), frame age … ms avg / … max (layer publish -> upload), L-R …
-ms` (publish skew of the two eyes). The age starts when the layer publishes,
+ms` (publish skew of the two eyes), `per headset frame: xrWaitFrame … ms,
+our work … ms avg / … max` (time blocked in the runtime's pacing vs our loop
+from xrWaitFrame's return to after xrEndFrame, then split into phases: runtime
+calls, input, pairing, staging copy, edge mask, cursor, swapchain acquire,
+GPU upload, layers). The age starts when the layer publishes,
 which with double-buffered readback is one game frame after it rendered.
 
 Stereo window (`edge_mask`, default `outer`): an eye camera moved by dx shifts

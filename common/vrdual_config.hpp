@@ -36,6 +36,7 @@ static const Key kKeys[] = {
     {"anchor", "center", "original camera is: center | left | right eye"},
     {"world_scale", "1", "app units per meter"},
     {"hfov", "90", "assumed horizontal FOV of the app camera, degrees"},
+    {"stereo", "1", "0 = layer passive in this app (launchers): no mirror, shader patch or export"},
     {"skip_w1", "1", "leave w == 1 vertices (HUD/post/ortho) unshifted"},
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
@@ -49,6 +50,7 @@ static const Key kKeys[] = {
     {"cached_wp", "0", "mirror: write tracking for cached memory (fast; breaks games that read files straight into it)"},
     {"left_gpu", "pci:0000:06:00.0", "GPU for the left eye (pci:..., index or name)"},
     {"right_gpu", "pci:0000:0b:00.0", "GPU for the right eye"},
+    {"wivrn_gpu", "pci:0000:0b:00.0", "GPU for wivrn-server (`vrdual wivrn`; vrdual-xr follows): pci:... | default (Vulkan's choice)"},
     {"log", "1", "layer logging to stderr"},
     // input (vrdual-xr): VR controllers -> virtual pad / mouse / keys; map_<button> = KEY_*|BTN_*
     {"input", "off", "controllers as: off | gamepad | mouse | tune (sticks change world_scale/hud_depth/hfov)"},
@@ -85,6 +87,11 @@ static const AppValue kAppProfiles[] = {
     {"mirrorsedge.exe", "hud_depth", "1"},    // crosshair fuses at 1 m (user, 2026-10-20)
     {"tesv.exe", "world_scale", "70"},        // Skyrim: 1 unit = 1.43 cm (not tuned yet)
     {"falloutnv.exe", "world_scale", "70"},   // same engine family (not tuned yet)
+    {"upc.exe", "stereo", "0"},               // Ubisoft Connect: CEF UI full of artefacts when mirrored
+    {"uplaywebcore.exe", "stereo", "0"},
+    {"eadesktop.exe", "stereo", "0"},         // EA app: a launcher, nothing to see in 3D
+    {"explorer.exe", "stereo", "0"},          // Wine desktop / tray (Zink), streamed the empty desktop
+    {"xalia.exe", "stereo", "0"},             // Proton's accessibility helper
 };
 
 inline std::string trim(std::string s) {

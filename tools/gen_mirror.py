@@ -444,7 +444,17 @@ def main(xml_path, disp_path, out_path):
         canon_name = next((n for n in names if n in HOOKS_BEFORE or n in HOOKS_AFTER), name)
         if canon_name in HOOKS_BEFORE:
             w(f'    hook_{canon_name[2:]}(md, {args});')
-        if ret == 'VkResult':
+        # Destroy/Free: translate before A's call. Once A has freed the handle,
+        # another thread can get the same value for a new object and record
+        # its own twin, which we would then destroy (double free later on B).
+        early = name.startswith(('vkDestroy', 'vkFree')) and not k.startswith('stub:')
+        ret_a = 'return r;' if ret == 'VkResult' else 'return;'
+        call_a = (f'    VkResult r = md->a.{name[2:]}({args});' if ret == 'VkResult' else f'    md->a.{name[2:]}({args});')
+        if early:
+            w(f'    if (!md->live || !md->b.{name[2:]}) {{')
+            w('    ' + (f'    return md->a.{name[2:]}({args});' if ret == 'VkResult' else f'    md->a.{name[2:]}({args}); return;'))
+            w('    }')
+        elif ret == 'VkResult':
             w(f'    VkResult r = md->a.{name[2:]}({args});')
             if canon_name in HOOKS_AFTER:
                 w(f'    hook_after_{canon_name[2:]}(md, {args}, r);')
@@ -491,7 +501,10 @@ def main(xml_path, disp_path, out_path):
                 bargs.append(f'b_{p.name}')
                 continue
             if xl_handle(ct):
-                if p.ptr == 0:
+                if p.ptr == 0 and early:
+                    w(f'    {p.type} b_{p.name} = c.xl({p.name});')
+                    bargs.append(f'b_{p.name}')
+                elif p.ptr == 0:
                     bargs.append(f'c.xl({p.name})')
                 else:
                     n = p.len if p.len else '1'
@@ -510,6 +523,12 @@ def main(xml_path, disp_path, out_path):
                     bargs.append(f'b_{p.name}')
                 continue
             bargs.append(p.name)
+        if early:
+            w(call_a)
+            if ret == 'VkResult' and canon_name in HOOKS_AFTER:
+                w(f'    hook_after_{canon_name[2:]}(md, {args}, r);')
+            if ret == 'VkResult':
+                w(f'    if (r < 0) {{ ctx_end(c); {ret_a} }}')
         if ret == 'VkResult':
             w(f'    VkResult rb = c.ok() ? md->b.{name[2:]}({", ".join(bargs)}) : VK_ERROR_UNKNOWN;')
             w(f'    if (rb < 0) mirror_fail(md, "{name} failed on B");')

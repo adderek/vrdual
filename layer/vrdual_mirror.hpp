@@ -1039,9 +1039,12 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeMemory(VkDevice dev, VkDeviceMemory mem,
         for (auto& w : md->wbs) w.r.erase(std::remove_if(w.r.begin(), w.r.end(), gone), w.r.end());
         for (auto& kv : md->cbw) kv.second.erase(std::remove_if(kv.second.begin(), kv.second.end(), gone), kv.second.end());
     }
-    md->a.FreeMemory(dev, mem, alloc);
-    if (mem && md->live) md->b.FreeMemory(md->bdev, xl_handle(mem), nullptr);
+    // B's handle before A frees: a new allocation on another thread may get
+    // the same handle and record its own twin (same for every Destroy/Free)
+    VkDeviceMemory bm = mem && md->live ? xl_handle(mem) : VK_NULL_HANDLE;
     forget_handle(mem);
+    md->a.FreeMemory(dev, mem, alloc);
+    if (bm) md->b.FreeMemory(md->bdev, bm, nullptr);
 }
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory mem, VkDeviceSize off, VkDeviceSize size, VkMemoryMapFlags flags, void** pp) {
@@ -1365,18 +1368,17 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateCommandBuffers(VkDevice dev, con
 
 static VKAPI_ATTR void VKAPI_CALL m_FreeCommandBuffers(VkDevice dev, VkCommandPool pool, uint32_t n, const VkCommandBuffer* cbs) {
     MDev* md = mdev_of(key(dev));
-    md->a.FreeCommandBuffers(dev, pool, n, cbs);
     {
         std::lock_guard<std::mutex> l(md->lock);
-        for (uint32_t i = 0; i < n; ++i) md->cbw.erase(cbs[i]);
+        for (uint32_t i = 0; i < n; ++i) md->cbw.erase(cbs[i]), md->secondary.erase(cbs[i]);
     }
-    if (!md->live) return;
     std::vector<VkCommandBuffer> b;
-    for (uint32_t i = 0; i < n; ++i)
-        if (cbs[i]) b.push_back(xl_handle(cbs[i]));
-    if (!b.empty()) md->b.FreeCommandBuffers(md->bdev, xl_handle(pool), uint32_t(b.size()), b.data());
-    std::lock_guard<std::mutex> l(md->lock);
-    for (uint32_t i = 0; i < n; ++i) md->secondary.erase(cbs[i]);
+    if (md->live)
+        for (uint32_t i = 0; i < n; ++i)
+            if (cbs[i]) b.push_back(xl_handle(cbs[i]));
+    VkCommandPool bpool = md->live ? xl_handle(pool) : VK_NULL_HANDLE;
+    md->a.FreeCommandBuffers(dev, pool, n, cbs);
+    if (!b.empty()) md->b.FreeCommandBuffers(md->bdev, bpool, uint32_t(b.size()), b.data());
 }
 
 // pInheritanceInfo is ignored (may be garbage) for primary command buffers.
@@ -1446,11 +1448,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_CreateDescriptorUpdateTemplate(VkDevice 
 
 static VKAPI_ATTR void VKAPI_CALL m_DestroyDescriptorUpdateTemplate(VkDevice dev, VkDescriptorUpdateTemplate t, const VkAllocationCallbacks* alloc) {
     MDev* md = mdev_of(key(dev));
-    md->a.DestroyDescriptorUpdateTemplate(dev, t, alloc);
-    if (md->live && t) md->b.DestroyDescriptorUpdateTemplate(md->bdev, xl_handle(t), nullptr);
-    std::lock_guard<std::mutex> l(md->lock);
-    md->templates.erase(h2u(t));
+    VkDescriptorUpdateTemplate bt = md->live && t ? xl_handle(t) : VK_NULL_HANDLE;
+    {
+        std::lock_guard<std::mutex> l(md->lock);
+        md->templates.erase(h2u(t));
+    }
     forget_handle(t);
+    md->a.DestroyDescriptorUpdateTemplate(dev, t, alloc);
+    if (bt) md->b.DestroyDescriptorUpdateTemplate(md->bdev, bt, nullptr);
 }
 
 // Copy of a template update's raw data with every handle in it translated.

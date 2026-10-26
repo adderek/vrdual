@@ -179,6 +179,7 @@ struct EyeOut {
     VkDeviceMemory mem = VK_NULL_HANDLE;
     uint8_t* map = nullptr;
     bool swizzle = false;  // swap R/B while copying (frame BGRA, swapchain RGBA or the other way)
+    bool cached = false;   // staging in HOST_CACHED memory
     bool released = false; // has content that can be shown
 };
 
@@ -195,7 +196,12 @@ static bool make_staging(Gpu& g, EyeOut& e) {
     if (vkCreateBuffer(g.dev, &bci, nullptr, &e.buf) != VK_SUCCESS) return false;
     VkMemoryRequirements mr;
     vkGetBufferMemoryRequirements(g.dev, e.buf, &mr);
-    int t = find_mem(g, mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    // Cached first: edge mask and cursor read the staging pixels back, and reads
+    // from write-combined memory cost 89 ms per frame at 1920x1080 (AC Origins: 10 Hz).
+    const VkMemoryPropertyFlags hv = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    int t = find_mem(g, mr.memoryTypeBits, hv | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+    e.cached = t >= 0;
+    if (t < 0) t = find_mem(g, mr.memoryTypeBits, hv);
     VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, mr.size, uint32_t(t)};
     return t >= 0 && vkAllocateMemory(g.dev, &ai, nullptr, &e.mem) == VK_SUCCESS && vkBindBufferMemory(g.dev, e.buf, e.mem, 0) == VK_SUCCESS &&
            vkMapMemory(g.dev, e.mem, 0, VK_WHOLE_SIZE, 0, (void**)&e.map) == VK_SUCCESS;
@@ -838,6 +844,13 @@ static int run(int argc, char** argv) {
     // game frame, age of the shown frames (layer publish -> our upload), L/R skew
     long sub_reported = 0, repeats = 0, aged = 0;
     double age_sum = 0, age_max = 0, skew_sum = 0;
+    // where a headset frame goes: blocked in xrWaitFrame (runtime pacing) vs our work
+    long loops = 0;
+    double wait_sum = 0, work_sum = 0, work_max = 0, t_loop = 0;
+    // our work split into phases (time since the previous mark)
+    static const char* const ph_name[] = {"xrBeginFrame", "input", "pair", "staging", "edge", "cursor", "acquire", "upload", "layers", "xrEndFrame"};
+    double ph[10] = {}, t_mark = 0;
+    auto mark = [&](int i) { double n = vrdual::now_s(); ph[i] += n - t_mark; t_mark = n; };
     bool new_pair = false;
     const double stats_every = getenv("VRDUAL_XR_STATS") ? atof(getenv("VRDUAL_XR_STATS")) : 5;
     uint64_t shown = 0;
@@ -899,8 +912,12 @@ static int run(int argc, char** argv) {
         }
 
         XrFrameState fs{XR_TYPE_FRAME_STATE};
+        double t_wait = vrdual::now_s();
         XR_CHECK(xrWaitFrame(s, nullptr, &fs));
+        t_loop = t_mark = vrdual::now_s();
+        wait_sum += t_loop - t_wait;
         XR_CHECK(xrBeginFrame(s, nullptr));
+        mark(0);
         std::vector<XrCompositionLayerBaseHeader*> layers;
         bool game_layer = false;
         XrCompositionLayerProjection proj{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
@@ -1065,6 +1082,7 @@ static int run(int argc, char** argv) {
         }
         if (!fresh || !mapper || !icfg.lean) send_head(0, 0, 0);  // nothing drives it: no stale offset
         t_input = t_now;
+        mark(1);
         if (fs.shouldRender && (fresh || (out[0].released && out[1].released))) {
             // newest paired frame (or black once the game is gone) -> swapchain images
             uint64_t F;
@@ -1074,6 +1092,7 @@ static int run(int argc, char** argv) {
                 shown = 0;
             }
             bool got = fresh && vrdual::pair_newest(L, R, shown, &F);
+            mark(2);
             if (blank) {
                 for (EyeOut& o : out) memset(o.map, 0, size_t(o.w) * o.h * 4);
                 blanked = true;
@@ -1125,7 +1144,8 @@ static int run(int argc, char** argv) {
                         o.images.assign(ni, {XR_TYPE_SWAPCHAIN_IMAGE_VULKAN2_KHR});
                         xrEnumerateSwapchainImages(o.sc, ni, &ni, (XrSwapchainImageBaseHeader*)o.images.data());
                         if (!make_staging(g, o)) { fprintf(stderr, "[xr] staging buffer failed\n"); return 1; }
-                        fprintf(stderr, "[xr] eye %d: %ux%u swapchain, %u images%s\n", e, o.w, o.h, ni, o.swizzle ? " (R/B swizzle)" : "");
+                        fprintf(stderr, "[xr] eye %d: %ux%u swapchain, %u images%s, staging %s\n", e, o.w, o.h, ni, o.swizzle ? " (R/B swizzle)" : "",
+                                o.cached ? "cached" : "uncached");
                     }
                     size_t n = size_t(o.w) * o.h * 4;
                     if (!o.swizzle) {
@@ -1135,6 +1155,7 @@ static int run(int argc, char** argv) {
                         for (size_t i = 0; i < n; i += 4) { o.map[i] = p[i + 2]; o.map[i + 1] = p[i + 1]; o.map[i + 2] = p[i]; o.map[i + 3] = p[i + 3]; }
                     }
                 }
+                mark(3);
                 // stereo window: mask the strip at each eye's edge that its shifted view gets wrong
                 if (edge_mode && !ctl) ctl = vrdual::ctl_open(session, nullptr);
                 if (edge_mode && ctl) {
@@ -1153,6 +1174,7 @@ static int run(int argc, char** argv) {
                 // the game's X11 cursor (not in its swapchain). cursor_depth auto: at the
                 // depth of the scene under it (disparity of the two eye images there,
                 // smoothed; kept while the patch has no texture); hud: at hud_depth
+                mark(4);
                 if (vrdual::cursor_read(*src[0], cur)) {
                     if (cur.serial != cur_logged) fprintf(stderr, "[xr] cursor %ux%u from the game\n", cur.w, cur.h);
                     cur_logged = cur.serial;
@@ -1176,6 +1198,7 @@ static int run(int argc, char** argv) {
                     }
                 }
             }
+            mark(5);
             if (got || blank) {
                 uint32_t idx[2];
                 for (int e = 0; e < 2; ++e) {
@@ -1184,6 +1207,7 @@ static int run(int argc, char** argv) {
                     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, nullptr, XR_INFINITE_DURATION};
                     XR_CHECK(xrWaitSwapchainImage(out[e].sc, &wi));
                 }
+                mark(6);
                 vkResetCommandBuffer(g.cmd, 0);
                 VkCommandBufferBeginInfo cbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
                 vkBeginCommandBuffer(g.cmd, &cbi);
@@ -1205,6 +1229,7 @@ static int run(int argc, char** argv) {
                 vkResetFences(g.dev, 1, &g.fence);
                 vkQueueSubmit(g.queue, 1, &si, g.fence);
                 vkWaitForFences(g.dev, 1, &g.fence, VK_TRUE, UINT64_MAX);
+                mark(7);
                 for (int e = 0; e < 2; ++e) {
                     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
                     XR_CHECK(xrReleaseSwapchainImage(out[e].sc, &ri));
@@ -1326,20 +1351,33 @@ static int run(int argc, char** argv) {
         fe.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
         fe.layerCount = uint32_t(layers.size());
         fe.layers = layers.data();
+        mark(8);
         XR_CHECK(xrEndFrame(s, &fe));
+        mark(9);
         if (game_layer) ++submitted;  // overlay-only frames don't count
         if (game_layer && !new_pair) ++repeats;
         new_pair = false;
         double t = vrdual::now_s();
+        work_sum += t - t_loop;
+        work_max = std::max(work_max, t - t_loop);
+        ++loops;
         if (stats_every > 0 && t - t_report > stats_every) {
             double dt = t - t_report;
             fprintf(stderr, "[xr] %ld frames submitted, %ld new game frames (%.1f/s), headset %.1f Hz, %ld without a new game frame",
                     submitted, uploads, uploads / dt, (submitted - sub_reported) / dt, repeats);
             if (aged) fprintf(stderr, ", frame age %.1f ms avg / %.1f max (layer publish -> upload), L-R %.1f ms", age_sum / aged * 1e3, age_max * 1e3,
                               skew_sum / aged * 1e3);
+            if (loops) fprintf(stderr, ", per headset frame: xrWaitFrame %.1f ms, our work %.1f ms avg / %.1f max", wait_sum / loops * 1e3,
+                               work_sum / loops * 1e3, work_max * 1e3);
+            if (loops) {
+                fprintf(stderr, " (");
+                for (int i = 0; i < 10; ++i) fprintf(stderr, "%s%s %.1f", i ? ", " : "", ph_name[i], ph[i] / loops * 1e3);
+                fprintf(stderr, ")");
+            }
             fprintf(stderr, "\n");
-            uploads = repeats = aged = 0;
-            age_sum = age_max = skew_sum = 0;
+            uploads = repeats = aged = loops = 0;
+            age_sum = age_max = skew_sum = wait_sum = work_sum = work_max = 0;
+            for (double& x : ph) x = 0;
             sub_reported = submitted;
             t_report = t;
         }

@@ -32,6 +32,7 @@
 #include <sys/syscall.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -109,33 +110,83 @@ static std::string exe_name() {
     return s ? s + 1 : buf;
 }
 
+// Under Wine /proc/self/exe is the preloader; argv[0] is the Windows path
+// (C:\…\upc.exe). Launcher helpers that never pass a pApplicationName are
+// still matched by their .exe that way.
+static std::string wine_exe_name() {
+    std::string e = exe_name();
+    if (e.compare(0, 4, "wine")) return "";
+    char buf[4096];
+    int fd = open("/proc/self/cmdline", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return "";
+    ssize_t n = read(fd, buf, sizeof buf - 1);
+    close(fd);
+    if (n <= 0) return "";
+    buf[n] = 0;
+    std::string a = buf;
+    size_t k = a.find_last_of("\\/");
+    return k == std::string::npos ? a : a.substr(k + 1);
+}
+
 // VRDUAL_BACKTRACE=1: on SIGABRT (glibc "double free", assert) log the
 // aborting thread's native frames as module + offset (addr2line them), then
 // hand the signal on. Debugging aid for crashes whose core is not readable.
-static struct sigaction g_abrt_prev;
-static void on_abrt(int sig, siginfo_t* si, void* uc) {
-    void* f[48];
-    int n = backtrace(f, 48);
-    char name[16] = {};
-    prctl(PR_GET_NAME, name);
-    char line[600];
-    int l = snprintf(line, sizeof line, "[vrdual] SIGABRT in thread '%s', %d frames:\n", name, n);
+// SIGSEGV too, but only the first few faults in native code: Wine handles
+// its own (write watches, guard pages) and turns a crash inside a Unix call
+// into "Exception 0xc0000005 in Unix call" without saying where.
+static struct sigaction g_abrt_prev, g_segv_prev;
+static std::atomic<int> g_segv_left{8};
+static void log_frame(char* line, size_t sz, const char* tag, void* a) {
+    Dl_info d{};
+    int l = dladdr(a, &d) && d.dli_fname
+                ? snprintf(line, sz, "[vrdual]   %s %s + 0x%lx\n", tag, d.dli_fname, (unsigned long)((char*)a - (char*)d.dli_fbase))
+                : snprintf(line, sz, "[vrdual]   %s %p\n", tag, a);
     if (write(2, line, size_t(l)) < 0) {}
-    for (int i = 0; i < n; ++i) {
-        Dl_info d{};
-        if (dladdr(f[i], &d) && d.dli_fname)
-            l = snprintf(line, sizeof line, "[vrdual]   #%d %s + 0x%lx\n", i, d.dli_fname, (unsigned long)((char*)f[i] - (char*)d.dli_fbase));
-        else
-            l = snprintf(line, sizeof line, "[vrdual]   #%d %p\n", i, f[i]);
+}
+static void on_fault(int sig, siginfo_t* si, void* uc) {
+    struct sigaction& prev = sig == SIGSEGV ? g_segv_prev : g_abrt_prev;
+    void *ip = nullptr, **sp = nullptr;
+#if defined(__x86_64__)
+    ip = (void*)((ucontext_t*)uc)->uc_mcontext.gregs[REG_RIP];
+    sp = (void**)((ucontext_t*)uc)->uc_mcontext.gregs[REG_RSP];
+#elif defined(__i386__)
+    ip = (void*)((ucontext_t*)uc)->uc_mcontext.gregs[REG_EIP];
+    sp = (void**)((ucontext_t*)uc)->uc_mcontext.gregs[REG_ESP];
+#endif
+    // native code, or a jump to nowhere (null / dangling function pointer:
+    // the fault is the instruction fetch, the caller's return address is at sp)
+    Dl_info d{};
+    bool wild = sig == SIGSEGV && (si->si_addr == ip || (uintptr_t)ip < 0x10000);
+    static std::atomic<int> seen{0};
+    if (sig == SIGSEGV && seen.fetch_add(1) < 64) {  // one line each: Wine's own faults included
+        char line[160];
+        int l = snprintf(line, sizeof line, "[vrdual] SIGSEGV ip %p address %p code %d\n", ip, si->si_addr, si->si_code);
         if (write(2, line, size_t(l)) < 0) {}
     }
-    if (g_abrt_prev.sa_flags & SA_SIGINFO) {
-        if (g_abrt_prev.sa_sigaction) g_abrt_prev.sa_sigaction(sig, si, uc);
-    } else if (g_abrt_prev.sa_handler != SIG_IGN && g_abrt_prev.sa_handler != SIG_DFL) {
-        g_abrt_prev.sa_handler(sig);
+    if (sig != SIGSEGV || ((wild || (dladdr(ip, &d) && d.dli_fname)) && g_segv_left.fetch_sub(1) > 0)) {
+        void* f[48];
+        int n = backtrace(f, 48);
+        char name[16] = {};
+        prctl(PR_GET_NAME, name);
+        char line[600];
+        int l = sig == SIGSEGV ? snprintf(line, sizeof line, "[vrdual] SIGSEGV in thread '%s' (address %p), %d frames:\n", name, si->si_addr, n)
+                               : snprintf(line, sizeof line, "[vrdual] SIGABRT in thread '%s', %d frames:\n", name, n);
+        if (write(2, line, size_t(l)) < 0) {}
+        if (sig == SIGSEGV) log_frame(line, sizeof line, "ip", ip);
+        if (wild && sp) log_frame(line, sizeof line, "ret", *sp);
+        for (int i = 0; i < n; ++i) {
+            char tag[8];
+            snprintf(tag, sizeof tag, "#%d", i);
+            log_frame(line, sizeof line, tag, f[i]);
+        }
+    }
+    if (prev.sa_flags & SA_SIGINFO) {
+        if (prev.sa_sigaction) prev.sa_sigaction(sig, si, uc);
+    } else if (prev.sa_handler != SIG_IGN && prev.sa_handler != SIG_DFL) {
+        prev.sa_handler(sig);
     } else {
-        signal(SIGABRT, SIG_DFL);
-        raise(SIGABRT);
+        signal(sig, SIG_DFL);
+        raise(sig);
     }
 }
 static void backtrace_on_abort() {
@@ -143,10 +194,11 @@ static void backtrace_on_abort() {
     void* warm[1];
     backtrace(warm, 1);  // loads the unwinder now, not inside the handler
     struct sigaction sa{};
-    sa.sa_sigaction = on_abrt;
+    sa.sa_sigaction = on_fault;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    if (sigaction(SIGABRT, &sa, &g_abrt_prev) == 0) logf("SIGABRT backtrace on (VRDUAL_BACKTRACE=1)");
+    if (sigaction(SIGABRT, &sa, &g_abrt_prev) == 0 && sigaction(SIGSEGV, &sa, &g_segv_prev) == 0)
+        logf("SIGABRT/SIGSEGV backtrace on (VRDUAL_BACKTRACE=1)");
 }
 
 static void load_config(const VkApplicationInfo* app) {
@@ -157,8 +209,12 @@ static void load_config(const VkApplicationInfo* app) {
     c.eye = c.mirror || eye == "left" || eye == "L" || eye == "0" ? 0 : eye == "right" || eye == "R" || eye == "1" ? 1 : -1;
     c.session = env("VRDUAL_SESSION", "default");
     std::string app_name = app && app->pApplicationName ? app->pApplicationName : "";
-    vrdual::Settings st = vrdual::load_settings({app_name, exe_name()});
-    c.app = st.profile.empty() ? (app_name.empty() ? exe_name() : app_name) : st.profile;
+    std::string wexe = wine_exe_name();
+    std::string exe_label = exe_name() + (wexe.empty() ? "" : " " + wexe);
+    vrdual::Settings st = vrdual::load_settings({app_name, wexe, exe_name()});
+    c.app = st.profile.empty() ? (!app_name.empty() ? app_name : !wexe.empty() ? wexe : exe_name()) : st.profile;
+    bool stereo_off = c.eye >= 0 && st.i("stereo") == 0;  // launchers: as if VRDUAL_EYE were unset
+    if (stereo_off) c.mirror = false, c.eye = -1;
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
     c.export_frames = st.i("export") != 0;
@@ -171,7 +227,8 @@ static void load_config(const VkApplicationInfo* app) {
     c.gpu = env("VRDUAL_GPU", c.eye == 0 ? st.s("left_gpu").c_str() : c.eye == 1 ? st.s("right_gpu").c_str() : "");
     if (c.mirror) c.mirror_gpu = st.s("right_gpu");
     if (c.eye < 0) {
-        logf("VRDUAL_EYE unset: stereo/export off, GPU filter only (gpu='%s')", c.gpu.c_str());
+        if (stereo_off) logf("app='%s' exe='%s': stereo = 0, layer passive", app_name.c_str(), exe_label.c_str());
+        else logf("VRDUAL_EYE unset: stereo/export off, GPU filter only (gpu='%s')", c.gpu.c_str());
         return;
     }
     bool created = false;
@@ -181,7 +238,7 @@ static void load_config(const VkApplicationInfo* app) {
     vrdual_ctl v = vrdual::ctl_read(c.ctl);
     static std::atomic<bool> told{false};
     if (!told.exchange(true)) logf("%s (%d-bit layer)", VRDUAL_BUILD_INFO, int(sizeof(void*) * 8));
-    logf("app='%s' exe='%s' profile='%s' session=%s (%s control block)", app_name.c_str(), exe_name().c_str(),
+    logf("app='%s' exe='%s' profile='%s' session=%s (%s control block)", app_name.c_str(), exe_label.c_str(),
          st.profile.c_str(), c.session.c_str(), created ? "seeded" : "joined");
     logf("eye=%s anchor=%s ipd=%.1fmm ipd_near=%.1fmm world_scale=%g hfov=%g skip_w1=%d gpu='%s'%s%s",
          c.mirror ? "both" : c.eye ? "right" : "left", vrdual_anchor_name(v.anchor), v.ipd * 1e3, v.ipd_near * 1e3,

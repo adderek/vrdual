@@ -3,7 +3,8 @@
 Status per game, dual GPU (2x RX 7900 XTX, host "fractal") unless noted.
 Launch option for all: `/home/adderek/vrdual/run %command%` (from
 `vrdual steam-install`); `vrdual xr` runs once for all games. Last update
-2026-10-23.
+2026-10-26. Most games here are Steam; Epic/GOG ones go through Heroic
+(setup below), Assassin's Creed Origins through Heroic + Ubisoft Connect.
 
 Status: **works** = stereo in the HMD confirmed; **runs** = renders, stereo
 not confirmed or weak; **broken** = crash or no picture.
@@ -34,12 +35,19 @@ not confirmed or weak; **broken** = crash or no picture.
 | Magicka (42910) | Proton, XNA on Wine Mono | broken | | reaches the menu, black screen when a game loads (the layer log shows submits continuing, no error). Log full of Mono TLS/HTTP errors (dead Paradox servers: 308/403), likely harmless. Not yet checked without vrdual, 2026-10-23 |
 | Civilization V (8930) | native GL → Zink (`Civ5XP`) | runs | user profile `[app:Civ5XP]`, `world_scale` ~0.1 | stereo not impressive; crash to desktop after a while (game.log ends in normal mirror stats, no error; not analysed, not checked without vrdual), 2026-10-23 |
 | Unravel (1225560) | Proton, via EA app (`steam2ea://`) | broken | | CTD at start. Not anti-cheat: the game's 2nd `vkCreateDevice` (the 1st device was created and destroyed, 0 frames) faults right after the mirror's twin device is created: `err:vulkan:vkCreateDevice Exception 0xc0000005 in Unix call`, ip = a heap address (0x5555…, a call through a garbage pointer, likely in the layer). The EA app (`EADesktop.exe`) loads the layer too. Log `steam-1225560.log`; not checked with `VRDUAL_EYE=left` or without vrdual, 2026-10-23 |
+| Assassin's Creed Origins (Epic, Heroic + Ubisoft Connect) | Proton (umu, Proton-CachyOS), D3D11 (AnvilNext, DXVK, 64-bit `ACOrigins.exe`) | works | gamescope 1920x1080 (Heroic); `[app:ACOrigins.exe]` `world_scale` ~0.1 (larger values: strong nausea, user still getting used to VR), `hud_depth = 0`, `hfov = 90` | great: smooth in the HMD, the 3D stereo is impressive. Fixed on the way: a double free at exit (mirror Destroy/Free wrappers translated handles after A's call, racing handle reuse) and 10 Hz in the HMD (`vrdual xr` staging in write-combined memory, the edge mask read it back: 89 ms/frame). Open: the character seems to float above the ground (screen-space effects? AO / contact shadows off not tried); a start crash in some launches (`vkCreateDevice` `Exception 0xc0000005 in Unix call` after the twin device; one log showed UplayWebCore's GPU thread jumping to NULL from the loader); Ubisoft Connect's helpers (upc, UplayWebCore, explorer, xalia) run with `stereo = 0` (built-in), 2026-10-26 |
+| Alien: Isolation (Epic, Heroic) | Proton (umu, Proton-CachyOS), D3D11 (DXVK, 32-bit `AI.exe`) | broken | gamescope 1920x1080 (Heroic) | hangs when gameplay starts after the intro videos were skipped; artifacts in areas the game does not draw (game at 1920x1200 in a 1920x1080 gamescope); not analysed yet (logs were overwritten by the next game), 2026-10-25 |
 | Tomb Raider I (224960) | DOSBox | broken | | flat 2D image, no stereo; exits in windowed mode / on alt+tab |
 | Portal (400) | native GL → Zink | broken | | crash on level load (NULL GL buffer map), also with Zink alone |
 | Shadow Warrior (233130) | native GL → Zink | retest | | SIGBUS in the 2026-10-19 frame export (reverted 55c0b81); window scaling issues |
 | Hospital Tycoon (11590) | Proton | works | gamescope 1920x1080 (below) | crashes (NULL read in the game) on the portrait desktop; system cursor drawn by `vrdual xr` at the scene's depth (`cursor_depth = auto`), confirmed 2026-10-20 |
 | Little Nightmares (424840) | Proton, D3D11 (UE4, DXVK) | runs | gamescope 1920x1080 (below); `world_scale = 1` | dark, no wow: at 1 the eye shift is ~mono for UE units (cm); higher values make the eyes render differently (screen-space effects?), not checked which; micro stutter in the HMD, smooth on the monitor (gamescope nested refresh is 60 Hz); a first start showed a black screen once; segfault at exit in `vkDestroySwapchainKHR` (call into an unloaded library), 2026-10-22 |
 | Planet Zoo (703080) | Proton, D3D11 (DXVK) | works | no gamescope; in-game window 1920x1080 (fullscreen picks the portrait 2880x5120) | without gamescope: menus and a zoo, no crash, confirmed 2026-10-22. With gamescope: once glibc "double free or corruption (!prev)" ~10 s in on DXVK's `dxvk-queue` thread (not seen with `VRDUAL_CACHED_SHADOW=0`; write-back copied 0 MB, so the readback shadow is the suspect), once gamescope itself died entering a zoo; gamescope without vrdual fine. Keep `VRDUAL_BACKTRACE=1` set: an abort then logs its native frames |
+| X: Beyond the Frontier (2840) | Proton, old D3D via wined3d → GL → Zink (32-bit) | works | `[app:wine-preloader]` profile (shared by 32-bit Proton games) | very old, poor textures, but the depth is a "wow" effect: in VR the game becomes likeable; 2026-10-25 |
+| Quantum Conundrum (200010) | Proton, D3D9 (UE3, DXVK, 32-bit `TryGame-Win32-Shipping.exe`) | works | `[app:wine-preloader]` profile | looks nice, nothing special; 2026-10-25 |
+| Crysis 3 Remastered (2096610) | Proton, D3D11 (DXVK, 64-bit) | broken | | does not start. The game opens a second Vulkan device in the process (likely the ray tracing interop) and wants a D3D11 shared resource: DXVK `Failed to create shared resource: VK_KHR_EXTERNAL_MEMORY_WIN32 not supported`, then an access violation at `rip=0`. winevulkan builds that extension on `VK_KHR_external_memory_fd`, which the layer hides (the mirror cannot replay external memory on B). Next: turn ray tracing off in the game's config, or check with `VRDUAL_KEEP_EXT=VK_KHR_external_memory_fd,VK_KHR_external_semaphore_fd` whether that alone is the blocker; a real fix = mirror support for memory shared between two devices of one process (larger work). 2026-10-25 |
+| Portal with RTX (2012840) | Proton, RTX Remix (DXVK-Remix, path tracing) | broken | | not an AMD problem: Remix logs `Required Vulkan extension VK_KHR_ray_query / VK_KHR_ray_tracing_pipeline not supported` because the layer hides ray tracing (RADV has it). Unhiding is not enough: the image is path traced from the camera in raygen shaders, there is no rasterized vertex output to shift, and the mirror would have to replay acceleration structures on B. Stereo needs a per-eye camera in Remix's ray generation: big work, not planned. 2026-10-25 |
+| Portal: Revolution (601360) | Windows-only Source mod build (`bin/win64/revolution.exe`) | retest | Properties → Compatibility → force Proton | Steam launched the `.exe` without Proton (through the Steam Linux Runtime, scout-on-soldier); it exits after ~2 s, no Proton log, the layer never loads. Not a vrdual problem: force Proton and retest. 2026-10-25 |
 
 Single GPU (RTX 5070 Ti, host "sharkoon", alternate-eye): Alice: Madness
 Returns, Zen Bound 2, Overlord (same Zink glow).
@@ -53,6 +61,22 @@ gamescope's `DISPLAY` back inside the container.
 ```
 gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%
 ```
+
+Heroic (Flatpak, Epic/GOG games): game settings → Advanced → Wrapper command
+`/home/adderek/.var/app/com.valvesoftware.Steam/vrdual/run` (no args; the
+Steam copy of the layer is visible to Heroic), Other → Gamescope 1920x1080.
+`gamescope-pv-display` does not apply (umu builds the container command
+itself); the same DISPLAY reset happens there (game on the desktop, gamescope
+WSI: "creating swapchain for non-gamescope swapchain hooking has failed"), so
+`vrdual steam-install` patches `~/.local/share/umu/umu-shim` to restore
+gamescope's display from `VRDUAL_DISPLAY` (set by the wrapper). Heroic has its own private `/dev/shm`
+(`/run/user/UID/.flatpak/com.heroicgameslauncher.hgl/dev-shm`), watched by
+`vrdual xr` since 2026-10-25. umu games: the Proton log (layer lines included) goes to
+`~/.var/app/com.heroicgameslauncher.hgl/vrdual-<app name>/` (the wrapper sets
+`PROTON_LOG_DIR` per game; Proton alone names it `steam-0-….log` for every
+game), umu's own output to `…/vrdual/game.log`, overwritten by every launch. Launchers
+started by the same wrapper (Ubisoft Connect, EA app) get `stereo = 0` built
+in (their CEF UI was full of artefacts when mirrored).
 
 ## To test: showcase candidates (2026-10-21)
 

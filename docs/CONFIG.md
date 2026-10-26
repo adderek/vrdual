@@ -52,6 +52,7 @@ map_x = KEY_E
 | `anchor` | `center` | `center` `left` `right` | which eye the game's own camera is; **live** |
 | `world_scale` | `1` | game units per meter: Unreal 100 (some UE3 games 50), Gamebryo/Creation (Skyrim, Fallout 3/NV) ~70, Source ~39. Too small = flat image; tune live | **live** |
 | `hfov` | `90` | degrees | the game's horizontal FOV (sets the eye shift and the HMD picture size); **live** |
+| `stereo` | `1` | `0` `1` | `0` = the layer stays passive in this app (no mirror, shader patch, export), as without `VRDUAL_EYE`; for launchers started by the same wrapper as the game. Built in for Ubisoft Connect (`upc.exe`, `UplayWebCore.exe`) and the EA app (`EADesktop.exe`), Wine's `explorer.exe` and Proton's `xalia.exe`. Wine processes also match `[app:NAME]` by the .exe in their command line (`upc.exe`), not only by `pApplicationName` |
 | `skip_w1` | `1` | `0` `1` | leave `w == 1` draws (HUD, post-process, 2D) unshifted |
 | `hud_depth` | `0` | meters, 0 = infinity | show `w == 1` draws (HUD) at this distance; live mode only; **live** |
 | `live` | `1` | `0` `1` | live params (shader reads a GPU buffer); falls back to baked automatically |
@@ -65,6 +66,7 @@ map_x = KEY_E
 | `cached_wp` | `0` | `0` `1` | mirror mode, superseded: since 2026-10-21 cached (driver-mapped) GPU memory gets a shadow with dirty tracking and write-back by default, fast and correct. `1` = the older write tracking on the driver's own mapping (mprotect): about as fast, but **breaks games that read files straight into that memory** (the kernel's writes fail; Alice: Madness Returns showed black flickering objects). Keep `0` |
 | `left_gpu` | `pci:0000:06:00.0` | `pci:…`, index, name substring | GPU for the left eye (and the game in mirror mode) |
 | `right_gpu` | `pci:0000:0b:00.0` | same | GPU for the right eye |
+| `wivrn_gpu` | `pci:0000:0b:00.0` | `pci:…` `default` | GPU for `wivrn-server` (`vrdual wivrn`, via `DRI_PRIME`); `vrdual-xr` follows it. Keeps the game's GPU (06: game, desktop, gamescope) free. `default` = Vulkan's choice. Read when the server starts ([global] only) |
 | `log` | `1` | `0` `1` | layer log to stderr (Proton log for Steam games) |
 | `head_lean` | `off` | `off` `on` | head position moves the rendered viewpoint (needs `vrdual xr`) |
 | `lean_max` | `0.1` | meters | soft limit of the lean offset |
@@ -158,4 +160,6 @@ mapped directly, full diff every submit), `VRDUAL_MIRROR_FAIL_AT=N`
 (selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest), `VRDUAL_XR_STATS=S` (`vrdual xr`
 stats line every S seconds, default 5, 0 = off), `VRDUAL_BACKTRACE=1` (on
 SIGABRT, e.g. glibc "double free", log the aborting thread's native frames as
-module + offset for `addr2line`, then abort as before).
+module + offset for `addr2line`, then abort as before; also the first 8
+SIGSEGVs in native code with the faulting ip, then Wine's handler, which
+reports a crash inside a Unix call only as `Exception 0xc0000005 in Unix call`).

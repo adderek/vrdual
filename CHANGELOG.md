@@ -28,6 +28,12 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   DXVK d3d9 games went from 16–24 ms per submit (full compare of cached
   memory) towards the ~0.1 ms of the other memory.
 - Exported frames are opaque (games leaving alpha 0 showed black).
+- Heroic (Epic/GOG through umu): wrapper command, per-game Proton logs,
+  launchers (Ubisoft Connect, EA app) passive with `stereo = 0`.
+  Assassin's Creed Origins runs smoothly in the headset.
+- `vrdual-xr` staging in cached memory (the edge mask read write-combined
+  memory: 89 ms per frame, 10 Hz in the headset); stats split a headset frame
+  into xrWaitFrame and our phases. `wivrn_gpu` puts the server on 0b.
 - Games: see docs/GAMES.md.
 
 Known limits: mirror mode needs identical GPUs; Wayland-native GL apps
