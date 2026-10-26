@@ -15,7 +15,10 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ## Pictures
 
 ![Hospital tycoon](screenshots/HospitalTycoon-3.gif)
+![Assassin's Creed Origins](screenshots/AssasinsCreedOrigins.gif)
 ![Hospital tycoon](screenshots/HospitalTycoon-4.gif)
+![Hospital tycoon](screenshots/HospitalTycoon-1.gif)
+![Hospital tycoon](screenshots/HospitalTycoon-2.gif)
 ![Lego Harry Potter 1-4](screenshots/LegoHarry.gif)
 ![Mafia I](screenshots/Mafia.gif)
 ![Hogwarts Legacy](screenshots/HogwartsLegacy_2.gif)
@@ -30,6 +33,7 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ![Alan Wake's American Nightmare](screenshots/AlanWakeAmericanNightmare.gif)
 ![Duke Nukem Forever](screenshots/DukeNukem4ever_1.gif)
 ![Civilization V](screenshots/CivV_1.gif)
+![Magicka](screenshots/Magicka_1.gif)
 
 ## Requirements
 
