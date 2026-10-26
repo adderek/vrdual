@@ -96,13 +96,14 @@ default output, so games play in the headset; the previous default comes back
 when `vrdual xr` exits. Only on connect: an output chosen by hand later stays.
 `--no-audio` leaves the outputs alone.
 `--lock world` (default) keeps the picture in the room; `--lock head` keeps it
-in front of the face (films). Controls, always on:
+in front of the face (films). Controls (menu: every mode; grab: `tune` only,
+elsewhere the grips are the game's):
 
 | control | world lock | head lock |
 |---|---|---|
 | menu (≡, left) held 1 s | picture in front of the current gaze | freeze in place / follow again |
 | menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → tune (notice in the headset) | same |
-| both grips held | move with the hands, turn with the hands' line (15° snap; press a trigger during the grab for free turning), hand distance scales | same |
+| both grips held (`tune`) | move with the hands, turn with the hands' line (15° snap; press a trigger during the grab for free turning), hand distance scales | same |
 | … + right stick | stretch width (x) / height (y) | same |
 | … + left stick | orbit the picture around you | same |
 
@@ -110,7 +111,7 @@ in front of the face (films). Controls, always on:
 
 | key | default | values | meaning |
 |---|---|---|---|
-| `input` | `off` | `off` `gamepad` `mouse` `tune` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings (below), the game gets nothing. The mode a game starts in; menu + a / b switches it in the headset |
+| `input` | `gamepad` | `gamepad` `mouse` `tune` `off` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings and move the screen (below), the game gets nothing. The mode a game starts in; menu + a / b switches it in the headset. Each switch is remembered per game (`~/.local/state/vrdual/input_last.tsv`, with `mouse_mode`) and the next start uses it instead of `[global]` / built-in; `input` in `[app:NAME]` (or `VRDUAL_INPUT`) wins over the remembered mode. The `vrdual xr` log says which one applied (`input: …`) |
 | `mouse_mode` | `stick` | `stick` `motion` `aim` | right stick moves the pointer / right controller rotation / controller ray = absolute pointer. A short menu press cycles them |
 | `mouse_speed` | `1` | factor | pointer speed |
 | `mouse_curve` | `2.5` | exponent | stick response (stick mode) |
@@ -122,7 +123,8 @@ in front of the face (films). Controls, always on:
 | `head_rate` | `120` | deg/s | edge mode turn rate at 45° past the dead zone |
 | `head_counts_per_deg` | `10` | mouse counts | per degree of game camera turn; calibrate per game |
 
-`input = tune` (no grip or trigger held; values print in the `vrdual xr` log):
+`input = tune` (sticks: no grip or trigger held; values print in the `vrdual xr` log;
+both grips: the screen grab above):
 
 | control | changes |
 |---|---|

@@ -289,6 +289,54 @@ int main() {
         for (int i = 0; i < 6; ++i) { chord(true); seen += w.controls() + ","; }
         expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,tune,", ("cycle: " + seen).c_str());
     }
+    {  // screen grab only in tune (move = false elsewhere): grips stay the game's, the menu hold still recentres
+        ScreenGrab g;
+        Controls c;
+        c.hands_ok = true;
+        c.lg = c.rg = 1;
+        float l[3] = {-0.2f, 0, -0.5f}, r[3] = {0.2f, 0, -0.5f};
+        memcpy(c.hand_p[0], l, sizeof l); memcpy(c.hand_p[1], r, sizeof r);
+        bool grabbed = g.step(c, 0.01, false);
+        c.hand_p[1][0] = 0.6f;
+        grabbed |= g.step(c, 0.01, false);
+        expect(!grabbed && !g.both && g.off[0] == 0 && g.sx == 1, "screen grab: not in tune -> both grips do nothing");
+        Controls m;
+        m.menu = true;
+        g.step(m, 0.6, false); g.step(m, 0.6, false);
+        expect(g.recentres == 1, "screen grab: not in tune -> menu held 1 s still recentres");
+    }
+    {  // control mode: default gamepad < [global] < last used per game < [app:NAME] < env
+        char dir[] = "/tmp/vrdual-input-test-XXXXXX";
+        expect(mkdtemp(dir) != nullptr, "mode: temp dir");
+        std::string conf = std::string(dir) + "/vrdual.conf";
+        setenv("VRDUAL_CONFIG", conf.c_str(), 1);
+        setenv("XDG_STATE_HOME", dir, 1);
+        unsetenv("VRDUAL_INPUT");
+        unsetenv("VRDUAL_MOUSE_MODE");
+        auto write = [&](const char* text) { std::ofstream(conf) << text; };
+        write("");
+        InputCfg c = load_input_cfg("game.exe");
+        expect(c.input == "gamepad" && c.input_src == "default", ("mode: default gamepad (" + c.input + ", " + c.input_src + ")").c_str());
+        write("[global]\ninput = off\n");
+        expect(load_input_cfg("game.exe").input == "off", "mode: [global] input = off");
+        expect(input_last_save("game.exe", "mouse", "aim") && input_last_save("other.exe", "tune", "stick"), "mode: last used saved");
+        c = load_input_cfg("game.exe");
+        expect(c.input == "mouse" && c.mouse_mode == "aim" && c.input_src.rfind("last used", 0) == 0, "mode: last used (mouse: aim) beats [global]");
+        expect(load_input_cfg("other.exe").input == "tune" && load_input_cfg("new.exe").input == "off", "mode: last used is per game");
+        write("[global]\ninput = off\n[app:game.exe]\ninput = gamepad\n");
+        c = load_input_cfg("game.exe");
+        expect(c.input == "gamepad" && c.input_src.find("[app:game.exe]") != std::string::npos, "mode: [app:NAME] input beats last used");
+        setenv("VRDUAL_INPUT", "off", 1);
+        expect(load_input_cfg("game.exe").input == "off" && load_input_cfg("other.exe").input == "off", "mode: VRDUAL_INPUT beats both");
+        unsetenv("VRDUAL_INPUT");
+        unsetenv("VRDUAL_CONFIG");
+        unsetenv("XDG_STATE_HOME");
+        std::string st = std::string(dir) + "/vrdual";
+        unlink((st + "/input_last.tsv").c_str());
+        rmdir(st.c_str());
+        unlink(conf.c_str());
+        rmdir(dir);
+    }
     {  // stereo window at the edges (common/vrdual_frames.hpp)
         int l = edge_band(90, -0.034f, 1, 1920), r = edge_band(90, 0.034f, 1, 1920);
         expect(l == -33 && r == 33, "edge band: ipd 68 mm, hfov 90, things at 1 m -> 33 px, left eye at the left edge");

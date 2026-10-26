@@ -787,6 +787,8 @@ PA
 
     # 5. OpenXR output against Monado's simulated HMD (null compositor, no window).
     local xrj="${VRDUAL_XR_TEST_RUNTIME:-$B/monado/openxr_monado.json}"
+    # input off: the default (gamepad) would create a virtual pad on this desktop
+    export VRDUAL_INPUT=off
     if [[ -f $xrj ]]; then
         rm -f /dev/shm/vrdual-$sess-*
         env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
@@ -799,7 +801,7 @@ PA
         check bash -c "grep -q 'overlay: game started' '$tmp/xr.log' && ! grep -q 'overlay unavailable' '$tmp/xr.log' && head -c 200 '$tmp/ov.pam' | grep -q 'WIDTH 1024' &&
             [[ \$(stat -c %s '$tmp/ov.pam') -gt 524288 ]] || { grep overlay '$tmp/xr.log'; false; }"
         label="openxr: controller actions, input profile from the frame file"
-        check bash -c "grep -q 'controller actions attached' '$tmp/xr.log' && grep -q \"app 'vrdual-cube': input=off .*head_lean=on\" '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
+        check bash -c "grep -q 'controller actions attached' '$tmp/xr.log' && grep -q \"app 'vrdual-cube': input=off .*head_lean=on (input: env VRDUAL_INPUT)\" '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
         local sm  # cinema screen: quad / cylinder pair accepted by the runtime
         for sm in flat:world curved:head full:head; do  # default lock = world
             label="openxr: screen=${sm%:*} lock ${sm#*:}, 30 frames submitted"

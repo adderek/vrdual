@@ -957,8 +957,8 @@ static int run(int argc, char** argv) {
             vrdual::InputCfg ic = vrdual::load_input_cfg(input_app);
             mapper.reset(new vrdual::Mapper(ic));  // also with input = off: menu + a / b switches the control mode
             control_changes = 0;
-            fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s\n", input_app.c_str(), ic.input.c_str(),
-                    ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off");
+            fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s (input: %s)\n", input_app.c_str(), ic.input.c_str(),
+                    ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off", ic.input_src.c_str());
             icfg = ic;
             vrdual::Settings st = vrdual::load_settings({input_app});
             std::string prof = !st.profile.empty() ? "config" : "none";
@@ -989,7 +989,7 @@ static int run(int argc, char** argv) {
             tune.dz = ic.deadzone;
             tune_on = ic.input == "tune";
             tune_seeded = false;
-            if (tune_on) fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults)\n");
+            if (tune_on) fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults); both grips = move / scale the screen\n");
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
             else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m, scale %g x %g\n", screen_name(scr.mode), scr.fov, scr.dist, scr.sx, scr.sy);
             lean_ref = false;
@@ -1008,7 +1008,7 @@ static int run(int argc, char** argv) {
             chord_hold = c.menu && (chord_hold || c.a || c.b);
             vrdual::Controls cg = c;
             if (chord_hold) cg.menu = false;  // menu + a / b: no recentre at 1 s
-            if (grab.step(cg, t_now - t_input)) c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;  // grabbing: the game doesn't see them
+            if (grab.step(cg, t_now - t_input, tune_on))  // screen moves only in tune c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;  // grabbing: the game doesn't see them
             if (was && !grab.both)
                 fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, orbit %+.0f %+.0f deg, scale %.2f x %.2f (screen_scale_x/y to keep)\n",
                         grab.off[0], grab.off[1], grab.off[2], grab.orbit[0] * 57.29578f, grab.orbit[1] * 57.29578f, grab.sx, grab.sy);
@@ -1055,12 +1055,14 @@ static int run(int argc, char** argv) {
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && mapper->changes != control_changes) {
                 control_changes = mapper->changes;
+                if (!vrdual::input_last_save(input_app, mapper->input(), mapper->mouse_mode()))
+                    fprintf(stderr, "[xr] could not save the control mode to %s\n", vrdual::input_last_path().c_str());
                 bool t = mapper->input() == "tune";
                 if (t && !tune_on) {
                     tune = vrdual::Tuner{};
                     tune.dz = icfg.deadzone;
                     tune_seeded = false;
-                    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults)\n");
+                    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults); both grips = move / scale the screen\n");
                 }
                 tune_on = t;
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);

@@ -24,6 +24,7 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cmath>
@@ -119,7 +120,8 @@ inline void qsnap(float q[4], float step) {
 //   the screen around the viewer (yaw / pitch about the base). The caller
 //   sets basis (the base orientation in the hands' space), adds orbit_q() to
 //   it and hides grips, triggers and sticks from the game while step()
-//   returns true.
+//   returns true. move = false (vrdual-xr: every mode but tune): no grab,
+//   the grips stay the game's; the menu hold still counts.
 //   menu held 1 s: ++recentres (vrdual-xr: world lock -> screen in front of
 //   the current gaze; head lock -> freeze the screen in place / follow again)
 struct ScreenGrab {
@@ -147,14 +149,14 @@ struct ScreenGrab {
         rot[0] = rot[1] = rot[2] = 0; rot[3] = 1;
         orbit[0] = orbit[1] = 0;
     }
-    bool step(const Controls& c, double dt) {
+    bool step(const Controls& c, double dt, bool move = true) {
         if (c.menu) {
             if (menu_t < 1 && menu_t + dt >= 1) ++recentres;
             menu_t += dt;
         } else {
             menu_t = 0;
         }
-        bool now = c.hands_ok && c.lg > 0.8f && c.rg > 0.8f;
+        bool now = move && c.hands_ok && c.lg > 0.8f && c.rg > 0.8f;
         const float *l = c.hand_p[0], *r = c.hand_p[1];
         float m[3] = {(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2};
         float v[3] = {r[0] - l[0], r[1] - l[1], r[2] - l[2]};
@@ -284,7 +286,47 @@ struct InputCfg {
     bool lean = false;
     float lean_max = 0.1f;
     int map[B_COUNT];  // code, 0 = none, -1 = mode default
+    std::string input_src;  // where input came from (load_input_cfg)
 };
+
+// Control mode last used per game (vrdual-xr saves it on every switch):
+// $XDG_STATE_HOME/vrdual/input_last.tsv, else ~/.local/state/vrdual/, lines
+// "app<TAB>input<TAB>mouse_mode". Ranks above [global] and the built-in
+// profiles, below [app:NAME] input and VRDUAL_INPUT.
+inline std::string input_last_path() {
+    const char* x = getenv("XDG_STATE_HOME");
+    const char* h = getenv("HOME");
+    std::string d = x && *x ? std::string(x) : std::string(h ? h : "/tmp") + "/.local/state";
+    return d + "/vrdual/input_last.tsv";
+}
+inline std::map<std::string, std::pair<std::string, std::string>> input_last_read() {
+    std::map<std::string, std::pair<std::string, std::string>> m;
+    FILE* f = fopen(input_last_path().c_str(), "r");
+    if (!f) return m;
+    char line[512];
+    while (fgets(line, sizeof line, f)) {
+        std::string l(line);
+        while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
+        size_t a = l.find('\t'), b = a == std::string::npos ? a : l.find('\t', a + 1);
+        if (b != std::string::npos) m[l.substr(0, a)] = {l.substr(a + 1, b - a - 1), l.substr(b + 1)};
+    }
+    fclose(f);
+    return m;
+}
+inline bool input_last_save(const std::string& app, const std::string& input, const std::string& mouse_mode) {
+    if (app.empty()) return false;
+    auto m = input_last_read();
+    m[app] = {input, mouse_mode};
+    std::string p = input_last_path(), d = p.substr(0, p.rfind('/'));
+    mkdir(d.substr(0, d.rfind('/')).c_str(), 0755);
+    mkdir(d.c_str(), 0755);
+    std::string tmp = p + ".tmp";
+    FILE* f = fopen(tmp.c_str(), "w");
+    if (!f) return false;
+    for (auto& kv : m) fprintf(f, "%s\t%s\t%s\n", kv.first.c_str(), kv.second.first.c_str(), kv.second.second.c_str());
+    bool ok = fclose(f) == 0;
+    return ok && rename(tmp.c_str(), p.c_str()) == 0;
+}
 
 // Settings + raw map_* keys of [global] and [app:NAME].
 inline InputCfg load_input_cfg(const std::string& app) {
@@ -292,6 +334,21 @@ inline InputCfg load_input_cfg(const std::string& app) {
     InputCfg c;
     c.input = st.s("input");
     c.mouse_mode = st.s("mouse_mode");
+    c.input_src = st.src["input"];
+    // set by the user for this game ([app:NAME]) or env: wins over the last used mode
+    auto pinned = [&](const char* k) {
+        const std::string& s = st.src[k];
+        return s.rfind("env ", 0) == 0 || (s.find(" [app:") != std::string::npos && s.rfind("built-in", 0) != 0);
+    };
+    if (!pinned("input")) {
+        auto m = input_last_read();
+        auto it = m.find(app);
+        if (it != m.end() && !it->second.first.empty()) {
+            c.input = it->second.first;
+            if (!pinned("mouse_mode") && !it->second.second.empty()) c.mouse_mode = it->second.second;
+            c.input_src = "last used (" + input_last_path() + ")";
+        }
+    }
     c.lstick = st.s("lstick");
     c.head_look = st.s("head_look");
     c.speed = st.f("mouse_speed");

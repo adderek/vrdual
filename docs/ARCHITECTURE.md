@@ -270,7 +270,8 @@ intersects the controller ray with the plane/cylinder (full mode: direction
 only, picture at infinity). One function (`screen_geom`) gives the picture's
 pose and size for the layers and for aiming.
 
-**Grab** (all screen modes; `ScreenGrab`, pure, in `vrdual_input.hpp`): both
+**Grab** (all screen modes, only with `input = tune`: elsewhere the grips
+belong to the game; `ScreenGrab`, pure, in `vrdual_input.hpp`): both
 grips held → the hands' midpoint drags the picture (not in full mode: at
 infinity), the line between the hands turns it about its centre, their
 distance scales it. The turn snaps to 15° steps of yaw / pitch / roll
@@ -329,7 +330,10 @@ name, else the exe), and its `[app:NAME]` settings select what the Touch
 controllers (OpenXR actions, Touch profile) and the head do. Only while game
 frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
 
-- `input = gamepad`: virtual Xbox 360 pad (045e:028e, SDL/Steam Input know it).
+- `input = gamepad` (default): virtual Xbox 360 pad (045e:028e, SDL/Steam Input know it).
+- Starting mode: default < `[global]` < built-in < the mode last used with
+  this game (saved on every switch, `input_last.tsv` in the state dir) <
+  `[app:NAME]` `input` < `VRDUAL_INPUT` (`load_input_cfg`).
 - `input = mouse`: mouse + keyboard; `mouse_mode` `stick` (right stick →
   velocity, `|x|^mouse_curve`), `motion` (right controller rotation → relative,
   left grip = clutch), `aim` (controller ray ∩ picture → absolute pointer
