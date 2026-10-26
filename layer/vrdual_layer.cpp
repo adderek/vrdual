@@ -356,14 +356,23 @@ static std::unordered_map<void*, InstanceData*>& g_instances = *new std::unorder
 static std::unordered_map<void*, DeviceData*>& g_devices = *new std::unordered_map<void*, DeviceData*>;
 
 static InstanceData* inst_of(void* k) { std::lock_guard<std::mutex> l(g_lock); return g_instances[k]; }
+// Per-thread cache of the last lookup, valid while g_dev_gen is unchanged:
+// every device create/destroy bumps it. Without that, a device created at a
+// destroyed one's dispatch key got the deleted DeviceData (AC Origins: two
+// short-lived devices, then the third one's vkGetDeviceProcAddr jumped into
+// freed memory, ~2 of 3 starts).
+static std::atomic<uint64_t> g_dev_gen{0};
 static DeviceData* dev_of(void* k) {
     static thread_local void* last_k = nullptr;
     static thread_local DeviceData* last_d = nullptr;
-    if (k == last_k && last_d) return last_d;
+    static thread_local uint64_t last_gen = ~0ull;
+    uint64_t gen = g_dev_gen.load(std::memory_order_acquire);
+    if (k == last_k && last_d && gen == last_gen) return last_d;
     std::lock_guard<std::mutex> l(g_lock);
     auto it = g_devices.find(k);
     last_k = k;
     last_d = it == g_devices.end() ? nullptr : it->second;
+    last_gen = gen;
     return last_d;
 }
 
@@ -952,6 +961,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
     if (g_cfg.mirror) dd->md = mirror::create_twin(dd, ci, bda.ok, bda.replay);
     std::lock_guard<std::mutex> l(g_lock);
     g_devices[key(*out)] = dd;
+    g_dev_gen.fetch_add(1, std::memory_order_release);
     return VK_SUCCESS;
 }
 
@@ -983,6 +993,7 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroyDevice(VkDevice dev, const VkAlloca
     dd->d.DestroyDevice(dev, alloc);
     std::lock_guard<std::mutex> l(g_lock);
     g_devices.erase(key(dev));
+    g_dev_gen.fetch_add(1, std::memory_order_release);
     delete dd;
 }
 
