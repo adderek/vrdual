@@ -1808,7 +1808,10 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
         for (auto& e : ie)
             if (!strcmp(e.extensionName, "VK_KHR_surface")) iexts.push_back("VK_KHR_surface");
         VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-        app.pApplicationName = "vrdual mirror";
+        app.pApplicationName = id->app_name.empty() ? "vrdual mirror" : id->app_name.c_str();
+        app.applicationVersion = id->app_version;
+        app.pEngineName = id->engine_name.empty() ? nullptr : id->engine_name.c_str();
+        app.engineVersion = id->engine_version;
         app.apiVersion = std::max<uint32_t>(id->api_version, VK_API_VERSION_1_1);
         VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ici.pApplicationInfo = &app;
@@ -1901,6 +1904,16 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
     VkResult r = create_dev(md->bphys, &bci, nullptr, &md->bdev);
     if (r != VK_SUCCESS) {
         logf("mirror: vkCreateDevice on %s failed (%d) — mirror off", md->bname.c_str(), r);
+        if (r == VK_ERROR_EXTENSION_NOT_PRESENT) {
+            auto enum_dext = (PFN_vkEnumerateDeviceExtensionProperties)gipa(md->binst, "vkEnumerateDeviceExtensionProperties");
+            uint32_t n = 0;
+            enum_dext(md->bphys, nullptr, &n, nullptr);
+            std::vector<VkExtensionProperties> have(n);
+            enum_dext(md->bphys, nullptr, &n, have.data());
+            for (auto* e : exts)
+                if (std::none_of(have.begin(), have.end(), [&](const VkExtensionProperties& h) { return !strcmp(h.extensionName, e); }))
+                    logf("mirror:   %s not in the driver's device extensions (provided by a layer?)", e);
+        }
         destroy_inst(md->binst, nullptr);
         return nullptr;
     }
@@ -1909,8 +1922,8 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
     md->bep.eye = 1;
     md->replay = replay;
     if (bda && md->b.GetBufferDeviceAddress) create_param_buffer(md->b, md->bdev, md->bmp, md->bep);
-    logf("mirror: twin device on %s (pci %s) via %s — hidden from the app%s", md->bname.c_str(), md->bpci.c_str(), icd.c_str(),
-         replay ? ", device addresses replayed" : "");
+    logf("mirror: twin device on %s (pci %s) via %s — hidden from the app%s; instance as app '%s' engine '%s'", md->bname.c_str(),
+         md->bpci.c_str(), icd.c_str(), replay ? ", device addresses replayed" : "", id->app_name.c_str(), id->engine_name.c_str());
     return md.release();
 }
 

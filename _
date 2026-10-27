@@ -561,6 +561,7 @@ vrdual_selftest() {
     check awk '/^static .* m_(Destroy|Free)[A-Za-z0-9]*\(/ { f = $0; a = 0 } f && /^    (VkResult r = )?md->a\./ { a = 1 }
         f && a && /c\.xl\(|xl_handle\(/ { print "late translation in " f; bad = 1 } /^}/ { f = "" } END { exit bad }' "$B/mirror_gen.hpp" "$VRDUAL_ROOT/layer/vrdual_mirror.hpp"
     label="mirror: app sees 1 GPU, twin on 0b"; check bash -c "grep -q 'app sees 1 GPU' '$tmp/mirror.log' && grep -q 'twin device on .*0000:0b:00.0' '$tmp/mirror.log'"
+    label="mirror: twin instance carries the app's name (driver per-app options)"; check grep -q "twin device on .*instance as app 'vrdual-cube'" "$tmp/mirror.log"
     label="mirror: app clears alpha 0, frame file alpha 255"
     check bash -c "for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --alpha /dev/shm/vrdual-$sess-0) && break; sleep 0.1; done; [ \"\$a\" = 255 ]"
     label="mirror: default ipd 64mm"; check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m1.png' && $M '$tmp/m1.png' --ipd 0.064 --anchor center"
@@ -606,9 +607,9 @@ vrdual_selftest() {
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3b3. 10-bit swapchain (UE4 games pick A2B10G10R10 even with HDR off):
-    # exported through a blit to 8-bit, both eyes.
+    # exported through a blit to 8-bit, both eyes. Also runs with sparse = 1 (smoke test).
     rm -f /dev/shm/vrdual-$sess-*
-    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_SPARSE=1 \
         "$B/vrdual-cube" --scene calib --swapchain-format a2b10g10r10 --title "selftest 10-bit" >"$tmp/tb.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images\|not offered' "$tmp/tb.log" && break; sleep 0.1; done
     if grep -q 'not offered' "$tmp/tb.log"; then
@@ -617,6 +618,7 @@ vrdual_selftest() {
         label="mirror 10-bit swapchain: exported through a blit to 8-bit, ipd 64mm"
         check bash -c "grep -q 'exported through a blit' '$tmp/tb.log' && '$B/vrdual-compositor' --session $sess --snapshot '$tmp/tb.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
             $M '$tmp/tb.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/tb.log' || { cat '$tmp/tb.log'; false; }"
+        label="sparse = 1 (VRDUAL_SPARSE): applied, mirror runs"; check grep -q 'mirror_gpu=.* sparse=1' "$tmp/tb.log"
     fi
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 

@@ -38,6 +38,7 @@ static const Key kKeys[] = {
     {"hfov", "90", "assumed horizontal FOV of the app camera, degrees"},
     {"stereo", "1", "0 = layer passive in this app (launchers): no mirror, shader patch or export"},
     {"skip_w1", "1", "leave w == 1 vertices (HUD/post/ortho) unshifted"},
+    {"sparse", "0", "1 = sparse binding/residency visible to the app (D3D12 feature level 12_0 needs it); mirror replays the binds"},
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
     {"export", "1", "publish frames to /dev/shm for the compositor"},

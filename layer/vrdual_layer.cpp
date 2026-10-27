@@ -69,6 +69,7 @@ struct Config {
     int eye = -1;              // -1 = stereo off, 0 left, 1 right (mirror: 0 = the app's device)
     bool mirror = false;       // VRDUAL_EYE=both: one process, twin device on mirror_gpu
     bool skip_w1 = true;
+    bool sparse = false;
     bool export_frames = true;
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
@@ -217,6 +218,7 @@ static void load_config(const VkApplicationInfo* app) {
     if (stereo_off) c.mirror = false, c.eye = -1;
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
+    c.sparse = st.i("sparse") != 0;
     c.export_frames = st.i("export") != 0;
     c.cached_wp = st.i("cached_wp") != 0;
     c.cursor = st.i("cursor") != 0;
@@ -240,9 +242,10 @@ static void load_config(const VkApplicationInfo* app) {
     if (!told.exchange(true)) logf("%s (%d-bit layer)", VRDUAL_BUILD_INFO, int(sizeof(void*) * 8));
     logf("app='%s' exe='%s' profile='%s' session=%s (%s control block)", app_name.c_str(), exe_label.c_str(),
          st.profile.c_str(), c.session.c_str(), created ? "seeded" : "joined");
-    logf("eye=%s anchor=%s ipd=%.1fmm ipd_near=%.1fmm world_scale=%g hfov=%g skip_w1=%d gpu='%s'%s%s",
+    logf("eye=%s anchor=%s ipd=%.1fmm ipd_near=%.1fmm world_scale=%g hfov=%g skip_w1=%d gpu='%s'%s%s%s",
          c.mirror ? "both" : c.eye ? "right" : "left", vrdual_anchor_name(v.anchor), v.ipd * 1e3, v.ipd_near * 1e3,
-         v.world_scale, v.hfov, c.skip_w1, c.gpu.c_str(), c.mirror ? " mirror_gpu=" : "", c.mirror_gpu.c_str());
+         v.world_scale, v.hfov, c.skip_w1, c.gpu.c_str(), c.mirror ? " mirror_gpu=" : "", c.mirror_gpu.c_str(),
+         c.sparse ? " sparse=1" : "");
 }
 
 // ------------------------------------------------------------ dispatch ------
@@ -263,6 +266,10 @@ struct InstanceData {
     VkResult (VKAPI_PTR* CreateXlibSurfaceKHR)(VkInstance, const void*, const VkAllocationCallbacks*, VkSurfaceKHR*);
     VkResult (VKAPI_PTR* CreateXcbSurfaceKHR)(VkInstance, const void*, const VkAllocationCallbacks*, VkSurfaceKHR*);
     uint32_t api_version = VK_API_VERSION_1_0;
+    // App identity, reused for the mirror's own instance: drivers pick per-app
+    // and per-engine options by these (RADV drirc: vkd3d gets cooperative_matrix2_nv).
+    std::string app_name, engine_name;
+    uint32_t app_version = 0, engine_version = 0;
     VkPhysicalDevice chosen = VK_NULL_HANDLE;
     bool chosen_resolved = false;
 };
@@ -575,7 +582,13 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateInstance(const VkInstanceCreateI
     auto* id = new InstanceData{};
     id->instance = *out;
     id->gipa = gipa;
-    if (ci->pApplicationInfo && ci->pApplicationInfo->apiVersion) id->api_version = ci->pApplicationInfo->apiVersion;
+    if (auto* ai = ci->pApplicationInfo) {
+        if (ai->apiVersion) id->api_version = ai->apiVersion;
+        if (ai->pApplicationName) id->app_name = ai->pApplicationName;
+        if (ai->pEngineName) id->engine_name = ai->pEngineName;
+        id->app_version = ai->applicationVersion;
+        id->engine_version = ai->engineVersion;
+    }
 #define IFN(n) id->n = (PFN_vk##n)gipa(*out, "vk" #n)
     IFN(DestroyInstance); IFN(EnumeratePhysicalDevices); IFN(EnumeratePhysicalDeviceGroups);
     IFN(GetPhysicalDeviceProperties); IFN(GetPhysicalDeviceProperties2); IFN(GetPhysicalDeviceMemoryProperties);
@@ -659,6 +672,7 @@ static bool ext_hidden(const char* e) {
 }
 
 static void hide_core_features(VkPhysicalDeviceFeatures* f) {
+    if (g_cfg.sparse) return;  // D3D12 feature level 12_0 needs tiled resources tier 2
     f->sparseBinding = f->sparseResidencyBuffer = f->sparseResidencyImage2D = f->sparseResidencyImage3D = VK_FALSE;
     f->sparseResidency2Samples = f->sparseResidency4Samples = f->sparseResidency8Samples = VK_FALSE;
     f->sparseResidency16Samples = f->sparseResidencyAliased = VK_FALSE;

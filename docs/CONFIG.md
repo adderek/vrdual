@@ -54,6 +54,7 @@ map_x = KEY_E
 | `hfov` | `90` | degrees | the game's horizontal FOV (sets the eye shift and the HMD picture size); **live** |
 | `stereo` | `1` | `0` `1` | `0` = the layer stays passive in this app (no mirror, shader patch, export), as without `VRDUAL_EYE`; for launchers started by the same wrapper as the game. Built in for Ubisoft Connect (`upc.exe`, `UplayWebCore.exe`) and the EA app (`EADesktop.exe`), Wine's `explorer.exe` and Proton's `xalia.exe`. Wine processes also match `[app:NAME]` by the .exe in their command line (`upc.exe`), not only by `pApplicationName` |
 | `skip_w1` | `1` | `0` `1` | leave `w == 1` draws (HUD, post-process, 2D) unshifted |
+| `sparse` | `0` | `0` `1` | `1` = sparse binding / residency stay visible (hidden by default with the other features the mirror may not replay); vkd3d-proton needs them for D3D12 feature level 12_0 (Tiled Resources Tier 2). The mirror replays `vkQueueBindSparse` on the 2nd GPU (untested in a game; Witcher 3 with `sparse = 1` ended in a 06:00.0 hang, GAMES.md) |
 | `hud_depth` | `0` | meters, 0 = infinity | show `w == 1` draws (HUD) at this distance; live mode only; **live** |
 | `live` | `1` | `0` `1` | live params (shader reads a GPU buffer); falls back to baked automatically |
 | `export` | `1` | `0` `1` | publish frames to `/dev/shm` |

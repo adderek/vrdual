@@ -31,6 +31,11 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
 - Heroic (Epic/GOG through umu): wrapper command, per-game Proton logs,
   launchers (Ubisoft Connect, EA app) passive with `stereo = 0`.
   Assassin's Creed Origins runs smoothly in the headset.
+- Mirror: the twin instance carries the app's name and engine, so the
+  driver's per-app options match on both GPUs (RADV drirc gives vkd3d
+  `VK_NV_cooperative_matrix2`; without it the twin failed with -7). A failed
+  twin logs the missing extensions. `sparse = 1` keeps sparse visible
+  (D3D12 feature level 12_0; Witcher 3 starts, not stable yet).
 - `vrdual-xr` staging in cached memory (the edge mask read write-combined
   memory: 89 ms per frame, 10 Hz in the headset); stats split a headset frame
   into xrWaitFrame and our phases. `wivrn_gpu` puts the server on 0b.
