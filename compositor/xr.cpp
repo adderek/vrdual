@@ -234,29 +234,33 @@ static void barrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImage
 // happened (headset connected, game started, tune values, ...) and that the
 // picture is vrdual's stereo. Head-locked quad at 1.5 m, drawn on the CPU with
 // the baked font (common/vrdual_font.hpp), uploaded only when the text changes.
+// Notices use 3 lines; input = map shows the button list (14).
 struct Overlay {
-    static constexpr uint32_t kW = 1408, kH = 128;  // 86 characters per line
-    static constexpr int kLines = 3;
+    static constexpr uint32_t kW = 1408, kH = 576;  // 86 characters per line, 40 px per line
+    static constexpr int kLines = 14;
     EyeOut o;
     bool rgba = true;                 // swapchain byte order
     std::string text[kLines], shown;  // shown: text of the uploaded image, "" = transparent
     double until = 0;                 // visible while now < until
 };
 
-// Lines -> pixels: dark translucent panel, line 0 in the accent colour; all
-// lines empty = fully transparent.
+// Lines -> pixels: dark translucent panel down to the last non-empty line,
+// line 0 in the accent colour; below it (all lines empty: everything)
+// fully transparent.
 static void overlay_draw(uint8_t* px, const std::string* text, bool rgba) {
     const uint32_t W = Overlay::kW, H = Overlay::kH;
-    bool empty = true;
-    for (int l = 0; l < Overlay::kLines; ++l) empty &= text[l].empty();
-    const float bg[4] = {16, 18, 24, empty ? 0.f : 210}, fg[2][3] = {{120, 200, 255}, {235, 235, 235}};
-    std::vector<float> c(size_t(W) * H * 4);
-    for (uint32_t y = 0; y < H; ++y)
+    int last = -1;
+    for (int l = 0; l < Overlay::kLines; ++l)
+        if (!text[l].empty()) last = l;
+    const uint32_t ph = last < 0 ? 0 : std::min(H, 8 + uint32_t(last + 1) * (vrdual::kFontH + 10) + 2);  // panel height
+    const float bg[3] = {16, 18, 24}, fg[2][3] = {{120, 200, 255}, {235, 235, 235}};
+    std::vector<float> c(size_t(W) * H * 4);  // zero = transparent
+    for (uint32_t y = 0; y < ph; ++y)
         for (uint32_t x = 0; x < W; ++x) {
             float* p = &c[(size_t(y) * W + x) * 4];
-            bool edge = !empty && (x < 2 || y < 2 || x >= W - 2 || y >= H - 2);
+            bool edge = x < 2 || y < 2 || x >= W - 2 || y >= ph - 2;
             for (int k = 0; k < 3; ++k) p[k] = edge ? fg[0][k] : bg[k];
-            p[3] = edge ? 255 : bg[3];
+            p[3] = edge ? 255 : 210;
         }
     for (int l = 0; l < Overlay::kLines; ++l)
         for (size_t k = 0; k < text[l].size() && 16 + (k + 1) * vrdual::kFontW <= W - 16; ++k) {
@@ -839,6 +843,9 @@ static int run(int argc, char** argv) {
     int grab_recentres = 0;
     vrdual::Tuner tune;  // input = tune: sticks change world_scale / hud_depth / hfov
     bool tune_on = false, tune_seeded = false;
+    vrdual::MapEditor med;  // input = map: button maps edited in the headset
+    bool map_on = false;
+    std::string map_lines[Overlay::kLines];
     int control_changes = 0;  // mapper->changes already shown
     bool chord_hold = false;  // menu held with a / b pressed: a mode switch, not a recentre
     float hfov_now = 90;
@@ -1023,6 +1030,8 @@ static int run(int argc, char** argv) {
             tune.dz = ic.deadzone;
             tune.screen = scr.mode != SCREEN_FULL;
             tune_on = ic.input == "tune";
+            map_on = ic.input == "map";
+            med = vrdual::MapEditor{};
             tune_seeded = false;
             if (tune_on) tune_help(scr.mode);
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
@@ -1090,6 +1099,44 @@ static int run(int argc, char** argv) {
                     notify(std::string("tune: saved into [app:") + k.app + "]", false);
                 }
             }
+            if (map_on && mapper) {
+                auto own = [&](int m, int b) {  // this game's own map_<mode>_<button>, -1 = not set
+                    const std::string& s = icfg.map_src[m][b];
+                    std::string tail = std::string("] map_") + vrdual::kMapModes[m] + "_" + vrdual::kBtnNames[b];
+                    bool mine = s.rfind("[app:", 0) == 0 && s.size() > tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+                    return mine ? icfg.map[m][b] : vrdual::kMapDefaultChoice;
+                };
+                int r = med.step(c, t_now - t_input, own(med.mode, med.sel));
+                if (r & vrdual::MAP_SET) {
+                    std::string sec = "app:" + input_app, key = std::string("map_") + vrdual::kMapModes[med.mode] + "_" + vrdual::kBtnNames[med.sel];
+                    bool ok = med.code == vrdual::kMapDefaultChoice ? vrdual::remove_key(vrdual::config_path(), sec, key)
+                                                                   : vrdual::save_key(vrdual::config_path(), sec, key, vrdual::input_name(med.code));
+                    if (!ok) fprintf(stderr, "[xr] map: cannot write %s\n", vrdual::config_path().c_str());
+                    vrdual::InputCfg rl = vrdual::load_input_cfg(input_app);
+                    memcpy(icfg.map, rl.map, sizeof icfg.map);
+                    for (int m = 0; m < vrdual::M_COUNT; ++m)
+                        for (int b = 0; b < vrdual::B_COUNT; ++b) icfg.map_src[m][b] = rl.map_src[m][b];
+                    mapper->remap(rl);
+                    cfg_seen = cfg_mtime();
+                    fprintf(stderr, "[xr] map: [%s] %s %s\n", sec.c_str(), key.c_str(),
+                            med.code == vrdual::kMapDefaultChoice ? "removed" : (std::string("= ") + vrdual::input_name(med.code)).c_str());
+                }
+                // the list: header, help, one line per button (code, where it comes from)
+                int m = med.mode;
+                map_lines[0] = "map buttons: " + input_app + "   editing: " + vrdual::kMapModes[m] + " (left stick: gamepad / mouse)";
+                map_lines[1] = "press a button to pick it, right stick up/down = code, menu + a/b = leave";
+                for (int b = 0; b < vrdual::B_COUNT; ++b) {
+                    int code = icfg.map[m][b] >= 0 ? icfg.map[m][b] : vrdual::kMapDefault[m][b];
+                    const std::string& s = icfg.map_src[m][b];
+                    std::string from = s.empty() ? "built-in" : s.rfind("[app:", 0) == 0 ? "this game" : "[global]";
+                    if (b == vrdual::B_MENU && code == 0) from += m == vrdual::M_MOUSE ? ", cycles mouse_mode" : "";
+                    char l[128];
+                    snprintf(l, sizeof l, "%s %-5s %-16s %s", b == med.sel ? ">" : " ", vrdual::kBtnNames[b], vrdual::input_name(code), from.c_str());
+                    map_lines[2 + b] = l;
+                }
+                map_lines[13] = "";
+                ov.until = vrdual::now_s() + 0.5;
+            }
             if (mapper && t_now - cfg_checked >= 1) {
                 cfg_checked = t_now;
                 if (int64_t m = cfg_mtime(); m != cfg_seen) {
@@ -1111,7 +1158,8 @@ static int run(int argc, char** argv) {
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && mapper->changes != control_changes) {
                 control_changes = mapper->changes;
-                if (!vrdual::input_last_save(input_app, mapper->input(), mapper->mouse_mode()))
+                if (mapper->input() != "map" &&  // an editing mode, not one to start a game in
+                    !vrdual::input_last_save(input_app, mapper->input(), mapper->mouse_mode()))
                     fprintf(stderr, "[xr] could not save the control mode to %s\n", vrdual::input_last_path().c_str());
                 bool t = mapper->input() == "tune";
                 if (t && !tune_on) {
@@ -1122,6 +1170,11 @@ static int run(int argc, char** argv) {
                     tune_help(scr.mode);
                 }
                 tune_on = t;
+                if (mapper->input() == "map" && !map_on) {
+                    med = vrdual::MapEditor{};
+                    fprintf(stderr, "[xr] map: buttons pick, right stick up / down = code, left stick = gamepad / mouse maps, saved into [app:%s]\n", input_app.c_str());
+                }
+                map_on = mapper->input() == "map";
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
             }
             if (mapper && icfg.lean && c.head_ok) {
@@ -1364,7 +1417,9 @@ static int run(int argc, char** argv) {
             // visible: event + current settings; expired: one transparent image
             // (WiVRn keeps showing the last frame when nothing else is sent)
             for (auto& t : ov.text) t.clear();
-            if (ov.until > vrdual::now_s()) {
+            if (map_on && mapper) {
+                for (int l = 0; l < Overlay::kLines; ++l) ov.text[l] = map_lines[l];
+            } else if (ov.until > vrdual::now_s()) {
                 vrdual_ctl k{};
                 if (ctl) k = vrdual::ctl_read(ctl);
                 char b[3][160];
@@ -1386,8 +1441,9 @@ static int run(int argc, char** argv) {
                 }
                 for (int l = 0; l < 3; ++l) ov.text[l] = b[l];
             }
-            std::string all = ov.text[0] + "\n" + ov.text[1] + "\n" + ov.text[2];
-            if (all == "\n\n") all.clear();
+            std::string all;
+            for (auto& t : ov.text) all += t + "\n";
+            if (all.find_first_not_of('\n') == std::string::npos) all.clear();
             bool ok = ov.o.sc || overlay_init(s, g, formats, ov);
             if (ok && (all != ov.shown || !ov.o.released)) {
                 ok = overlay_upload(g, ov);
@@ -1403,8 +1459,9 @@ static int run(int argc, char** argv) {
                 ovq.space = view_space;
                 ovq.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
                 ovq.subImage = {ov.o.sc, {{0, 0}, {int32_t(ov.o.w), int32_t(ov.o.h)}}, 0};
-                ovq.pose = {{0, 0, 0, 1}, {0, -0.25f, -1.5f}};
-                ovq.size = {1.1f, 1.1f * Overlay::kH / Overlay::kW};  // same text size as 0.8 m at 1024 px
+                // same text size as 0.8 m at 1024 px; top edge where the 3-line panel's was
+                ovq.size = {1.1f, 1.1f * Overlay::kH / Overlay::kW};
+                ovq.pose = {{0, 0, 0, 1}, {0, -0.2f - ovq.size.height / 2, -1.5f}};
                 layers.push_back((XrCompositionLayerBaseHeader*)&ovq);
             }
         }

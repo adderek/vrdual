@@ -54,7 +54,7 @@ static const Key kKeys[] = {
     {"wivrn_gpu", "pci:0000:0b:00.0", "GPU for wivrn-server (`vrdual wivrn`; vrdual-xr follows): pci:... | default (Vulkan's choice)"},
     {"log", "1", "layer logging to stderr"},
     // input (vrdual-xr): VR controllers -> virtual pad / mouse / keys; map_<button> = KEY_*|BTN_*
-    {"input", "gamepad", "controllers as: gamepad | mouse | tune (sticks: world_scale/hud_depth/hfov; grips: move/scale the screen) | off. Last used per game wins over [global]; [app:NAME] wins over that"},
+    {"input", "gamepad", "controllers as: gamepad | mouse | tune (sticks: world_scale/hud_depth/hfov; grips: move/scale the screen) | map (edit button maps in the headset) | off. Last used per game wins over [global]; [app:NAME] wins over that"},
     {"mouse_mode", "stick", "mouse from controllers: stick | motion | aim (menu button cycles)"},
     {"mouse_speed", "1", "pointer speed factor"},
     {"mouse_curve", "2.5", "stick response exponent (stick mode)"},

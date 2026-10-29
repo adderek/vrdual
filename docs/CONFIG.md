@@ -103,7 +103,7 @@ elsewhere the grips are the game's):
 | control | world lock | head lock |
 |---|---|---|
 | menu (≡, left) held 1 s | picture in front of the current gaze | freeze in place / follow again |
-| menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → tune (notice in the headset) | same |
+| menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → tune → map (notice in the headset) | same |
 | both grips held (`tune`) | move with the hands, hand distance scales; no turning | same |
 | … + left trigger held | also turn with the hands' line (15° snap; press the right trigger during the grab for free turning) and orbit with the left stick | same |
 | … + right stick | stretch width (x) / height (y) | same |
@@ -113,7 +113,7 @@ elsewhere the grips are the game's):
 
 | key | default | values | meaning |
 |---|---|---|---|
-| `input` | `gamepad` | `gamepad` `mouse` `tune` `off` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings and move the screen (below), the game gets nothing. The mode a game starts in; menu + a / b switches it in the headset. Each switch is remembered per game (`~/.local/state/vrdual/input_last.tsv`, with `mouse_mode`) and the next start uses it instead of `[global]` / built-in; `input` in `[app:NAME]` (or `VRDUAL_INPUT`) wins over the remembered mode. The `vrdual xr` log says which one applied (`input: …`) |
+| `input` | `gamepad` | `gamepad` `mouse` `tune` `map` `off` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings and move the screen (below), the game gets nothing. The mode a game starts in; menu + a / b switches it in the headset. Each switch is remembered per game (`~/.local/state/vrdual/input_last.tsv`, with `mouse_mode`) and the next start uses it instead of `[global]` / built-in; `input` in `[app:NAME]` (or `VRDUAL_INPUT`) wins over the remembered mode. The `vrdual xr` log says which one applied (`input: …`) |
 | `mouse_mode` | `stick` | `stick` `motion` `aim` | right stick moves the pointer / right controller rotation / controller ray = absolute pointer. A short menu press cycles them |
 | `mouse_speed` | `1` | factor | pointer speed |
 | `mouse_curve` | `2.5` | exponent | stick response (stick mode) |
@@ -135,6 +135,20 @@ both grips: the screen grab above):
 | right stick left / right | `screen = full`: `hfov` ±20°/s; flat / curved: `screen_fov` ±20°/s (screen width; there `hfov` only scales the depth like `world_scale`, set it with `vrdual set` if needed) |
 | a | save them into `[app:NAME]` (and the Steam copy of the config); flat / curved also `screen_fov` |
 | b | undo: back to the last saved values; again: to the values the game started with; again: to the defaults (`world_scale` 1, `hud_depth` 0, `hfov` 90, `screen_fov` 60) |
+
+`input = map` (edit button maps in the headset; the game gets nothing, `map` is
+not remembered as the game's start mode): a panel lists the 11 buttons with
+their code and where it comes from (built-in, `[global]`, this game).
+
+| control | does |
+|---|---|
+| a b x y l3 r3 lt rt lg rg | pick that button (`>` in the list) |
+| right stick up / down | its code: next / previous of `default` (remove this game's setting), `none`, common keys (E F Q R I J M Tab Space Enter Esc Backspace Shift Ctrl Alt 1-4 F1 F5 F9), mouse buttons, in gamepad maps also the pad buttons; repeats while held |
+| left stick left / right | edit the gamepad / mouse maps |
+| menu + a / b | leave (next / previous control mode) |
+
+Each change is written at once as `map_<mode>_<button>` into `[app:NAME]` and
+applies immediately. Other codes: `_ map` or the config file.
 
 Default buttons in mouse mode: a = Enter, b = Esc, x = Space, y = Tab,
 l3 = Alt, r3 = middle click, lt = Shift, rt = left click, lg = Ctrl,

@@ -14,10 +14,11 @@
 // gamepad, mouse) or map_<button> (both modes) in [global] or [app:NAME];
 // buttons: a b x y l3 r3 lt rt lg rg menu. Most specific wins: [app:NAME]
 // map_<mode>_<button>, [app:NAME] map_<button>, [global] ..., built-in
-// (kMapDefault). vrdual-xr reloads them when the config file changes. In mouse mode the menu
-// button (unmapped) cycles mouse_mode; held 1 s it re-centres head_look=edge.
+// (kMapDefault). vrdual-xr reloads them when the config file changes; input =
+// map edits them in the headset (MapEditor). In mouse mode the menu button
+// (unmapped) cycles mouse_mode; held 1 s it re-centres head_look=edge.
 // Menu held + a / b: next / previous control mode (off, gamepad, mouse stick,
-// motion, aim, tune), in every mode; so menu's own code (gamepad: Start) is
+// motion, aim, tune, map), in every mode; so menu's own code (gamepad: Start) is
 // sent as a tap when it is released without a chord and before 1 s.
 //
 // Mapper is pure (state in, events out) so it can be tested without devices;
@@ -309,6 +310,59 @@ static const int kMapDefault[M_COUNT][B_COUNT] = {
     {KEY_ENTER, KEY_ESC, KEY_SPACE, KEY_TAB, KEY_LEFTALT, BTN_MIDDLE, KEY_LEFTSHIFT, BTN_LEFT, KEY_LEFTCTRL, BTN_RIGHT, 0},
 };
 
+// input = map: button maps edited in the headset (vrdual-xr shows the list):
+//   a b x y l3 r3 lt rt lg rg   pick that button (the game gets nothing)
+//   right stick up / down       its code: next / previous in kMapChoices
+//                               (repeats while held); the first entry,
+//                               default, removes this game's setting
+//   left stick left / right     edit gamepad / mouse maps
+// step() returns MAP_* bits; on MAP_SET, code is the choice (kMapDefaultChoice
+// = remove [app:NAME] map_<mode>_<button>). The caller passes the button's
+// current [app:NAME]-or-inherited value (-1 = none set) to start from.
+enum { MAP_MOVED = 1, MAP_SET = 2 };
+static constexpr int kMapDefaultChoice = -1;
+inline const std::vector<int>& map_choices(int mode) {
+    static const std::vector<int> common = {kMapDefaultChoice, 0, KEY_E, KEY_F, KEY_Q, KEY_R, KEY_I, KEY_J, KEY_M, KEY_TAB, KEY_SPACE,
+                                            KEY_ENTER, KEY_ESC, KEY_BACKSPACE, KEY_LEFTSHIFT, KEY_LEFTCTRL, KEY_LEFTALT, KEY_1, KEY_2,
+                                            KEY_3, KEY_4, KEY_F1, KEY_F5, KEY_F9, BTN_LEFT, BTN_RIGHT, BTN_MIDDLE};
+    static const std::vector<int> pad = [] {
+        std::vector<int> v = common;
+        for (int c : {BTN_A, BTN_B, BTN_X, BTN_Y, BTN_TL, BTN_TR, BTN_THUMBL, BTN_THUMBR, BTN_START, BTN_SELECT, BTN_MODE}) v.push_back(c);
+        return v;
+    }();
+    return mode == M_GAMEPAD ? pad : common;
+}
+struct MapEditor {
+    int mode = M_MOUSE, sel = B_A;
+    int code = kMapDefaultChoice;  // MAP_SET result
+    bool prev[B_COUNT] = {};
+    int dir = 0, lx = 0;           // right stick y / left stick x held direction
+    double rep = 0;                // time to the next repeat
+
+    int step(const Controls& c, double dt, int current) {
+        int r = 0;
+        bool now[B_COUNT] = {c.a, c.b, c.x, c.y, c.l3, c.r3, c.lt > 0.5f, c.rt > 0.5f, c.lg > 0.5f, c.rg > 0.5f, c.menu};
+        for (int b = 0; b < B_MENU; ++b)
+            if (now[b] && !prev[b] && !c.menu && b != sel) { sel = b; r |= MAP_MOVED; }  // menu + a / b leaves the mode
+        memcpy(prev, now, sizeof prev);
+        int x = c.lx > 0.5f ? 1 : c.lx < -0.5f ? -1 : 0;
+        if (x && x != lx) { mode = x < 0 ? M_GAMEPAD : M_MOUSE; r |= MAP_MOVED; }
+        lx = x;
+        int d = c.ry > 0.5f ? 1 : c.ry < -0.5f ? -1 : 0;
+        bool fire = d && (d != dir || (rep -= dt) <= 0);
+        if (d != dir) rep = 0.4;            // first repeat after 0.4 s
+        else if (fire) rep = 0.2;           // then 5 per second
+        dir = d;
+        if (!fire) return r;
+        const auto& ch = map_choices(mode);
+        int i = 0;
+        while (i < int(ch.size()) && ch[i] != current) ++i;
+        if (i == int(ch.size())) i = 0;      // a code not in the list: from default
+        code = ch[(i + (d > 0 ? 1 : -1) + ch.size()) % ch.size()];
+        return r | MAP_SET;
+    }
+};
+
 struct InputCfg {
     std::string input = "off", mouse_mode = "stick", lstick = "wasd", head_look = "off";
     float speed = 1, curve = 2.5f, deadzone = 0.15f;
@@ -504,15 +558,16 @@ private:
     // Next (+1) / previous (-1) control mode. Releases whatever the old mode
     // holds down (keys, buttons, pad axes) so nothing sticks.
     void cycle(int dir, std::vector<InEvent>& ev) {
-        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "tune"};
-        int pos = cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 5 : 0;
+        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "tune", "map"};
+        const int n = 7;
+        int pos = cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 5 : cfg_.input == "map" ? 6 : 0;
         for (int b = 0; b < B_COUNT; ++b)
             if (down_code_[b] > 0) key(ev, down_code_[b], false), down_code_[b] = 0;
         for (int i = 0; i < 4; ++i)
             if (dir_[i]) key(ev, lstick_key(i), false), dir_[i] = false;
         if (cfg_.input == "gamepad")
             for (int a : {ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ}) axis(ev, a, 0);
-        pos = (pos + dir + 6) % 6;
+        pos = (pos + dir + n) % n;
         cfg_.input = kIn[pos];
         if (pos >= 2 && pos <= 4) mode_ = pos - 2;
         hand_prev_ok_ = false;

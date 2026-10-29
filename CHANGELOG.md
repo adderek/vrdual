@@ -48,6 +48,10 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   `~/.local/state/vrdual/xr.log`, rotated (5 MB at most); the terminal shows
   only state lines and errors, with the time.
 - Layer: a present that is not exported logs why, once per reason.
+- `input = map` (after tune in the menu + a / b cycle): edit button maps in
+  the headset; a 14-line panel lists the buttons, a button picks one, the
+  right stick steps through common codes, the left stick switches gamepad /
+  mouse maps; each change goes into `[app:NAME]` at once.
 - Button maps per mode and per game: `map_gamepad_<button>` /
   `map_mouse_<button>` (`map_<button>` for both), `[app:NAME]` overrides
   `[global]`; `vrdual xr` reloads them when the config changes. `_ map`

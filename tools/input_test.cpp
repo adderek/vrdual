@@ -329,7 +329,7 @@ int main() {
         c.b = true; ev = m.step(c, 0.01);
         expect(m.input() == "gamepad" && has(ev, {DEV_MOUSE, EV_KEY, BTN_LEFT, 0}), "mouse -> back: left button released");
         c = Controls{}; m.step(c, 0.01);
-        // b from off wraps to tune; a walks through all six
+        // b from off wraps to map; a walks through all seven
         Mapper w(cfg("off"));
         auto chord = [&](bool next) {
             Controls k; k.menu = true; w.step(k, 0.01);
@@ -337,10 +337,34 @@ int main() {
             w.step(Controls{}, 0.01);
         };
         chord(false);
-        expect(w.input() == "tune", "off: menu + b -> tune");
+        expect(w.input() == "map", "off: menu + b -> map");
         std::string seen;
-        for (int i = 0; i < 6; ++i) { chord(true); seen += w.controls() + ","; }
-        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,tune,", ("cycle: " + seen).c_str());
+        for (int i = 0; i < 7; ++i) { chord(true); seen += w.controls() + ","; }
+        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,tune,map,", ("cycle: " + seen).c_str());
+    }
+    {  // map editor: pick a button, right stick steps through the choices, left stick switches the mode
+        MapEditor e;
+        Controls c;
+        c.x = true;
+        expect(e.step(c, 0.01, -1) == MAP_MOVED && e.sel == B_X, "map: x pressed -> x picked");
+        c.x = false; c.ry = 1;
+        int r = e.step(c, 0.01, -1);
+        expect((r & MAP_SET) && e.code == 0, "map: stick up from default -> none");
+        r = e.step(c, 0.1, 0);
+        expect(!(r & MAP_SET), "map: held, no repeat before 0.4 s");
+        r = e.step(c, 0.35, 0);
+        expect((r & MAP_SET) && e.code == KEY_E, "map: held 0.45 s -> repeat, KEY_E");
+        c.ry = 0; e.step(c, 0.01, KEY_E);
+        c.ry = -1;
+        r = e.step(c, 0.01, kMapDefaultChoice);
+        expect((r & MAP_SET) && e.code == BTN_MIDDLE, "map: stick down from default wraps to the last mouse choice");
+        c.ry = 0; c.lx = -1;
+        expect(e.step(c, 0.01, -1) == MAP_MOVED && e.mode == M_GAMEPAD, "map: left stick left -> gamepad maps");
+        c.lx = 0; c.ry = -1;
+        r = e.step(c, 0.01, kMapDefaultChoice);
+        expect((r & MAP_SET) && e.code == BTN_MODE, "map: gamepad choices end with pad buttons");
+        c = Controls{}; c.menu = true; c.a = true;
+        expect(e.step(c, 0.01, -1) == 0 && e.sel == B_X, "map: menu + a (leaving) does not pick a");
     }
     {  // screen grab only in tune (move = false elsewhere): grips stay the game's, the menu hold still recentres
         ScreenGrab g;
