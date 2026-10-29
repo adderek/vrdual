@@ -30,7 +30,7 @@ Already well modded: test the existing mods with vrdual, don't redo them
 
 | game | existing mods |
 |---|---|
-| Morrowind | OpenMW (native GL/Vulkan), MGE XE, Morrowind RTX |
+| Morrowind | OpenMW (native GL/Vulkan), MGE XE, Morrowind RTX; parallax / normal-mapped textures wanted (user, 2026-10-29: runs well in vrdual without mods) |
 | Deus Ex GOTY | Kentie's D3D10/11 renderer, GMDX, Revision, HDTP |
 | Thief Gold / Thief 2 | NewDark, TFix/T2Fix, HD texture packs |
 | System Shock 2 | SS2Tool, SHTUP |
