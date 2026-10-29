@@ -142,6 +142,9 @@ struct MDev {
     std::vector<Writeback> wbs;                                    // submitted, not yet copied back
     std::vector<VkFence> fence_pool;                               // our fences for submits without one
     uint64_t wb_bytes = 0;
+    // memory exported as an fd on A: dma-buf inode -> A memory. An import of
+    // that fd gets B's twin exported instead, so B shares the buffer like A.
+    std::unordered_map<uint64_t, uint64_t> exported;
 };
 
 static MDev* mdev_of(void* k) {
@@ -938,8 +941,53 @@ static char* anon(size_t n) {
     return p == MAP_FAILED ? nullptr : (char*)p;
 }
 
+static uint64_t fd_inode(int fd) {
+    struct stat st;
+    return fstat(fd, &st) ? 0 : (uint64_t)st.st_ino;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL m_GetMemoryFdKHR(VkDevice dev, const VkMemoryGetFdInfoKHR* gi, int* fd) {
+    MDev* md = mdev_of(key(dev));
+    VkResult r = md->a.GetMemoryFdKHR(dev, gi, fd);
+    if (r >= 0)
+        if (uint64_t ino = fd_inode(*fd)) {
+            std::lock_guard<std::mutex> l(md->lock);
+            md->exported[ino] = h2u(gi->memory);
+        }
+    return r;
+}
+
+// Import of an fd on A: B imports its twin of the exporting memory (same
+// handle type), or, for an fd from elsewhere, gets plain memory.
+static void import_on_b(MDev* md, uint64_t ino, VkMemoryAllocateInfo& bai) {
+    VkBaseOutStructure* prev = (VkBaseOutStructure*)&bai;
+    for (auto* s = prev->pNext; s; prev = s, s = s->pNext) {
+        if (s->sType != VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR) continue;
+        auto* im = (VkImportMemoryFdInfoKHR*)s;
+        VkDeviceMemory am = VK_NULL_HANDLE;
+        {
+            std::lock_guard<std::mutex> l(md->lock);
+            auto it = md->exported.find(ino);
+            if (ino && it != md->exported.end()) am = u2h<VkDeviceMemory>(it->second);
+        }
+        VkMemoryGetFdInfoKHR gi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR, nullptr, am ? xl_handle(am) : VK_NULL_HANDLE, im->handleType};
+        int bfd = -1;
+        if (gi.memory && md->b.GetMemoryFdKHR && md->b.GetMemoryFdKHR(md->bdev, &gi, &bfd) >= 0) {
+            im->fd = bfd;
+            logf("mirror: memory fd import shares B's twin of the exporting memory");
+        } else {
+            prev->pNext = s->pNext;
+            logf("mirror: memory fd import from an unknown exporter: plain memory on B (contents not shared)");
+        }
+        return;
+    }
+}
+
 static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateMemory(VkDevice dev, const VkMemoryAllocateInfo* ai, const VkAllocationCallbacks* alloc, VkDeviceMemory* out) {
     MDev* md = mdev_of(key(dev));
+    uint64_t ino = 0;  // A takes ownership of an imported fd: identify it first
+    for (auto* s = (const VkBaseInStructure*)ai->pNext; s; s = s->pNext)
+        if (s->sType == VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR) ino = fd_inode(((const VkImportMemoryFdInfoKHR*)s)->fd);
     // Device-address memory gets the same GPU VA on B: allocated replayable on
     // A, then replayed on B at A's opaque address. Flags are the app's, restored.
     VkMemoryAllocateFlagsInfo* fi = nullptr;
@@ -954,6 +1002,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateMemory(VkDevice dev, const VkMem
     VkMemoryAllocateInfo bai;
     tr_VkMemoryAllocateInfo(c, ai, &bai);
     if (fi) fi->flags = saved;
+    import_on_b(md, ino, bai);
     VkMemoryOpaqueCaptureAddressAllocateInfo oc{VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO, bai.pNext};
     if (rp) {
         VkDeviceMemoryOpaqueCaptureAddressInfo q{VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO, nullptr, *out};
@@ -1034,6 +1083,8 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeMemory(VkDevice dev, VkDeviceMemory mem,
             wp::remove(it->second.wp);
             md->mems.erase(it);
         }
+        for (auto e = md->exported.begin(); e != md->exported.end();)
+            e = e->second == h2u(mem) ? md->exported.erase(e) : std::next(e);
         // a new allocation may get the same handle: forget pending writes into this one
         auto gone = [&](const MemRange& r) { return r.mem == h2u(mem); };
         for (auto& w : md->wbs) w.r.erase(std::remove_if(w.r.begin(), w.r.end(), gone), w.r.end());
@@ -1747,7 +1798,7 @@ static PFN_vkVoidFunction lookup(const char* name) {
         M(CreateDescriptorUpdateTemplate); M(DestroyDescriptorUpdateTemplate); M(UpdateDescriptorSetWithTemplate);
         M(CmdPushDescriptorSetWithTemplate); M(CmdPushDescriptorSetWithTemplate2); M(CreateShaderModule);
         M(CreateGraphicsPipelines); M(AcquireNextImageKHR); M(AcquireNextImage2KHR); M(CreateBuffer);
-        M(GetBufferDeviceAddress);
+        M(GetBufferDeviceAddress); M(GetMemoryFdKHR);
 #undef M
         if (n == "vkDestroyDevice") return (PFN_vkVoidFunction)vrd_DestroyDevice;
         if (n == "vkCreateSwapchainKHR") return (PFN_vkVoidFunction)vrd_CreateSwapchainKHR;

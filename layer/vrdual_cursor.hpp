@@ -35,11 +35,12 @@ static uint32_t window_of(VkSurfaceKHR s) {
 struct X {
 #define XF(n) decltype(&::xcb_##n) n = nullptr
     XF(connect); XF(connection_has_error); XF(query_pointer); XF(query_pointer_reply);
-    XF(get_geometry); XF(get_geometry_reply);
+    XF(get_geometry); XF(get_geometry_reply); XF(get_setup); XF(setup_roots_iterator);
     XF(xfixes_query_version); XF(xfixes_query_version_reply); XF(xfixes_get_cursor_image);
     XF(xfixes_get_cursor_image_reply); XF(xfixes_get_cursor_image_cursor_image);
 #undef XF
     xcb_connection_t* c = nullptr;
+    uint32_t root = 0;
     bool tried = false;
 
     bool init() {
@@ -50,11 +51,11 @@ struct X {
         if (!a || !b) { logf("cursor: libxcb / libxcb-xfixes not found, no cursor in the HMD"); return false; }
 #define XL(h, n) n = (decltype(n))dlsym(h, "xcb_" #n)
         XL(a, connect); XL(a, connection_has_error); XL(a, query_pointer); XL(a, query_pointer_reply);
-        XL(a, get_geometry); XL(a, get_geometry_reply);
+        XL(a, get_geometry); XL(a, get_geometry_reply); XL(a, get_setup); XL(a, setup_roots_iterator);
         XL(b, xfixes_query_version); XL(b, xfixes_query_version_reply); XL(b, xfixes_get_cursor_image);
         XL(b, xfixes_get_cursor_image_reply); XL(b, xfixes_get_cursor_image_cursor_image);
 #undef XL
-        if (!connect || !xfixes_get_cursor_image_cursor_image) return false;
+        if (!connect || !xfixes_get_cursor_image_cursor_image || !setup_roots_iterator) return false;
         xcb_connection_t* cn = connect(nullptr, nullptr);
         if (!cn || connection_has_error(cn)) { logf("cursor: cannot connect to X (DISPLAY=%s)", getenv("DISPLAY") ? getenv("DISPLAY") : ""); return false; }
         // XFixes needs the version handshake before any other request
@@ -62,16 +63,25 @@ struct X {
         if (!v) { logf("cursor: X server without XFixes"); return false; }
         free(v);
         c = cn;
+        root = setup_roots_iterator(get_setup(cn)).data->root;
         logf("cursor: X11 cursor exported (DISPLAY=%s)", getenv("DISPLAY") ? getenv("DISPLAY") : "");
         return true;
     }
 };
 
 // Pointer over `win` scaled to the swapchain extent, plus the cursor image,
-// into every open frame header.
+// into every open frame header. Window unknown under gamescope: its WSI layer
+// (64-bit, above ours) turns the app's X11 surface into a Wayland one; the
+// game fills gamescope's nested X screen, so the root window stands in.
 static void update(uint32_t win, VkExtent2D ext, vrdual_shm_header* const* hdrs, int n) {
     static X& x = *new X;
-    if (!win || !x.init()) return;
+    static const bool gamescope = getenv("GAMESCOPE_WAYLAND_DISPLAY");
+    if ((!win && !gamescope) || !x.init()) return;
+    if (!win) {
+        static std::once_flag once;
+        std::call_once(once, [] { logf("cursor: surface window unknown (gamescope WSI), pointer over the root window"); });
+        win = x.root;
+    }
     auto qp = x.query_pointer(x.c, win);
     auto gg = x.get_geometry(x.c, win);
     auto ci = x.xfixes_get_cursor_image(x.c);

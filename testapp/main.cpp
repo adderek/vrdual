@@ -24,6 +24,9 @@
 // --clear-alpha A: background alpha (games leave 0; the layer exports 1).
 // --extra-window: a second, small swapchain created after the main one and
 // presented every frame too (like wined3d's helper windows).
+// --mem-export: the vertex memory is exported as an opaque fd and imported
+// into a second allocation, which the draws read (D3D11 shared resources:
+// DXVK + winevulkan build them on VK_KHR_external_memory_fd; Unity games).
 //
 // --bda: Vulkan 1.4 paths DXVK 3 relies on: vertices read through a buffer
 // device address (no vertex input), memory mapped with vkMapMemory2, vertex
@@ -87,7 +90,7 @@ struct PC { M4 mvp; float color[4]; VkDeviceAddress verts; };
 int main(int argc, char** argv) {
     int frames = 0, W = 960, H = 720;
     std::string title = "vrdual-cube", scene = "cubes";
-    bool bda = false, extra = false;
+    bool bda = false, extra = false, mem_export = false;
     float clear_alpha = 1;
     int late_verts = 0;
     bool cached = false, verts_file = false, readback = false;
@@ -99,6 +102,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) scene = argv[++i];
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
+        else if (!strcmp(argv[i], "--mem-export")) mem_export = true;
         else if (!strcmp(argv[i], "--cached")) cached = true;
         else if (!strcmp(argv[i], "--verts-file")) verts_file = true;
         else if (!strcmp(argv[i], "--readback")) readback = true;
@@ -150,11 +154,20 @@ int main(int argc, char** argv) {
     qci.queueFamilyIndex = fam;
     qci.queueCount = 1;
     qci.pQueuePriorities = &prio;
-    const char* dext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char* dext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};
+    bool mem_fd = false;
+    if (mem_export) {
+        uint32_t ne = 0;
+        vkEnumerateDeviceExtensionProperties(pd, nullptr, &ne, nullptr);
+        std::vector<VkExtensionProperties> de(ne);
+        vkEnumerateDeviceExtensionProperties(pd, nullptr, &ne, de.data());
+        for (auto& e : de) mem_fd |= !strcmp(e.extensionName, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+        if (!mem_fd) fprintf(stderr, "vrdual-cube: %s not offered\n", VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    }
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = mem_fd ? 2 : 1;
     dci.ppEnabledExtensionNames = dext;
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     f12.bufferDeviceAddress = VK_TRUE;
@@ -377,7 +390,8 @@ int main(int argc, char** argv) {
     CK(vkCreateBuffer(dev, &bci, nullptr, &vbuf));
     vkGetBufferMemoryRequirements(dev, vbuf, &mr);
     VkMemoryAllocateFlagsInfo mafi{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT};
-    mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, bda ? &mafi : nullptr, mr.size,
+    VkExportMemoryAllocateInfo emai{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO, nullptr, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, bda ? (void*)&mafi : mem_fd ? (void*)&emai : nullptr, mr.size,
            memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
                                           (cached ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT : 0))};
     VkDeviceMemory vmem;
@@ -397,6 +411,23 @@ int main(int argc, char** argv) {
     }
     if (late_verts) memset(p, 0, verts.size() * 4);
     else memcpy(p, verts.data(), verts.size() * 4);
+    VkBuffer dbuf = vbuf;  // the buffer the draws read
+    if (mem_fd && !bda) {
+        auto get_fd = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(dev, "vkGetMemoryFdKHR");
+        VkMemoryGetFdInfoKHR gi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR, nullptr, vmem, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        int fd = -1;
+        CK(get_fd(dev, &gi, &fd));
+        VkExternalMemoryBufferCreateInfo ebci{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO, nullptr, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        VkBufferCreateInfo ici = bci;
+        ici.pNext = &ebci;
+        CK(vkCreateBuffer(dev, &ici, nullptr, &dbuf));
+        VkImportMemoryFdInfoKHR imfi{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR, nullptr, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT, fd};
+        VkMemoryAllocateInfo iai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &imfi, mr.size, mai.memoryTypeIndex};
+        VkDeviceMemory xmem;
+        CK(vkAllocateMemory(dev, &iai, nullptr, &xmem));  // ownership of fd passes to the driver
+        CK(vkBindBufferMemory(dev, dbuf, xmem, 0));
+        fprintf(stderr, "vrdual-cube: vertex memory exported as an fd, draws read the imported copy\n");
+    }
     int vfd = -1;  // --verts-file: unlinked temp file holding the vertices
     if (verts_file) {
         char tmpl[] = "/tmp/vrdual-cube-verts-XXXXXX";
@@ -610,7 +641,7 @@ int main(int argc, char** argv) {
         vkCmdBeginRenderPass(cb, &rbi, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
         VkDeviceSize off = 0;
-        if (!bda) vkCmdBindVertexBuffers(cb, 0, 1, &vbuf, &off);
+        if (!bda) vkCmdBindVertexBuffers(cb, 0, 1, &dbuf, &off);
         float t = float(frame) / 60.0f;
         for (auto& o : objs) {
             M4 rot = spin ? mul(rot_y(t + o.x), rot_x(0.5f * t + o.z)) : ident();

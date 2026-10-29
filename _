@@ -607,10 +607,12 @@ vrdual_selftest() {
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3b3. 10-bit swapchain (UE4 games pick A2B10G10R10 even with HDR off):
-    # exported through a blit to 8-bit, both eyes. Also runs with sparse = 1 (smoke test).
+    # exported through a blit to 8-bit, both eyes. Also runs with sparse = 1 (smoke test)
+    # and draws from vertex memory exported as an fd and imported (the right eye
+    # only shows the posts if B shares the import like A does).
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_SPARSE=1 \
-        "$B/vrdual-cube" --scene calib --swapchain-format a2b10g10r10 --title "selftest 10-bit" >"$tmp/tb.log" 2>&1 &
+        "$B/vrdual-cube" --scene calib --swapchain-format a2b10g10r10 --mem-export --title "selftest 10-bit" >"$tmp/tb.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images\|not offered' "$tmp/tb.log" && break; sleep 0.1; done
     if grep -q 'not offered' "$tmp/tb.log"; then
         say "SKIP  10-bit swapchain (the surface offers no A2B10G10R10)"
@@ -619,6 +621,8 @@ vrdual_selftest() {
         check bash -c "grep -q 'exported through a blit' '$tmp/tb.log' && '$B/vrdual-compositor' --session $sess --snapshot '$tmp/tb.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
             $M '$tmp/tb.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/tb.log' || { cat '$tmp/tb.log'; false; }"
         label="sparse = 1 (VRDUAL_SPARSE): applied, mirror runs"; check grep -q 'mirror_gpu=.* sparse=1' "$tmp/tb.log"
+        label="mirror: external_memory_fd visible, an import shares B's twin of the exporter"
+        check bash -c "grep -q 'draws read the imported copy' '$tmp/tb.log' && grep -q 'import shares B' '$tmp/tb.log' || { grep -i 'memory\\|STOP' '$tmp/tb.log'; false; }"
     fi
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
@@ -687,6 +691,17 @@ vrdual_selftest() {
             set -- \$c && [[ \$3 -gt 0 && \$4 -gt 0 ]] || { echo \"cursor: \$c\"; grep cursor '$tmp/gl.log'; false; }"
         kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     done
+    # 4. Under gamescope the 64-bit WSI layer sits above ours and hands down a
+    # Wayland surface: the cursor comes from the root of gamescope's X screen.
+    # Here: a Wayland window, gamescope's env var without its layer, XWayland's root.
+    rm -f /dev/shm/vrdual-$sess-*
+    env SDL_VIDEO_DRIVER=wayland GAMESCOPE_WAYLAND_DISPLAY=vrdual-selftest VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both "$B/vrdual-cube" --title "selftest gamescope cursor" >"$tmp/gsc.log" 2>&1 &
+    label="cursor under gamescope (no X window for the surface): root window, image in the frame header"
+    check bash -c "for i in \$(seq 100); do grep -q 'pointer over the root window' '$tmp/gsc.log' && break; sleep 0.1; done
+        c=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --cursor /dev/shm/vrdual-$sess-0) &&
+        set -- \$c && [[ \$3 -gt 0 && \$4 -gt 0 ]] || { echo \"cursor: \$c\"; grep -i 'cursor\\|surface' '$tmp/gsc.log'; false; }"
+    kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like
     # Alice): the game must keep rendering fresh data (its shadowed uploads
     # still reach A), only the right eye freezes. gltest animates its texture.

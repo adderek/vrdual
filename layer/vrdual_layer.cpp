@@ -654,7 +654,7 @@ static bool ext_hidden(const char* e) {
         "VK_KHR_maintenance7", "VK_KHR_maintenance8",
         "VK_KHR_maintenance9", "VK_KHR_maintenance10", "VK_KHR_maintenance11",
         "VK_EXT_buffer_device_address", "VK_KHR_device_address_commands",
-        "VK_KHR_external_memory_fd", "VK_KHR_external_semaphore_fd", "VK_KHR_external_fence_fd",
+        "VK_KHR_external_semaphore_fd", "VK_KHR_external_fence_fd",
         "VK_EXT_external_memory_dma_buf", "VK_EXT_external_memory_host", "VK_EXT_image_drm_format_modifier",
         "VK_EXT_queue_family_foreign", "VK_EXT_external_memory_acquire_unmodified",
         "VK_EXT_mesh_shader", "VK_NV_mesh_shader", "VK_KHR_acceleration_structure", "VK_KHR_ray_tracing_pipeline",
