@@ -66,7 +66,7 @@ static const Key kKeys[] = {
     {"head_counts_per_deg", "10", "mouse counts per degree of game camera turn (calibrate per game)"},
     {"head_lean", "off", "head translation moves the rendered viewpoint: off | on"},
     {"lean_max", "0.1", "head offset soft limit, meters (L in L*tanh(d/L))"},
-    {"screen", "full", "vrdual-xr picture: full (game FOV) | flat | curved (virtual cinema screen)"},
+    {"screen", "curved", "vrdual-xr picture: curved (virtual cinema screen) | flat | full (game FOV)"},
     {"screen_dist", "2.5", "flat/curved screen distance, meters"},
     {"screen_fov", "60", "flat/curved screen width as seen from the centre, degrees"},
     {"screen_scale_x", "1", "picture width scale (all screen modes; two-hand grab changes it live)"},
@@ -217,6 +217,33 @@ inline bool save_key(const std::string& path, const std::string& section, const 
         std::string cmd = "mkdir -p '" + dir + "'";
         if (system(cmd.c_str()) != 0) return false;
     }
+    std::ofstream o(path, std::ios::trunc);
+    for (auto& l : lines) o << l << "\n";
+    return bool(o);
+}
+
+// Removes key from [section] (no-op if absent), keeping every other line.
+inline bool remove_key(const std::string& path, const std::string& section, const std::string& key) {
+    std::vector<std::string> lines;
+    {
+        std::ifstream f(path);
+        std::string l;
+        while (std::getline(f, l)) lines.push_back(l);
+    }
+    std::string want = lower(section), cur = "global";
+    bool hit = false;
+    for (size_t n = 0; n < lines.size();) {
+        std::string t = trim(lines[n]);
+        if (!t.empty() && t.front() == '[' && t.back() == ']') cur = lower(trim(t.substr(1, t.size() - 2)));
+        auto eq = t.find('=');
+        if (cur == want && eq != std::string::npos && t[0] != '#' && t[0] != ';' && lower(trim(t.substr(0, eq))) == lower(key)) {
+            lines.erase(lines.begin() + n);
+            hit = true;
+            continue;
+        }
+        ++n;
+    }
+    if (!hit) return true;
     std::ofstream o(path, std::ios::trunc);
     for (auto& l : lines) o << l << "\n";
     return bool(o);

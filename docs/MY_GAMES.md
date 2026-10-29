@@ -37,7 +37,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Rise of the Tomb Raider | VR only in the Blood Ties DLC (SteamVR); main game: none | Win |  |
 | The Witcher 2: Assassins of Kings Enhanced Edition |  |  |  |
 | Eufloria |  |  |  |
-| Portal |  |  | broken |
+| Portal |  |  | runs |
 | Elite Dangerous | native VR mode | Win |  |
 | Deus Ex: Human Revolution |  |  |  |
 | Mafia II (Classic) |  |  |  |
@@ -53,7 +53,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Half-Life: Alyx | VR-only game | Win, Linux (native) |  |
 | World of Goo |  |  |  |
 | Thief |  |  |  |
-| Magicka |  |  |  |
+| Magicka |  |  | broken |
 | FlatOut: Ultimate Carnage Collector's Edition |  |  |  |
 | LEGO® Harry Potter: Years 5-7 |  |  |  |
 | The Elder Scrolls V: Skyrim Special Edition | separate VR edition (owned: Skyrim VR) | Win |  |
@@ -143,7 +143,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Half-Life: Blue Shift |  |  |  |
 | Batman™: Arkham Knight |  |  |  |
 | Metro Awakening | VR-only game | Win, Quest |  |
-| Oddworld: Abe's Oddysee |  |  |  |
+| Oddworld: Abe's Oddysee |  |  | no effect |
 | Maestro |  |  |  |
 | Westworld Awakening | VR-only game | Win |  |
 | Dream Hackers VR Demo | VR demo | Win |  |
@@ -178,7 +178,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Propagation VR | VR-only game | Win |  |
 | Twin Sector |  |  |  |
 | Tomb Raider I | BeefRaider XR (Team Beef, mixed reality) | Quest | broken |
-| Unravel | generic DX11 stereo mod (Geo-11) reported to work, gamepad | Win |  |
+| Unravel | generic DX11 stereo mod (Geo-11) reported to work, gamepad | Win | works |
 | Borderlands GOTY |  |  |  |
 | Left 4 Dead 2 | L4D2VR (community mod) | Win |  |
 | Dirty Texts - Melissa's Secret |  |  |  |
@@ -712,12 +712,12 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Betrayer |  |  |  |
 | Higurashi When They Cry Hou - Ch.1 Onikakushi |  |  |  |
 | Loria |  |  |  |
-| OpenTTD |  |  |  |
+| OpenTTD |  |  | no effect |
 | Samorost 1 |  |  |  |
 | The Witcher 3 REDkit |  |  |  |
 | Fallout 3: Game of the Year Edition |  |  |  |
 | LEGO® Star Wars™ III - The Clone Wars™ |  |  |  |
-| Tomb Raider GOTY |  |  |  |
+| Tomb Raider GOTY |  |  | works |
 | Hammerting |  |  |  |
 | Fallout Tactics |  |  |  |
 | Fallout 2 |  |  |  |
@@ -796,24 +796,24 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Dungeons 2 |  |  |  |
 | Carmageddon TDR 2000 |  |  |  |
 | Oxenfree |  |  |  |
-| Grim Fandango Remastered |  |  |  |
+| Grim Fandango Remastered |  |  | works |
 | MDK |  |  |  |
 | Syberia |  |  |  |
 | Syberia II |  |  |  |
 | A.D. 2044 |  |  |  |
 | Stronghold HD |  |  |  |
-| Oddworld: Abe's Oddysee |  |  |  |
+| Oddworld: Abe's Oddysee |  |  | no effect |
 | Fantasy General |  |  |  |
 | Saints Row 2 |  |  |  |
 | Constructor Classic 1997 |  |  |  |
 | Neverwinter Nights Diamond |  |  |  |
-| The Witcher 3: Wild Hunt — Remastered |  |  |  |
+| The Witcher 3: Wild Hunt — Remastered |  |  | runs |
 | Shadow Warrior Classic Complete |  |  |  |
 | System Shock® 2 (1999) |  |  |  |
 | Arcanum: Of Steamworks and Magick Obscura |  |  |  |
 | Worms Forts: Under Siege |  |  |  |
 | Giants: Citizen Kabuto |  |  |  |
-| Age of Wonders |  |  |  |
+| Age of Wonders |  |  | no effect |
 | The Witcher 2: Assassins of Kings Enhanced Edition |  |  |  |
 | Mount & Blade |  |  |  |
 | Still Life 2 |  |  |  |
@@ -1065,78 +1065,801 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 
 ## Epic games
 
+Full library from Heroic (2026-10-29; DLC, editors, soundtracks and test branches left out).
+
 | game | VR | platform | vrdual |
 |---|---|---|---|
+| 3 out of 10: Season Two |  |  |  |
+| A Game Of Thrones: The Board Game Digital Edition |  |  |  |
+| A Plague Tale: Innocence |  |  |  |
+| A Rat's Quest: The Way Back Home - Season 1 |  |  |  |
+| A Total War Saga: TROY |  |  |  |
+| Absolute Drift |  |  |  |
+| ABZU |  |  | works |
+| Adios |  |  |  |
+| AER Memories of Old |  |  |  |
+| Aerial_Knight's Never Yield |  |  |  |
+| Against All Odds |  |  |  |
+| Airship Kingdoms Adrift |  |  |  |
+| AK-xolotl: Together |  |  |  |
 | Alan wake's american nightmare |  |  |  |
-| Alien: isolation | MotherVR (community mod enabling the game's unfinished VR mode) | Win |  |
-| Assasin's creed: Odyssey |  |  |  |
-| Assasin's creed: origins |  |  |  |
-| Assasin's creed: syndicate |  |  |  |
+| Alba - A Wildlife Adventure |  |  |  |
+| Alex Kidd in Miracle World DX |  |  |  |
+| Alien: isolation | MotherVR (community mod enabling the game's unfinished VR mode) | Win | works |
+| Amnesia: A Machine for Pigs |  |  |  |
+| Amnesia: Rebirth |  |  |  |
+| Amnesia:  The Dark Descent |  |  |  |
+| Among the Sleep - Enhanced Edition |  |  |  |
+| Among Us |  |  |  |
+| Ancient Enemy |  |  |  |
+| Arcade Paradise |  |  |  |
+| Arcadegeddon |  |  |  |
+| Are You Smarter Than A 5th Grader |  |  |  |
+| ARK Crystal Isles |  |  |  |
+| ARK Fjordur |  |  |  |
+| ARK Lost Island |  |  |  |
+| ARK ModKit (UE4) |  |  |  |
+| ARK Ragnarok |  |  |  |
+| ARK: Survival Evolved |  |  |  |
+| ARK The Center |  |  |  |
+| ARK Valguero |  |  |  |
+| Assassin's Creed Odyssey |  |  |  |
+| Assassin's Creed Origins |  |  | works |
+| Assassins Creed Syndicate |  |  |  |
+| Asteroids: Recharged |  |  |  |
+| Astral Ascent |  |  |  |
+| Astrea Six Sided Oracles |  |  |  |
+| Atari Mania |  |  |  |
+| Automachef |  |  |  |
+| Aven Colony |  |  |  |
+| Backpack Hero |  |  |  |
+| Bad North Jotunn Edition |  |  |  |
+| Bakerloo Line |  |  |  |
+| Beacon Pines |  |  |  |
+| Behind the Frame: The Finest Scenery |  |  |  |
+| Beholder |  |  |  |
+| Beyond Blue |  |  |  |
 | Bioshock 2 remastered |  |  |  |
-| Bioshock infinite |  |  |  |
+| BioShock Infinite: Complete Edition |  |  |  |
+| BioShock Remastered |  |  |  |
+| Black Widow: Recharged |  |  |  |
+| Blair Witch |  |  |  |
+| Blazing Sails |  |  |  |
+| Bloodstained: Ritual of the Night |  |  |  |
+| Bloompunk |  |  |  |
+| Bloons TD 6 |  |  |  |
 | Borderlands 2 | separate VR edition (owned on Steam: Borderlands 2 VR) | Win |  |
 | Borderlands 3 | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
 | Borderlands the pre-sequel |  |  |  |
+| Botany Manor |  |  |  |
+| Boxes: Lost Fragments |  |  |  |
+| Bramble The Mountain King |  |  |  |
+| Breakout: Recharged |  |  |  |
+| Breathedge |  |  |  |
+| Bridge Constructor: The Walking Dead |  |  |  |
+| BrightGunner |  |  |  |
+| Brotato |  |  |  |
+| Brothers - A Tale of Two Sons |  |  |  |
+| BURIED STARS |  |  |  |
+| Bus Simulator 21 Next Stop |  |  |  |
+| Call of the Sea |  |  |  |
+| Car Mechanic Simulator 2018 |  |  |  |
+| Carcassonne |  |  |  |
+| Card Shark |  |  |  |
+| Cardpocalypse |  |  |  |
+| Cassette Beasts |  |  |  |
+| Cat Quest |  |  |  |
+| Cat Quest II |  |  |  |
+| Cave Story+ |  |  |  |
+| Caverns of Mars Recharged |  |  |  |
+| Celeste |  |  |  |
+| Centipede Recharged |  |  |  |
+| Chess Ultra |  |  |  |
+| Chessarama |  |  |  |
+| Chivalry 2 |  |  |  |
+| CHUCHEL |  |  |  |
 | Cities skylines |  |  |  |
-| Control |  |  |  |
+| City of Brass |  |  |  |
+| City of Gangsters |  |  |  |
+| Civilization VI : Gathering Storm |  |  |  |
+| Civilization VI : Rise and Fall |  |  |  |
+| Clash - Artifacts of Chaos |  |  |  |
+| Control |  |  | works |
+| Costume Quest |  |  |  |
+| Costume Quest 2 |  |  |  |
+| Creature in the Well |  |  |  |
+| Crime Boss: Rockay City |  |  |  |
+| Cris Tales |  |  |  |
+| Crying Suns |  |  |  |
 | Cyberpunk 2077 | R.E.A.L. VR (Luke Ross; withdrawn after a DMCA, status unclear) | Win |  |
+| Cyberpunk 2077 Bonus Content |  |  |  |
+| Cyberpunk 2077 - REDmod |  |  |  |
+| CYGNI - All Guns Blazing |  |  |  |
+| DAEMON X MACHINA |  |  |  |
+| Dark Deity |  |  |  |
+| Darkest Dungeon® |  |  |  |
+| Darksiders II Deathinitive Edition |  |  |  |
+| Darksiders Warmastered Edition |  |  |  |
+| Darkwood |  |  |  |
+| DARQ |  |  |  |
 | Dead by daylight | anti-cheat (online): not for vrdual |  |  |
 | Dead island 2 | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Death's Door |  |  |  |
+| Death's Gambit - Afterlife |  |  |  |
 | Death stranding |  |  |  |
+| Death Stranding Content |  |  |  |
+| DEATHLOOP |  |  |  |
+| Deceive Inc |  |  |  |
+| Defense Grid: The Awakening |  |  |  |
+| Definitely Not Fried Chicken |  |  |  |
+| Deliver Us Mars |  |  |  |
+| DEMON'S TILT |  |  |  |
+| Deponia The Complete Journey |  |  |  |
 | Destiny 2 | anti-cheat (online): not for vrdual |  |  |
+| Deus Ex - Mankind Divided |  |  |  |
+| Devil's Island |  |  |  |
+| Diabotical |  |  |  |
+| Disco Elysium - The Final Cut |  |  |  |
+| Dishonored®: Death of the Outsider™ |  |  |  |
 | Dishonored definitive edition |  |  |  |
-| Dishonored death of the outsiders |  |  |  |
+| Divine Knockout |  |  |  |
+| DNF Duel |  |  |  |
+| DOOMBLADE |  |  |  |
+| Doors - Paradox |  |  |  |
+| Down in Bermuda |  |  |  |
+| Dragon Age: Inquisition – Game of the Year Edition |  |  |  |
+| Dreamscaper |  |  |  |
+| Drop Duchy |  |  |  |
+| Dungeons 3 |  |  |  |
+| Duskers |  |  |  |
 | Dying light |  |  |  |
+| Dying Light The Bozak |  |  |  |
+| Dying Light The Following |  |  |  |
+| Eastern Exorcist |  |  |  |
+| El Hijo |  |  |  |
+| Electrician Simulator |  |  |  |
 | Elite dangerous | native VR mode | Win |  |
-| Fallout 3: GOTY |  |  |  |
+| ENDER LILIES: Quietus of the Knights |  |  |  |
+| Epistory - Typing Chronicles |  |  |  |
+| Escape Academy |  |  |  |
+| Eternal Threads |  |  |  |
+| Eternights |  |  |  |
+| Europa Universalis IV |  |  |  |
+| Europa Universalis IV: Songs of Yuletide |  |  |  |
+| Evil Dead The Game |  |  |  |
+| Evoland Legendary Edition |  |  |  |
+| Eximius: Seize the Frontline |  |  |  |
+| F.I.S.T.: Forged In Shadow Torch |  |  |  |
+| Faeria |  |  |  |
 | Fallout |  |  |  |
+| Fallout 2: A Post Nuclear Role Playing Game |  |  |  |
+| Fallout 3: Game of the Year Edition |  |  |  |
+| Fallout: A Post Nuclear Role Playing Game |  |  |  |
 | Fallout: New vegas |  |  |  |
-| Galactic civilizations III |  |  |  |
+| Fallout New Vegas: Courier's Stash |  |  |  |
+| Fallout New Vegas®: Dead Money |  |  |  |
+| Fallout New Vegas®: Gun Runners’ Arsenal™ |  |  |  |
+| Fallout New Vegas®: Honest Hearts |  |  |  |
+| Fallout New Vegas®: Lonesome Road™ |  |  |  |
+| Fallout New Vegas®: Old World Blues |  |  |  |
+| Fallout Tactics: Brotherhood of Steel |  |  |  |
+| Farming Simulator 19 |  |  |  |
+| Farming Simulator 22 |  |  |  |
+| Felix The Reaper |  |  |  |
+| Fell in love with coser 5 |  |  | works |
+| Figment |  |  |  |
+| Figment 2: Creed Valley |  |  |  |
+| Filament |  |  |  |
+| Filthy Animals | Heist Simulator |  |  |  |
+| First Class Trouble |  |  |  |
+| Five Nights at Freddy's: Into the Pit |  |  |  |
+| Football Manager 2020 |  |  |  |
+| Football Manager 2022 |  |  |  |
+| Football Manager 2022 Resource Archiver |  |  |  |
+| Football Manager 2023 |  |  |  |
+| Football Manager 2023 Resource Archiver |  |  |  |
+| For The King |  |  |  |
+| Fort Triumph |  |  |  |
+| Fortnite |  |  |  |
+| Fortnite Save the World Content |  |  |  |
+| Frostpunk |  |  |  |
+| G.I. Joe Wrath of Cobra |  |  |  |
+| Galactic civilizations III |  |  | works |
 | Gamedec definitive edition |  |  |  |
-| Ghost busters remastered |  |  |  |
+| Garden Story |  |  |  |
+| Gas Station Simulator |  |  |  |
+| Geneforge 1: Mutagen |  |  |  |
+| Genshin Impact |  |  |  |
+| Ghostbusters Remastered |  |  |  |
+| Ghostbusters: Spirits Unleashed Ecto Edition |  |  |  |
+| Ghostrunner |  |  |  |
+| Ghostwire Tokyo |  |  |  |
+| GigaBash |  |  |  |
+| Gigantic: Rampage Edition |  |  |  |
+| Gloomhaven |  |  |  |
+| Glove Skin |  |  |  |
+| Godfall |  |  |  |
+| Godlike Burger |  |  |  |
+| Gods Will Fall |  |  |  |
+| Golden Light |  |  |  |
+| Grand Theft Auto V |  |  |  |
+| Grand Theft Auto V Enhanced |  |  |  |
+| Gravitar Recharged |  |  |  |
+| GRIME |  |  |  |
 | GTA V | R.E.A.L. VR (Luke Ross); story mode only (GTA Online has anti-cheat) | Win |  |
+| Guacamelee! Super Turbo Championship Edition |  |  |  |
+| Guild of Dungeoneering |  |  |  |
+| Halcyon 6 |  |  |  |
+| Hand of Fate 2 |  |  |  |
+| Happy Game |  |  |  |
+| Hardspace: Shipbreaker |  |  |  |
+| HD Wallpaper |  |  |  |
 | Heavy rain |  |  |  |
+| Hell is Others |  |  |  |
 | Hell let loose | anti-cheat (online): not for vrdual |  |  |
-| Homeworlds: dessert of Kharak |  |  |  |
+| High On Life |  |  |  |
+| HITMAN |  |  |  |
+| Hogwarts Legacy |  |  |  |
+| Homeworld: Deserts of Kharak |  |  |  |
+| Hood Outlaws and Legends |  |  |  |
+| Horace |  |  |  |
+| Horizon Chase Turbo |  |  |  |
+| HOT WHEELS UNLEASHED™ |  |  |  |
+| House of Golf 2 |  |  |  |
+| Hue |  |  |  |
+| Human Resource Machine |  |  |  |
+| HUMANKIND™ |  |  |  |
+| Hundred Days - Winemaking Simulator |  |  |  |
+| Hyper Light Drifter |  |  |  |
+| I Have No Mouth, and I Must Scream |  |  |  |
+| Idle Champions of the Forgotten Realms |  |  |  |
+| In Sound Mind |  |  |  |
+| INDUSTRIA |  |  |  |
+| Infinifactory |  |  |  |
+| Insurmountable |  |  |  |
+| Into The Breach |  |  |  |
+| Invincible Presents: Atom Eve |  |  |  |
+| Iratus |  |  |  |
+| Ironcast |  |  |  |
+| Islets |  |  |  |
+| Isonzo |  |  |  |
 | Jennifer wilde unlikely revolutionaries |  |  |  |
-| Jurrasic world evolution |  |  |  |
+| Jitsu Squad |  |  |  |
+| Jotun Valhalla Edition |  |  |  |
+| Jurassic World Evolution |  |  |  |
 | Just cause 4 |  |  |  |
-| LEGO Builders journey | vorpX reported in the classic (non-ray-traced) mode only | Win |  |
+| Just Die Already |  |  |  |
+| Kao the Kangaroo |  |  |  |
+| Kardboard Kings |  |  |  |
+| Ken Follett's The Pillars of the Earth |  |  |  |
+| Kerbal Space Program |  |  |  |
+| KeyWe |  |  |  |
+| KID A MNESIA EXHIBITION |  |  |  |
+| Killing Floor 2 |  |  |  |
+| Kingdom New Lands |  |  |  |
+| KinnikuNeko: SUPER MUSCLE CAT |  |  |  |
+| Knockout City |  |  |  |
+| Kombinera |  |  |  |
+| Lawn Mowing Simulator |  |  |  |
+| Layers of Fear 2 |  |  |  |
+| Legion TD 2 |  |  |  |
+| LEGO® 2K Drive |  |  |  |
+| LEGO® Builder's Journey | vorpX reported in the classic (non-ray-traced) mode only | Win | works |
+| LEGO® Fortnite Content |  |  |  |
+| LEGO® Fortnite: Odyssey |  |  |  |
+| LEGO® Star Wars™: Classic Obi-Wan |  |  |  |
+| LEGO® Star Wars™: The Skywalker Saga |  |  |  |
+| Let's Build a Zoo |  |  |  |
+| Lethal Honor - Order of the Apocalypse |  |  |  |
+| Liberte |  |  |  |
+| Lifeless Planet: Premier Edition |  |  |  |
+| Limbo |  |  |  |
+| LISA: The Joyful - Definitive Edition |  |  |  |
+| LISA: The Painful - Definitive Edition |  |  |  |
+| LONESTAR |  |  |  |
+| Loop Hero |  |  |  |
+| Luftrausers |  |  |  |
+| Lysfanga: The Time Shift Warrior |  |  |  |
+| Machinarium |  |  |  |
+| Mages of Mystralia |  |  |  |
+| Maid of Sker |  |  |  |
+| Maneater |  |  |  |
+| Marvel Rivals |  |  |  |
+| Marvel's Guardians of the Galaxy |  |  |  |
+| Marvel's Guardians of the Galaxy: Social-Lord Outfit |  |  |  |
+| Marvel's Midnight Suns |  |  |  |
+| Mechabellum |  |  |  |
 | Metro 2033 redux |  |  |  |
 | Metro last light redux |  |  |  |
-| Never alone (Kisima Ingitchuna) |  |  |  |
+| Midnight Ghost Hunt |  |  |  |
+| Mighty Fight Federation |  |  |  |
+| Missile Command: Recharged |  |  |  |
+| Model Builder: Complete Edition |  |  |  |
+| Model Builder: The Invincible Helmet |  |  |  |
+| Monster Harvest |  |  |  |
+| Moon Mystery |  |  |  |
+| Morbid: The Seven Acolytes |  |  |  |
+| MORDHAU |  |  |  |
+| Mortal Shell |  |  |  |
+| Mothergunship |  |  |  |
+| Moving Out |  |  |  |
+| MudRunner |  |  |  |
+| Murder by Numbers |  |  |  |
+| Mutant Year Zero Road to Eden |  |  |  |
+| My Night Job |  |  |  |
+| MythForce |  |  |  |
+| MythForce PTR |  |  |  |
+| Necromunda: Hired Gun |  |  |  |
+| Neko Ghost, Jump! |  |  |  |
+| Neon Abyss |  |  |  |
+| Never alone (Kisima Ingitchuna) |  |  | works |
+| New Tales from the Borderlands |  |  |  |
+| Nioh: The Complete Edition |  |  |  |
+| No Straight Roads: Encore Edition |  |  |  |
+| Nobody Wants to Die |  |  |  |
+| Obduction |  |  |  |
 | Offworld trading company |  |  |  |
+| Ogu and the Secret Forest |  |  |  |
+| Orcs Must Die! 3 |  |  |  |
 | Orwell: keeping an eye on you |  |  |  |
+| Out of Sight |  |  |  |
+| Paquerette Down the Bunburrows |  |  |  |
+| Paradigm |  |  |  |
+| Pathfinder Kingmaker - Enhanced Plus Edition |  |  |  |
 | payday 2 |  |  |  |
+| PC Building Simulator |  |  |  |
+| Pikuniku |  |  |  |
+| Pillars of Eternity - Definitive Edition |  |  |  |
+| Pillars of Eternity - Definitive Edition Pack |  |  |  |
+| Pine |  |  |  |
+| Predator: Hunting Grounds Standard Edition |  |  |  |
+| Predecessor |  |  |  |
 | prey |  |  |  |
+| Priest Simulator: Vampire Show |  |  |  |
+| Prison Architect |  |  |  |
+| Project Winter |  |  |  |
+| Puzzle Pack 1 |  |  |  |
+| Puzzle Pack 2 |  |  |  |
+| Q.U.B.E. 10th Anniversary |  |  |  |
+| Q.U.B.E. 2 |  |  |  |
+| Quake |  |  |  |
 | Rage 2 |  |  |  |
 | Railway empire |  |  |  |
-| Red dead redemption II | R.E.A.L. VR (Luke Ross) | Win |  |
+| Recipe for Disaster |  |  |  |
+| Red Dead Redemption 2 | R.E.A.L. VR (Luke Ross) | Win |  |
+| [REDACTED] |  |  |  |
+| Redemption Reapers |  |  |  |
+| Redout 2 |  |  |  |
+| Redout: Enhanced Edition |  |  |  |
+| Relicta |  |  |  |
+| Remnant: From the Ashes |  |  |  |
+| Republic of Jungle |  |  |  |
+| RiMS Racing |  |  |  |
+| Ring of Pain |  |  |  |
+| Rise of Industry |  |  |  |
 | Rise of the tomb raider | VR only in the Blood Ties DLC (SteamVR); main game: none | Win |  |
-| Rollercoaster tycoon 3 complete edition |  |  |  |
+| Rise of the Tomb Raider: 20 Year Celebration |  |  |  |
+| Rising Hell |  |  |  |
+| Rising Storm 2: Vietnam |  |  |  |
+| River City Girls 2 |  |  |  |
+| Riverbond |  |  |  |
+| Rogue Legacy |  |  |  |
+| Rollercoaster tycoon 3 complete edition |  |  | broken |
+| RPG in a Box |  |  |  |
+| Rugrats: Adventures in Gameland |  |  |  |
+| Runbow |  |  |  |
+| Rustler - Grand Theft Horse |  |  |  |
+| Sail Forth |  |  |  |
+| Saints Row IV Re-Elected |  |  |  |
 | Saints row IV remastered |  |  |  |
+| Saints Row The Third Remastered |  |  |  |
+| Salt and Sanctuary |  |  |  |
+| Samorost 2 |  |  |  |
+| SAMURAI SHODOWN NEOGEO COLLECTION |  |  |  |
+| Sand Patch Grade |  |  |  |
+| Sands of Aura |  |  |  |
+| Saturnalia |  |  |  |
+| Scarf |  |  |  |
+| Schnellfahrstrecke Köln-Aachen |  |  |  |
+| Second Extinction™ |  |  |  |
+| SELECTIONS OF TITAN ART BOOK |  |  |  |
+| Session: Skate Sim |  |  |  |
+| Severed Steel |  |  |  |
 | Shadow of the tomb raider definitive edition |  |  |  |
 | Shadow tactics Blades of the shogun |  |  |  |
+| Shadowrun: Dragonfall - Director’s Cut |  |  |  |
+| Shadowrun Hong Kong |  |  |  |
 | Shadowrun returns |  |  |  |
+| shapez |  |  |  |
+| Sheltered |  |  |  |
+| Shop Titans |  |  |  |
+| Sid Meier's Civilization VI |  |  |  |
+| Sifu |  |  |  |
+| SKALD Against the Black Priory |  |  |  |
+| Sky Racket |  |  |  |
+| SkyDrift Infinity |  |  |  |
+| Slain: Back From Hell |  |  |  |
+| Snakebird Complete |  |  |  |
+| Solitairica |  |  |  |
+| SOMA |  |  |  |
+| Songs of Silence |  |  |  |
+| Sonic Mania |  |  |  |
+| Soulstice |  |  |  |
+| Space Grunts: Chrono Shard |  |  |  |
+| Speed Brawl |  |  |  |
+| Spirit of the North |  |  |  |
+| Star Stuff |  |  |  |
 | Star wars squadrons | native VR mode | Win |  |
-| Star wars Battlefront II celebration edition |  |  |  |
+| STAR WARS™ Battlefront™ II: Celebration Edition |  |  |  |
+| STASIS : BONE TOTEM |  |  |  |
+| Steelrising |  |  |  |
+| Steep |  |  |  |
+| Stick it to the Man |  |  |  |
+| Stranded Deep |  |  |  |
+| Stranger Things 3: The Game |  |  |  |
+| Styx: Master of Shadows |  |  |  |
+| Styx: Shards of Darkness - Deluxe Edition |  |  |  |
+| Submerged Hidden Depths |  |  |  |
+| Sundered Eldritch Edition |  |  |  |
+| Sunderfolk |  |  |  |
+| SUPER CRAZY RHYTHM CASTLE |  |  |  |
+| Super Meat Boy |  |  |  |
+| Super Meat Boy Forever |  |  |  |
+| Supraland |  |  |  |
 | Surviving mars |  |  |  |
-| Calisto protocol | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Symphony of War: The Nephilim Saga |  |  |  |
+| System Shock 2: 25th Anniversary Remaster |  |  |  |
+| Tales from the Borderlands |  |  |  |
+| Tandem A Tale of Shadows |  |  |  |
+| Tannenberg |  |  |  |
+| Tattoo Tycoon |  |  |  |
+| Teenage Mutant Ninja Turtles: Shredder's Revenge |  |  |  |
+| Telltale Batman Season 1 |  |  |  |
+| Telltale Batman Season 2 |  |  |  |
+| Terraforming Mars |  |  |  |
+| TerraScape |  |  |  |
+| TerraTech |  |  |  |
+| Tharsis |  |  |  |
+| The Big Con |  |  |  |
+| The Bridge |  |  |  |
+| The Callisto Protocol | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| The Captain |  |  |  |
+| The Darkside Detective |  |  |  |
+| The Drone Racing League Simulator |  |  |  |
 | The elder scrolls online | anti-cheat (online): not for vrdual |  |  |
+| The Escapists 2 |  |  |  |
+| The Eternal Cylinder |  |  |  |
 | The evil within |  |  |  |
 | The evil within 2 |  |  |  |
+| The Falconeer |  |  |  |
+| The Fall |  |  |  |
+| The First Tree |  |  |  |
+| The Jackbox Party Pack 4 |  |  |  |
+| The Last Show of Mr. Chardish |  |  |  |
+| The Last Stand: Aftermath |  |  |  |
+| The Lion's Song |  |  |  |
+| The Long Dark |  |  |  |
+| The Long Dark: Wintermute |  |  |  |
+| The Lord of The Rings: Return to Moria™ |  |  |  |
+| The Outer Worlds |  |  |  |
+| The Outer Worlds: Murder on Eridanos |  |  |  |
+| The Outer Worlds Peril on Gorgon |  |  |  |
+| The Outer Worlds: Spacer's Choice Edition |  |  |  |
+| The Silent Age |  |  |  |
+| The Sims™ 4 |  |  |  |
+| The Spectrum Retreat |  |  |  |
+| The Stanley Parable |  |  |  |
 | The talos principle | separate VR edition exists (The Talos Principle VR, not owned) | Win |  |
-| Tomb raider GOTY |  |  |  |
+| The Textorcist |  |  |  |
+| The Vanishing of Ethan Carter |  |  |  |
+| The Vanishing of Ethan Carter Redux |  |  |  |
+| The World Next Door |  |  |  |
+| theHunter: Call of the Wild™ |  |  |  |
+| Them's Fightin' Herds |  |  |  |
+| Thief |  |  |  |
+| Ticket To Ride: Classic Edition |  |  |  |
+| Tiny Tina's Assault on Dragon Keep: A Wonderlands One-shot Adventure |  |  |  |
+| Tiny Tina's Wonderlands |  |  |  |
+| To The Rescue |  |  |  |
+| ToeJam & Earl: Back in the Groove! |  |  |  |
+| TOEM |  |  |  |
+| Tomb Raider GAME OF THE YEAR EDITION |  |  | works |
+| Tomb Raider I-III Remastered Starring Lara Croft |  |  |  |
+| Tomb Raider IV-VI Remastered |  |  |  |
+| Torchlight II |  |  |  |
+| Total War: Rome II - Emperor Edition |  |  |  |
+| Total War: THREE KINGDOMS |  |  |  |
 | Total war: Warhammer |  |  |  |
+| Total War: WARHAMMER II |  |  |  |
+| Total War: WARHAMMER III |  |  |  |
+| Town of Salem 2 |  |  |  |
+| Train Sim World 2 |  |  |  |
+| Train Sim World® 4 Compatible: Bakerloo Line |  |  |  |
+| Train Sim World® 4 Compatible: Sand Patch Grade |  |  |  |
+| Train Sim World® 4 Compatible: Schnellfahrstrecke Köln-Aachen |  |  |  |
+| Train Sim World® 5: Bakerloo Line |  |  |  |
+| Train Sim World® 5: Sand Patch Grade |  |  |  |
+| Train Sim World® 5: Schnellfahrstrecke Köln-Aachen |  |  |  |
+| Train Sim World® 6: Bakerloo Line |  |  |  |
+| Train Sim World® 6: Sand Patch Grade |  |  |  |
+| Train Sim World® 6: Schnellfahrstrecke Köln-Aachen Remastered |  |  |  |
+| Train Sim World® 7: Bakerloo Line |  |  |  |
+| Train Sim World® 7: Sand Patch Grade |  |  |  |
+| Train Sim World® 7: Schnellfahrstrecke Köln-Aachen Remastered |  |  |  |
+| Train Valley 2 |  |  |  |
+| Transistor |  |  |  |
+| Trek to Yomi |  |  |  |
+| Trine 2: Complete Story |  |  |  |
+| Trine 3: The Artifacts of Power |  |  |  |
+| Trine 4: Definitive Edition |  |  |  |
+| Trine Enchanted Edition |  |  |  |
+| Troublemaker |  |  |  |
+| Tunche |  |  |  |
+| Turmoil |  |  |  |
+| Turnip Boy Commits Tax Evasion |  |  |  |
+| Turnip Boy Robs a Bank |  |  |  |
+| Two Point Hospital |  |  |  |
+| Tyranny - Gold Edition |  |  |  |
+| Tyranny - Gold Edition Pack |  |  |  |
+| Undying |  |  |  |
+| Universe for Sale |  |  |  |
+| Unrailed |  |  |  |
+| Vampire Master |  |  |  |
+| Vampire Survivors |  |  |  |
+| Vampire: The Masquerade - Reckoning of New York |  |  |  |
+| Vampire: The Masquerade - Swansong |  |  |  |
 | Vampyr | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Vanakan |  |  |  |
+| Viewfinder |  |  |  |
+| Voidwrought |  |  |  |
+| War Hospital |  |  |  |
+| Wargame: Red Dragon |  |  |  |
+| Warhammer 40,000: Gladius - Relics of War |  |  |  |
+| Warhammer 40,000: Mechanicus - Standard Edition |  |  |  |
+| Warpips |  |  |  |
 | Watch dogs |  |  |  |
 | Watch dogs 2 |  |  |  |
+| We Were Here Together |  |  |  |
+| Weird West: Definitive Edition |  |  |  |
+| What Remains of Edith Finch |  |  |  |
+| Wheels of Aurelia |  |  |  |
+| Where The Water Tastes Like Wine |  |  |  |
+| while True: learn() |  |  |  |
+| Wild Card Football |  |  |  |
+| Wildcat Gun Machine |  |  |  |
+| Wildgate |  |  |  |
+| Windbound |  |  |  |
+| Witch It |  |  |  |
 | Wolfenstein: the new order |  |  |  |
+| World War Z |  |  |  |
 | XCOM 2 |  |  |  |
+| Yars: Recharged |  |  |  |
+| Yooka-Laylee |  |  |  |
+| Yooka-Laylee and the Impossible Lair |  |  |  |
+| Zero Hour |  |  |  |
+| Zombie Army 4 Dead War |  |  |  |
 
 | game | VR | platform | vrdual |
 |---|---|---|---|
 | Red Dead Redemption 2 |  |  |  |
+
+## Amazon (Prime Gaming, through Heroic)
+
+Library from Heroic (2026-10-29).
+
+| game | VR | platform | vrdual |
+|---|---|---|---|
+| 3 Count Bout |  |  |  |
+| A Tiny Sticker Tale |  |  |  |
+| Absolute Tactics: Daughters of Mercy |  |  |  |
+| Aces of the Luftwaffe - Squadron Extended Edition |  |  |  |
+| Adios |  |  |  |
+| Aerial_Knight's Never Yield |  |  |  |
+| Afterimage |  |  |  |
+| Agatha Knife |  |  |  |
+| Aground |  |  |  |
+| Akka Arrh |  |  |  |
+| Alpha Mission II |  |  |  |
+| APICO |  |  |  |
+| Art of Fighting 3: The Path of The Warrior |  |  |  |
+| Autonauts |  |  |  |
+| Baldur's Gate II: Enhanced Edition |  |  |  |
+| Baldur's Gate: Enhanced Edition |  |  |  |
+| Bang Bang Racing |  |  |  |
+| Banners of Ruin |  |  |  |
+| BATS: Bloodsucker Anti-Terror Squad |  |  |  |
+| Beasts of Maravilla Island |  |  |  |
+| Behind the Frame: The Finest Scenery |  |  |  |
+| Behind the Frame: The Finest Scenery VR |  |  |  |
+| Beholder 2 |  |  |  |
+| Beholder 3 |  |  |  |
+| Blade Assault |  |  |  |
+| Book of Demons |  |  |  |
+| Breathedge |  |  |  |
+| Bridge to Another World: Secrets of the Nutcracker |  |  |  |
+| Brothers: A Tale of Two Sons |  |  |  |
+| Bus Simulator 21: Next Stop |  |  |  |
+| Calico |  |  |  |
+| Caravan SandWitch |  |  |  |
+| Castle on the Coast |  |  |  |
+| Chicken Police - Paint it RED! |  |  |  |
+| Clouds & Sheep 2 |  |  |  |
+| Cook, Serve, Delicious! 3?! |  |  |  |
+| Crossed Swords |  |  |  |
+| Dark City: International Intrigue |  |  |  |
+| Dark City: Kyiv - CE |  |  |  |
+| Deep Sky Derelicts |  |  |  |
+| Defend the Rook |  |  |  |
+| Desert Child |  |  |  |
+| Dexter Stardust: Adventures in Outer Space |  |  |  |
+| Disney•Pixar Cars |  |  |  |
+| Disney•Pixar WALL-E |  |  | works |
+| Doors: Paradox |  |  |  |
+| Double Kick Heroes |  |  |  |
+| Drawn: Trail of Shadows |  |  |  |
+| DreadOut 2 |  |  |  |
+| Driftland: The Magic Revival |  |  |  |
+| Dungeon of the ENDLESS - Definitive Edition |  |  |  |
+| ENDLESS Legend Definitive Edition |  |  |  |
+| ENDLESS Space - Definitive Edition |  |  |  |
+| ENDLESS Space 2 - Definitive Edition |  |  |  |
+| Endling: Extinction is Forever |  |  |  |
+| Etherborn |  |  |  |
+| Evan's Remains |  |  |  |
+| Everdream Valley |  |  |  |
+| Faraway 2: Jungle Escape |  |  |  |
+| Faraway: Arctic Escape |  |  |  |
+| Faraway: Director's Cut |  |  |  |
+| Figment 2: Creed Valley |  |  |  |
+| Foretales |  |  |  |
+| Gargoyles Remastered |  |  |  |
+| Genesis Noir |  |  |  |
+| Ghost Pilots |  |  |  |
+| Giana Sisters: Twisted Dreams |  |  |  |
+| Golfie |  |  |  |
+| Gravity Circuit |  |  |  |
+| Grime: Definitive Edition |  |  |  |
+| GRUNND |  |  |  |
+| GYLT |  |  |  |
+| Halloween Stories: Horror Movie - CE |  |  |  |
+| Haunted Hotel: Personal Nightmare - CE |  |  |  |
+| Havendock |  |  |  |
+| Heaven Dust 2 |  |  |  |
+| Hero's Hour |  |  |  |
+| Horace |  |  |  |
+| Hundred Days |  |  |  |
+| I am Fish |  |  |  |
+| Icewind Dale: Enhanced Edition |  |  |  |
+| In Sound Mind |  |  |  |
+| Indiana Jones and the Last Crusade |  |  |  |
+| Kardboard Kings: Card Shop Simulator |  |  |  |
+| King of the Monsters 2 |  |  |  |
+| Kizuna Encounter: Super Tag Battle |  |  |  |
+| Kraken Academy!! |  |  |  |
+| Labyrinth City: Pierre the Maze Detective |  |  |  |
+| Lake |  |  |  |
+| Last Day of June |  |  |  |
+| Last Resort |  |  |  |
+| Lawn Mowing Simulator |  |  |  |
+| LEGO Indiana Jones: The Original Adventures |  |  |  |
+| Living Legends: Fallen Sky |  |  |  |
+| Living Legends: The Crystal Tear - CE |  |  |  |
+| Loom |  |  |  |
+| Lost Eidolons: Veil of the Witch |  |  |  |
+| Magician Lord |  |  |  |
+| Masterplan Tycoon |  |  |  |
+| Max: The Curse of Brotherhood |  |  |  |
+| Metal Slug |  |  |  |
+| METAL SLUG 3 |  |  |  |
+| Metal Slug 4 |  |  |  |
+| Metal Slug X |  |  |  |
+| Minabo – A Walk Through Life |  |  |  |
+| Ms. Holmes: The Case of the Dancing Men - CE |  |  |  |
+| Mutation Nation |  |  |  |
+| Mystery Case Files: Black Crown - CE |  |  |  |
+| Mystery Case Files: Moths to a Flame |  |  |  |
+| Mystery Case Files: The Dalimar Legacy - CE |  |  |  |
+| Naheulbeuk's Dungeon Master |  |  |  |
+| NAIRI: Tower of Shirin |  |  |  |
+| Night Reverie |  |  |  |
+| Nine Witches: Family Disruption |  |  |  |
+| Ninja Commando |  |  |  |
+| Ninja Master's |  |  |  |
+| Once Upon a Jester |  |  |  |
+| One Hand Clapping |  |  |  |
+| Onsen Master |  |  |  |
+| Orten was the Case |  |  |  |
+| Over Top |  |  |  |
+| Paleo Pines |  |  |  |
+| Peaky Blinders: Mastermind |  |  |  |
+| Pixel Cafe |  |  |  |
+| Planescape Torment: Enhanced Edition |  |  |  |
+| Pro Basketball Manager 2026 |  |  |  |
+| Projection: First Light |  |  |  |
+| Q.U.B.E: Director's Cut |  |  |  |
+| Real Bout Fatal Fury 2: The Newcomers |  |  |  |
+| Recompile |  |  |  |
+| ReDrawn: The Painted Tower - CE |  |  |  |
+| Reflections of Life: Dark Architect - CE |  |  |  |
+| Revita |  |  |  |
+| Robo Army |  |  |  |
+| Roguebook |  |  |  |
+| Samurai Bringer |  |  |  |
+| Samurai Shodown IV: Amakusa's Revenge |  |  |  |
+| SCARF |  |  |  |
+| ScourgeBringer |  |  |  |
+| SeaOrama: World of Shipping |  |  |  |
+| Sengoku |  |  |  |
+| Sengoku 2 |  |  |  |
+| Shattered - Tale of the Forgotten King |  |  |  |
+| Shotgun King: The Final Checkmate |  |  |  |
+| Shovel Knight Showdown |  |  |  |
+| Simulakros |  |  |  |
+| Sine Mora EX |  |  |  |
+| SNK 40th Anniversary Collection |  |  |  |
+| Soccer Brawl |  |  |  |
+| Space Crew: Legendary Edition |  |  |  |
+| Space Warlord Organ Trading Simulator |  |  |  |
+| Spinch |  |  |  |
+| Spirit Mancer |  |  |  |
+| Spirits of Mystery: Whisper of the Past |  |  |  |
+| Spitlings |  |  |  |
+| Spray Paint Simulator |  |  |  |
+| Star Wars: Knights of the Old Republic |  |  |  |
+| Star Wars: Knights of the Old Republic II - The Sith Lords |  |  |  |
+| Star Wars: Rogue Squadron |  |  |  |
+| Star Wars: The Force Unleashed |  |  |  |
+| Star Wars: The Force Unleashed II |  |  |  |
+| Station to Station |  |  |  |
+| SteamWorld Dig 2 |  |  |  |
+| Stunt Kite Party |  |  |  |
+| Subterrain: Mines of Titan |  |  |  |
+| Super Adventure Hand |  |  |  |
+| Super Sidekicks |  |  |  |
+| Surf World Series |  |  |  |
+| Survival: Fountain of Youth |  |  |  |
+| Tandem: A Tale of Shadows |  |  |  |
+| Tempest 4000 |  |  |  |
+| Terraformers |  |  |  |
+| Terraforming Mars |  |  |  |
+| The Abandoned Planet |  |  |  |
+| The Academy: The First Riddle |  |  |  |
+| The Almost Gone |  |  |  |
+| The Amazing American Circus |  |  |  |
+| The Collage Atlas |  |  |  |
+| The Dig |  |  |  |
+| The Dungeon of Naheulbeuk: The Amulet of Chaos |  |  |  |
+| The Forgotten City |  |  |  |
+| The Gap |  |  |  |
+| The Invisible Hand |  |  |  |
+| The King of Fighters 2003 |  |  |  |
+| The Last Blade |  |  |  |
+| The Last Blade 2 |  |  |  |
+| The Super Spy |  |  |  |
+| Through the Darkest of Times |  |  |  |
+| Tiny Robots Recharged |  |  |  |
+| Top Hunter: Roddy & Cathy |  |  |  |
+| Tormented Souls |  |  |  |
+| Trinity Fusion |  |  |  |
+| Tunche |  |  |  |
+| Turnip Boy Commits Tax Evasion |  |  |  |
+| Twinkle Star Sprites |  |  |  |
+| Vlad Circus: Descend Into Madness |  |  |  |
+| Wall World |  |  |  |
+| Wall World 2 |  |  |  |
+| Warhammer 40,000: Dawn of War |  |  |  |
+| Warhammer 40,000: Dawn of War II |  |  |  |
+| Warhammer 40,000: Space Marine |  |  |  |
+| We. The Revolution |  |  |  |
+| Whispered Secrets: Everburning Candle - CE |  |  |  |
+| Whispering Willows |  |  |  |
+| WRC 9 |  |  |  |
+| Wytchwood |  |  |  |
+| Ynglet |  |  |  |
+| Young Souls |  |  |  |
+| Youtubers Life 2 |  |  |  |
+| Zak McKracken and the Alien Mindbenders |  |  |  |
+| Zombies Ate My Neighbors and Ghoul Patrol |  |  |  |
 
 ## Origin / EA
 
@@ -1191,7 +1914,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | The sims 4 |  |  |  |
 | Theme hospital |  |  |  |
 | Ultima VIII |  |  |  |
-| Unravel | generic DX11 stereo mod (Geo-11) reported to work, gamepad | Win |  |
+| Unravel | generic DX11 stereo mod (Geo-11) reported to work, gamepad | Win | works |
 | Unravel two |  |  |  |
 | Wing commander III: Heart of the tiger |  |  |  |
 | Zumba's revenge |  |  |  |

@@ -27,6 +27,7 @@ struct Eye {
     std::vector<uint8_t> px;  // last paired frame
     bool remapped = false;    // set when the size changed; the user clears it
     ino_t ino = 0;            // of the mapped file (a re-created dir/file = new inode)
+    bool quiet = false;       // probe (another dir, every second): no mapping line
 };
 
 inline double now_s() {
@@ -64,7 +65,7 @@ inline bool eye_map(Eye& e) {
     e.ino = st.st_ino;
     e.w = h->width; e.h = h->height; e.fmt = h->pixfmt;
     e.remapped = true;
-    fprintf(stderr, "[compositor] %s eye: %ux%u on %s (pci %s)\n", e.eye ? "right" : "left", e.w, e.h, h->gpu_name, h->pci);
+    if (!e.quiet) fprintf(stderr, "[compositor] %s eye: %ux%u on %s (pci %s)\n", e.eye ? "right" : "left", e.w, e.h, h->gpu_name, h->pci);
     return true;
 }
 

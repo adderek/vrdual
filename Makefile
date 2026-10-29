@@ -65,8 +65,8 @@ $(B)/vrdual-input-test: tools/input_test.cpp common/vrdual_input.hpp common/vrdu
 $(B)/spvpatch: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<
 
-$(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_config.hpp common/vrdual_ctl.hpp common/vrdual_shm.h | $(B)
-	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $< -lrt
+$(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_config.hpp common/vrdual_ctl.hpp common/vrdual_shm.h common/vrdual_input.hpp $(B)/input_names.hpp | $(B)
+	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -o $@ $< -lrt
 
 # keeps build/monado (selftest's OpenXR runtime, built separately)
 clean:

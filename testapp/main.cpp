@@ -27,6 +27,9 @@
 // --mem-export: the vertex memory is exported as an opaque fd and imported
 // into a second allocation, which the draws read (D3D11 shared resources:
 // DXVK + winevulkan build them on VK_KHR_external_memory_fd; Unity games).
+// --mem-export-dev2: as --mem-export, but the memory is allocated, written and
+// exported on a second VkDevice (Unity's video player decodes on its own
+// D3D11 device and shares the frames with the game's).
 //
 // --bda: Vulkan 1.4 paths DXVK 3 relies on: vertices read through a buffer
 // device address (no vertex input), memory mapped with vkMapMemory2, vertex
@@ -90,7 +93,7 @@ struct PC { M4 mvp; float color[4]; VkDeviceAddress verts; };
 int main(int argc, char** argv) {
     int frames = 0, W = 960, H = 720;
     std::string title = "vrdual-cube", scene = "cubes";
-    bool bda = false, extra = false, mem_export = false;
+    bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
     int late_verts = 0;
     bool cached = false, verts_file = false, readback = false;
@@ -103,6 +106,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
         else if (!strcmp(argv[i], "--mem-export")) mem_export = true;
+        else if (!strcmp(argv[i], "--mem-export-dev2")) mem_export = dev2_export = true;
         else if (!strcmp(argv[i], "--cached")) cached = true;
         else if (!strcmp(argv[i], "--verts-file")) verts_file = true;
         else if (!strcmp(argv[i], "--readback")) readback = true;
@@ -412,11 +416,30 @@ int main(int argc, char** argv) {
     if (late_verts) memset(p, 0, verts.size() * 4);
     else memcpy(p, verts.data(), verts.size() * 4);
     VkBuffer dbuf = vbuf;  // the buffer the draws read
+    VkDevice dev2 = VK_NULL_HANDLE;
     if (mem_fd && !bda) {
-        auto get_fd = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(dev, "vkGetMemoryFdKHR");
-        VkMemoryGetFdInfoKHR gi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR, nullptr, vmem, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+        VkDevice edev = dev;  // the exporter
+        VkDeviceMemory emem = vmem;
+        if (dev2_export) {
+            CK(vkCreateDevice(pd, &dci, nullptr, &dev2));
+            VkExportMemoryAllocateInfo e2{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO, nullptr, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+            VkMemoryAllocateInfo a2{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &e2, mr.size, mai.memoryTypeIndex};
+            CK(vkAllocateMemory(dev2, &a2, nullptr, &emem));
+            void* p2;
+            CK(vkMapMemory(dev2, emem, 0, VK_WHOLE_SIZE, 0, &p2));
+            memcpy(p2, verts.data(), verts.size() * 4);
+            VkQueue q2;  // an empty submit: the mirror pushes dev2's memory to its twin
+            vkGetDeviceQueue(dev2, fam, 0, &q2);
+            VkSubmitInfo si2{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+            CK(vkQueueSubmit(q2, 1, &si2, VK_NULL_HANDLE));
+            CK(vkQueueWaitIdle(q2));
+            edev = dev2;
+            fprintf(stderr, "vrdual-cube: vertex memory written and exported on a second device\n");
+        }
+        auto get_fd = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(edev, "vkGetMemoryFdKHR");
+        VkMemoryGetFdInfoKHR gi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR, nullptr, emem, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
         int fd = -1;
-        CK(get_fd(dev, &gi, &fd));
+        CK(get_fd(edev, &gi, &fd));
         VkExternalMemoryBufferCreateInfo ebci{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO, nullptr, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
         VkBufferCreateInfo ici = bci;
         ici.pNext = &ebci;
@@ -670,6 +693,7 @@ int main(int argc, char** argv) {
     if (xsc) vkDestroySwapchainKHR(dev, xsc, nullptr);
     vkDestroySwapchainKHR(dev, sc, nullptr);
     vkDestroyDevice(dev, nullptr);
+    if (dev2) vkDestroyDevice(dev2, nullptr);
     SDL_DestroyWindow(win);
     SDL_Quit();
     return 0;

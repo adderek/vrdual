@@ -361,6 +361,51 @@ vrdual_games() {
     [[ -f $f ]] || { say "no games logged yet ($f; vrdual xr writes it)"; return 0; }
     cat "$f"
 }
+# Controller button maps (vrdual xr reloads them live; keys in docs/CONFIG.md).
+#   map [APP]                                   effective maps: mode button code source
+#   map APP|--global MODE BUTTON CODE|none|default   set one (MODE: gamepad mouse both)
+#   bare, on a terminal: interactive editor (game -> mode -> button -> key)
+vrdual_map() {
+    if (($# >= 4)); then "$B/vrdual-ctl" map-set "$@"; return; fi
+    if (($# > 0)) || [[ ! -t 0 ]]; then "$B/vrdual-ctl" map "$@"; return; fi
+    map_edit
+}
+map_edit() {
+    local app mode btn code f c games=() PS3=$'\nchoose: '
+    f=$(games_log)
+    [[ -f $f ]] && mapfile -t games < <(tac "$f" | cut -f3 | awk 'NF && !s[$0]++' | head -15)
+    say "game (recently played first):"
+    select app in "${games[@]}" "[global] (all games)" "other (type the name)" quit; do
+        case $app in
+            quit|"") return 0 ;;
+            "other (type the name)") read -rp "exe or app name (as in vrdual games): " app; [[ -n $app ]] && break ;;
+            *) break ;;
+        esac
+    done
+    local target=("$app") show=("$app")
+    [[ $app == "[global]"* ]] && target=(--global) show=()
+    while :; do
+        say $'\n'"mode (both = map_<button>, used where no mode-specific key is set):"
+        select mode in gamepad mouse both done; do [[ -n $mode ]] && break; done
+        [[ $mode == done ]] && return 0
+        while :; do
+            say $'\n'"${show[0]:-[global]}, $mode (code, where it comes from):"
+            "$B/vrdual-ctl" map "${show[@]}" | awk -v m="$mode" '$1 == m || m == "both"' | column -t -s $'\t' >&2
+            say "button:"
+            select btn in a b x y l3 r3 lt rt lg rg menu back; do [[ -n $btn ]] && break; done
+            [[ $btn == back ]] && break
+            local keys=(KEY_E KEY_F KEY_Q KEY_R KEY_I KEY_J KEY_M KEY_TAB KEY_SPACE KEY_ENTER KEY_ESC KEY_BACKSPACE
+                        KEY_LEFTSHIFT KEY_LEFTCTRL KEY_LEFTALT KEY_1 KEY_2 KEY_3 KEY_4 KEY_F1 KEY_F5 KEY_F9
+                        BTN_LEFT BTN_RIGHT BTN_MIDDLE)
+            [[ $mode == mouse ]] || keys+=(BTN_A BTN_B BTN_X BTN_Y BTN_TL BTN_TR BTN_THUMBL BTN_THUMBR BTN_START BTN_SELECT BTN_MODE)
+            say "$btn sends (default = remove this setting, the less specific one applies):"
+            select code in "${keys[@]}" none default "other (type KEY_*/BTN_*)" back; do [[ -n $code ]] && break; done
+            [[ $code == back ]] && continue
+            [[ $code == other* ]] && read -rp "code: " code
+            "$B/vrdual-ctl" map-set "${target[@]}" "$mode" "$btn" "$code" || say "not saved"
+        done
+    done
+}
 urlenc() { python3 -I -c 'import sys, urllib.parse as u; print(u.quote(sys.argv[1], safe=""))' "$1"; }
 open_urls() { local u; for u; do xdg-open "$u" >/dev/null 2>&1 || say "open: $u"; done; }
 
@@ -535,6 +580,17 @@ vrdual_selftest() {
     label="anchor right";        check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/d.png' && $M '$tmp/d.png' --ipd 0.064 --anchor right"
     set_live anchor=center ipd_near=0.2 near_dist=1 far_dist=5
     label="near/far blend";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/e.png' && $M '$tmp/e.png' --ipd 0.064 --ipd-near 0.2 --near 1 --far 5"
+    label="config init: built-in button maps listed commented, both modes"
+    check bash -c "VRDUAL_CONFIG='$tmp/init.conf' '$B/vrdual-ctl' init >/dev/null && [[ \$(grep -c '^# map_\\(gamepad\\|mouse\\)_' '$tmp/init.conf') == 23 ]] &&
+        grep -qx '# map_mouse_rt = BTN_LEFT' '$tmp/init.conf' && grep -qx '# map_gamepad_a = BTN_A' '$tmp/init.conf' && ! grep -q '^map_' '$tmp/init.conf'"
+    label="vrdual map: editor (piped choices) and machine form write per-mode keys, default removes, map shows the source"
+    check bash -c "export VRDUAL_CONFIG='$tmp/map.conf' XDG_STATE_HOME='$tmp/mapst'; mkdir -p '$tmp/mapst/vrdual'
+        printf '2026-10-29 20:00:00\\t10\\tSome Game.exe\\tgpu\\tnone\\n' >'$tmp/mapst/vrdual/games.tsv'
+        printf '1\\n2\\n3\\n1\\n12\\n4\\n' | bash -c 'source \"$VRDUAL_ROOT/_\"; map_edit' >/dev/null 2>&1
+        '$VRDUAL_ROOT/vrdual' map --global both y none 2>/dev/null && '$VRDUAL_ROOT/vrdual' map 'Some Game.exe' gamepad a BTN_B 2>/dev/null &&
+        '$VRDUAL_ROOT/vrdual' map 'Some Game.exe' gamepad a default 2>/dev/null && ! '$VRDUAL_ROOT/vrdual' map 'Some Game.exe' mouse a KEY_NOPE 2>/dev/null &&
+        m=\$('$VRDUAL_ROOT/vrdual' map 'Some Game.exe') && grep -qP '^mouse\\tx\\tKEY_E\\t\\[app:some game.exe\\] map_mouse_x' <<<\"\$m\" &&
+        grep -qP '^gamepad\\ty\\tnone\\t\\[global\\] map_y' <<<\"\$m\" && grep -qP '^gamepad\\ta\\tBTN_A\\tbuilt-in' <<<\"\$m\" || { cat '$tmp/map.conf'; false; }"
     label="save: profile without ipd keys, --global with them"
     check bash -c "export VRDUAL_CONFIG='$tmp/save.conf'; c='$B/vrdual-ctl --session $sess'; \$c save >/dev/null 2>&1 && \$c save --global >/dev/null 2>&1 &&
         awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | sort -u | grep -qx '\[global\]' &&
@@ -608,11 +664,11 @@ vrdual_selftest() {
 
     # 3b3. 10-bit swapchain (UE4 games pick A2B10G10R10 even with HDR off):
     # exported through a blit to 8-bit, both eyes. Also runs with sparse = 1 (smoke test)
-    # and draws from vertex memory exported as an fd and imported (the right eye
-    # only shows the posts if B shares the import like A does).
+    # and draws from vertex memory exported as an fd on a second VkDevice and
+    # imported (the right eye only shows the posts if B shares the import like A does).
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_SPARSE=1 \
-        "$B/vrdual-cube" --scene calib --swapchain-format a2b10g10r10 --mem-export --title "selftest 10-bit" >"$tmp/tb.log" 2>&1 &
+        "$B/vrdual-cube" --scene calib --swapchain-format a2b10g10r10 --mem-export-dev2 --title "selftest 10-bit" >"$tmp/tb.log" 2>&1 &
     for i in $(seq 100); do grep -q 'twin images\|not offered' "$tmp/tb.log" && break; sleep 0.1; done
     if grep -q 'not offered' "$tmp/tb.log"; then
         say "SKIP  10-bit swapchain (the surface offers no A2B10G10R10)"
@@ -621,8 +677,8 @@ vrdual_selftest() {
         check bash -c "grep -q 'exported through a blit' '$tmp/tb.log' && '$B/vrdual-compositor' --session $sess --snapshot '$tmp/tb.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
             $M '$tmp/tb.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/tb.log' || { cat '$tmp/tb.log'; false; }"
         label="sparse = 1 (VRDUAL_SPARSE): applied, mirror runs"; check grep -q 'mirror_gpu=.* sparse=1' "$tmp/tb.log"
-        label="mirror: external_memory_fd visible, an import shares B's twin of the exporter"
-        check bash -c "grep -q 'draws read the imported copy' '$tmp/tb.log' && grep -q 'import shares B' '$tmp/tb.log' || { grep -i 'memory\\|STOP' '$tmp/tb.log'; false; }"
+        label="mirror: external_memory_fd visible, an import shares B's twin of the exporter (another VkDevice)"
+        check bash -c "grep -q 'draws read the imported copy' '$tmp/tb.log' && grep -q 'import shares B.*exported by another device' '$tmp/tb.log' || { grep -i 'memory\\|STOP' '$tmp/tb.log'; false; }"
     fi
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
@@ -806,6 +862,7 @@ PA
     local xrj="${VRDUAL_XR_TEST_RUNTIME:-$B/monado/openxr_monado.json}"
     # input off: the default (gamepad) would create a virtual pad on this desktop
     export VRDUAL_INPUT=off
+    export VRDUAL_XR_LOG="$tmp/xr-output.log"  # not the user's log in the state dir
     if [[ -f $xrj ]]; then
         rm -f /dev/shm/vrdual-$sess-*
         env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
@@ -815,7 +872,7 @@ PA
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LEAN=on VRDUAL_XR_OVERLAY_DUMP='$tmp/ov.pam' timeout 30 '$B/vrdual-xr' --session $sess --frames 60 >'$tmp/xr.log' 2>&1;
             grep -q 'session state 5' '$tmp/xr.log' && grep -q '60 frames submitted' '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
         label="openxr: overlay notice (game started, settings) accepted by the runtime"
-        check bash -c "grep -q 'overlay: game started' '$tmp/xr.log' && ! grep -q 'overlay unavailable' '$tmp/xr.log' && head -c 200 '$tmp/ov.pam' | grep -q 'WIDTH 1024' &&
+        check bash -c "grep -q 'overlay: game started' '$tmp/xr.log' && ! grep -q 'overlay unavailable' '$tmp/xr.log' && head -c 200 '$tmp/ov.pam' | grep -q 'WIDTH 1408' &&
             [[ \$(stat -c %s '$tmp/ov.pam') -gt 524288 ]] || { grep overlay '$tmp/xr.log'; false; }"
         label="openxr: controller actions, input profile from the frame file"
         check bash -c "grep -q 'controller actions attached' '$tmp/xr.log' && grep -q \"app 'vrdual-cube': input=off .*head_lean=on (input: env VRDUAL_INPUT)\" '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
@@ -825,9 +882,34 @@ PA
             check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SCREEN=${sm%:*} VRDUAL_SCREEN_SCALE_Y=0.8 timeout 30 '$B/vrdual-xr' --session $sess --frames 30 --lock ${sm#*:} >'$tmp/xr-${sm%:*}.log' 2>&1;
                 grep -q 'screen: ${sm%:*}.*scale 1 x 0.8' '$tmp/xr-${sm%:*}.log' && grep -q '30 frames submitted' '$tmp/xr-${sm%:*}.log' || { cat '$tmp/xr-${sm%:*}.log'; false; }"
         done
+        label="openxr: button maps reload when the config file changes (no restart)"
+        check bash -c "printf '[global]\\nipd = 0.064\\n' >'$tmp/live.conf'
+            XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_CONFIG='$tmp/live.conf' timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr-map.log' 2>&1 & p=\$!
+            for i in \$(seq 150); do grep -q \"app 'vrdual-cube'\" '$tmp/xr-map.log' && break; sleep 0.1; done
+            printf '[app:vrdual-cube]\\nmap_mouse_a = KEY_E\\nmap_y = none\\n' >>'$tmp/live.conf'
+            for i in \$(seq 50); do grep -q 'button maps reloaded' '$tmp/xr-map.log' && break; sleep 0.1; done
+            kill -INT \$p; wait \$p
+            grep -q 'button maps reloaded (set: gamepad_y=none mouse_a=KEY_E mouse_y=none)' '$tmp/xr-map.log' || { grep '\\[xr\\]' '$tmp/xr-map.log'; false; }"
+        # output log: time-stamped file, rotated (VRDUAL_XR_LOG_BYTES), lines also on redirected stderr
+        label="openxr: output log time-stamped and rotated (4 old files kept), stderr unchanged"
+        check bash -c "rm -f '$tmp'/xrlog*; XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_LOG='$tmp/xrlog' VRDUAL_XR_LOG_BYTES=600 VRDUAL_XR_STATS=0.2 \
+            timeout 30 '$B/vrdual-xr' --session $sess --frames 120 >'$tmp/xrl.log' 2>&1
+            grep -q '120 frames submitted' '$tmp/xrl.log' && cat '$tmp'/xrlog* | grep -q '120 frames submitted' && [[ -f '$tmp/xrlog.4' && ! -e '$tmp/xrlog.5' ]] &&
+            grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}\.[0-9]{3} \[xr\]' '$tmp/xrlog' && ! grep -qE '^[0-9]{2}:[0-9]{2}' '$tmp/xrl.log' &&
+            (( \$(cat '$tmp'/xrlog* | wc -c) <= 5 * 600 + 400 )) || { ls -l '$tmp'/xrlog*; head -3 '$tmp/xrlog'; false; }"
+        label="openxr: on a terminal only state lines, with the time (all in the log)"
+        if command -v script >/dev/null; then
+            check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_LOG='$tmp/xrtty-file.log' \
+                timeout 30 script -qec \"'$B/vrdual-xr' --session $sess --frames 30\" /dev/null >'$tmp/xrtty.log' 2>&1
+                grep -qE '^[0-9]{2}:[0-9]{2}:[0-9]{2} \[xr\] ' '$tmp/xrtty.log' && ! grep -q 'session state\\|LOG in \\|^ ' '$tmp/xrtty.log' &&
+                grep -q 'session state 5' '$tmp/xrtty-file.log' || { cat '$tmp/xrtty.log'; false; }"
+        else say "SKIP  $label (no script(1))"; fi
         label="openxr: session lost -> reconnects in a new process"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_LOSE_AT=20 timeout 40 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr6.log' 2>&1;
             rc=\$?; [[ \$rc == 0 ]] && grep -q 'reconnecting' '$tmp/xr6.log' && [[ \$(grep -c 'session state 5' '$tmp/xr6.log') == 2 ]] && grep -q '30 frames submitted' '$tmp/xr6.log' || { echo rc=\$rc; grep '\\[xr\\]' '$tmp/xr6.log'; false; }"
+        label="openxr: frame loop stuck in a runtime call -> watchdog reconnects in a new process"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_HANG_AT=20 VRDUAL_XR_HANG_S=2 timeout 40 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr7.log' 2>&1;
+            rc=\$?; [[ \$rc == 0 ]] && grep -q 'frame loop stuck' '$tmp/xr7.log' && [[ \$(grep -c 'session state 5' '$tmp/xr7.log') == 2 ]] && grep -q '30 frames submitted' '$tmp/xr7.log' || { echo rc=\$rc; grep '\\[xr\\]' '$tmp/xr7.log'; false; }"
         # game exits while streaming: WiVRn keeps the last image unless we send black
         label="openxr: black frame after the game exits"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
@@ -931,6 +1013,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   clean                         remove stale /dev/shm/vrdual-*
   version                       version, build time and machine of the tools and of each installed layer
   games                         local play log written by xr (never sent anywhere)
+  map [APP]                     controller button maps (gamepad / mouse) per game; bare: editor
+                                  map APP|--global MODE BUTTON CODE|none|default sets one
   request [GAME] [--open]       ask for a game: GitHub Discussions URLs (search, prefilled new)
   report [GAME] [--open]        how a game runs: prefilled GitHub issue form URL; you submit it
                                   GAME defaults to the last one played; nothing is sent by vrdual
@@ -943,7 +1027,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
@@ -955,7 +1039,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ $# -gt 0 ]]; then vrdual_dispatch "$@"; exit; fi
     vrdual_help
     PS3=$'\nchoose: '
-    select c in build gpus demo calib config snapshot steam-install view wivrn xr request report clean quit; do
+    select c in build gpus demo calib config snapshot steam-install view wivrn xr map request report clean quit; do
         [[ $c == quit || -z $c ]] && exit 0
         case $c in request|report) vrdual_dispatch "$c" --open ;; *) vrdual_dispatch "$c" ;; esac
         break

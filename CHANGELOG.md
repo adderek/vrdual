@@ -36,6 +36,33 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   `VK_NV_cooperative_matrix2`; without it the twin failed with -7). A failed
   twin logs the missing extensions. `sparse = 1` keeps sparse visible
   (D3D12 feature level 12_0; Witcher 3 starts, not stable yet).
+- Mirror: `VK_KHR_external_memory_fd` visible (D3D11 shared resources in
+  Unity games through DXVK + winevulkan crashed on a NULL call). An import of
+  memory the app exported shares B's twin of the exporter, also when another
+  VkDevice of the process exported it (Unity's video player: the mirror
+  stopped in Beyond Blue's videos); an fd from elsewhere gets plain memory on
+  B. A failed allocation on B logs its result and pNext chain.
+- Cursor in 64-bit games under gamescope (its WSI layer hides the X window
+  from ours): taken from the root of gamescope's X screen.
+- `vrdual xr` output log: every line with date and time in
+  `~/.local/state/vrdual/xr.log`, rotated (5 MB at most); the terminal shows
+  only state lines and errors, with the time.
+- Layer: a present that is not exported logs why, once per reason.
+- Button maps per mode and per game: `map_gamepad_<button>` /
+  `map_mouse_<button>` (`map_<button>` for both), `[app:NAME]` overrides
+  `[global]`; `vrdual xr` reloads them when the config changes. `_ map`
+  edits them (game, mode, button, key), `vrdual map` shows the effective maps
+  with their source; `vrdual config init` lists the built-in ones commented.
+  A map no longer applies in `off` / `tune`.
+- `vrdual-xr` watchdog: a frame loop stuck 10 s in a runtime call
+  (`VRDUAL_XR_HANG_S`; WiVRn after the headset's network dropped and came
+  back) reconnects in a new process instead of showing black for good.
+- `vrdual-xr`: `screen = curved` is the default. Tune: in flat / curved the
+  right stick x changes `screen_fov` (screen width; `hfov` there only scales
+  the depth), saved with a. Screen grab: both grips only move and scale;
+  turning (hands' line, left stick orbit) needs the left trigger held as well
+  (accidental yaw / pivot). Notice panel wider (86 characters: the values
+  line was cut, e.g. `hfov 9`); shows the screen width.
 - `vrdual-xr` staging in cached memory (the edge mask read write-combined
   memory: 89 ms per frame, 10 Hz in the headset); stats split a headset frame
   into xrWaitFrame and our phases. `wivrn_gpu` puts the server on 0b.

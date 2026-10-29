@@ -34,7 +34,8 @@ static InputCfg cfg(const char* input, const char* mode = "stick") {
     InputCfg c;
     c.input = input;
     c.mouse_mode = mode;
-    for (int& m : c.map) m = -1;
+    for (auto& m : c.map)
+        for (int& v : m) v = -1;
     return c;
 }
 
@@ -82,13 +83,38 @@ int main() {
     }
     {
         InputCfg k = cfg("mouse");
-        k.map[B_A] = input_code("KEY_F5");
-        k.map[B_B] = 0;
-        expect(k.map[B_A] == KEY_F5 && input_code("btn_south") == BTN_SOUTH, "code names resolve (KEY_F5, btn_south)");
+        k.map[M_MOUSE][B_A] = input_code("KEY_F5");
+        k.map[M_MOUSE][B_B] = 0;
+        expect(k.map[M_MOUSE][B_A] == KEY_F5 && input_code("btn_south") == BTN_SOUTH, "code names resolve (KEY_F5, btn_south)");
         Mapper m(k);
         Controls c; c.a = c.b = true;
         auto ev = m.step(c, 0.01);
         expect(has(ev, {DEV_KBD, EV_KEY, KEY_F5, 1}) && ev.size() == 1, "map_a = KEY_F5, map_b = none");
+        k.map[M_MOUSE][B_A] = KEY_E;  // remapped while held: the release is still F5's, the next press E
+        m.remap(k);
+        c.a = false;
+        ev = m.step(c, 0.01);
+        c.a = true;
+        auto ev2 = m.step(c, 0.01);
+        expect(has(ev, {DEV_KBD, EV_KEY, KEY_F5, 0}) && has(ev2, {DEV_KBD, EV_KEY, KEY_E, 1}), "remap while held: old key released, new key on the next press");
+    }
+    {  // map precedence: [app] map_<mode>_<b> > [app] map_<b> > [global] map_<mode>_<b> > [global] map_<b> > built-in
+        char path[] = "/tmp/vrdual-input-test-XXXXXX";
+        int fd = mkstemp(path);
+        const char* conf = "[global]\nmap_a = KEY_1\nmap_mouse_b = KEY_2\nmap_x = KEY_3\nmap_gamepad_x = KEY_4\n"
+                           "[app:testgame]\nmap_x = KEY_5\nmap_mouse_y = KEY_6\nmap_y = KEY_7\nmap_gamepad_lt = none\n";
+        if (fd < 0 || write(fd, conf, strlen(conf)) != ssize_t(strlen(conf))) perror("temp config");
+        close(fd);
+        setenv("VRDUAL_CONFIG", path, 1);
+        InputCfg g = load_input_cfg("testgame"), o = load_input_cfg("othergame");
+        unsetenv("VRDUAL_CONFIG");
+        unlink(path);
+        auto& gm = g.map[M_MOUSE];
+        auto& gp = g.map[M_GAMEPAD];
+        expect(gm[B_A] == KEY_1 && gp[B_A] == KEY_1 && gm[B_B] == KEY_2 && gp[B_B] == -1, "map: [global] map_a both modes, map_mouse_b mouse only");
+        expect(gm[B_X] == KEY_5 && gp[B_X] == KEY_5, "map: [app] map_x beats [global] map_x and map_gamepad_x");
+        expect(gm[B_Y] == KEY_6 && gp[B_Y] == KEY_7 && gp[B_LT] == 0, "map: [app] map_mouse_y beats [app] map_y in mouse; none = nothing");
+        expect(o.map[M_GAMEPAD][B_X] == KEY_4 && o.map[M_MOUSE][B_X] == KEY_3 && o.map[M_MOUSE][B_Y] == -1, "map: another game gets [global] only");
     }
     {
         InputCfg k = cfg("off");
@@ -129,7 +155,25 @@ int main() {
         c.lg = c.rg = 1; c.hand_p[0][0] = 1; c.hand_p[1][0] = 1.6f;
         g.step(c, 0.01);
         expect(fabsf(g.off[0] - 0.1f) < 1e-5f && fabsf(g.sx - 1.5f) < 1e-4f, "screen grab: regrab elsewhere, no jump");
-        // turn the hands' line 90 deg about the midpoint (x axis -> -z axis): yaw left 90 deg
+        // turn the hands' line 90 deg about the midpoint (x axis -> -z axis): without the
+        // left trigger nothing turns; with it, yaw left 90 deg
+        c.hand_p[0][0] = 1.3f; c.hand_p[1][0] = 1.3f; c.hand_p[0][2] = -0.3f; c.hand_p[1][2] = -0.9f;
+        g.step(c, 0.01);
+        expect(g.rot[3] == 1 && fabsf(g.off[0] - 0.1f) < 1e-5f, "screen grab: hands turned without the left trigger -> no rotation");
+        c.lt = 1;
+        g.step(c, 0.01);
+        expect(g.rot[3] == 1, "screen grab: left trigger pressed with the hands turned -> no jump");
+        c.hand_p[0][0] = 1; c.hand_p[1][0] = 1.6f; c.hand_p[0][2] = c.hand_p[1][2] = -0.6f;  // back along x: -90 deg
+        g.step(c, 0.01);
+        c.lt = 0; g.step(c, 0.01);  // turn the hands back without the trigger
+        c.hand_p[0][0] = 1.3f; c.hand_p[1][0] = 1.3f; c.hand_p[0][2] = -0.3f; c.hand_p[1][2] = -0.9f;
+        g.step(c, 0.01);
+        expect(fabsf(g.rot[1] + 0.70711f) < 1e-3f && fabsf(g.rot[3] - 0.70711f) < 1e-3f, "screen grab: left trigger released -> rotation kept, hands move freely");
+        c.lt = c.lg = c.rg = 0; g.step(c, 0.01);
+        g.rot[1] = 0; g.rot[3] = 1;
+        c.lg = c.rg = 1; c.hand_p[0][0] = 1; c.hand_p[1][0] = 1.6f; c.hand_p[0][2] = c.hand_p[1][2] = -0.6f;
+        g.step(c, 0.01);
+        c.lt = 1; g.step(c, 0.01);
         c.hand_p[0][0] = 1.3f; c.hand_p[1][0] = 1.3f; c.hand_p[0][2] = -0.3f; c.hand_p[1][2] = -0.9f;
         g.step(c, 0.01);
         expect(fabsf(g.rot[1] - 0.70711f) < 1e-3f && fabsf(g.rot[3] - 0.70711f) < 1e-3f && fabsf(g.off[0] - 0.1f) < 1e-5f,
@@ -161,6 +205,9 @@ int main() {
             o.off[0] = 0.5f;
             o.step(d, 0.01);
             d.lx = 1;
+            for (int i = 0; i < 10; ++i) o.step(d, 0.05);
+            expect(o.orbit[0] == 0 && o.off[0] == 0.5f, "screen grab: left stick without the left trigger -> no orbit");
+            d.lt = 1;
             for (int i = 0; i < 10; ++i) o.step(d, 0.05);  // 60 deg/s * 0.5 s
             float e[3] = {0.5f * cosf(0.5235988f), 0, 0.5f * sinf(0.5235988f)};  // (0.5, 0, 0) yawed 30 deg right
             expect(fabsf(o.orbit[0] + 0.5235988f) < 1e-4f && fabsf(o.off[0] - e[0]) < 1e-4f && fabsf(o.off[2] - e[2]) < 1e-4f &&
@@ -219,6 +266,12 @@ int main() {
         u.v[0] = 70;
         c.b = true;
         expect((u.step(c, 0.1) & TUNE_RESET) && u.v[0] == 50, "tune: nothing saved, b -> start values");
+        Tuner s;  // flat / curved screen: right stick x sizes the screen, hfov stays
+        s.screen = true;
+        c = Controls{};
+        c.rx = 1;
+        s.step(c, 0.5);
+        expect(s.v[Tuner::HFOV] == 90 && std::fabs(s.v[Tuner::SCREEN_FOV] - 70) < 0.01f, "tune, flat/curved screen: right stick x -> screen_fov 20 deg/s, hfov kept");
     }
 
     {  // cursor depth: the scene's disparity under the pointer (block matching)

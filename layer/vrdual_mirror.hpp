@@ -142,10 +142,15 @@ struct MDev {
     std::vector<Writeback> wbs;                                    // submitted, not yet copied back
     std::vector<VkFence> fence_pool;                               // our fences for submits without one
     uint64_t wb_bytes = 0;
-    // memory exported as an fd on A: dma-buf inode -> A memory. An import of
-    // that fd gets B's twin exported instead, so B shares the buffer like A.
-    std::unordered_map<uint64_t, uint64_t> exported;
 };
+
+// Memory exported as an fd on A: inode -> exporting device + A memory, for all
+// devices of the process (Unity's video player decodes on its own D3D11 device
+// and shares the frames). An import of that fd gets the exporter's B twin
+// exported instead, so B shares the buffer like A.
+struct Export { MDev* md; uint64_t mem; };
+static std::mutex g_exp_lock;
+static std::unordered_map<uint64_t, Export>& g_exported = *new std::unordered_map<uint64_t, Export>;
 
 static MDev* mdev_of(void* k) {
     DeviceData* dd = dev_of(k);
@@ -951,8 +956,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_GetMemoryFdKHR(VkDevice dev, const VkMem
     VkResult r = md->a.GetMemoryFdKHR(dev, gi, fd);
     if (r >= 0)
         if (uint64_t ino = fd_inode(*fd)) {
-            std::lock_guard<std::mutex> l(md->lock);
-            md->exported[ino] = h2u(gi->memory);
+            std::lock_guard<std::mutex> l(g_exp_lock);
+            g_exported[ino] = {md, h2u(gi->memory)};
         }
     return r;
 }
@@ -964,17 +969,18 @@ static void import_on_b(MDev* md, uint64_t ino, VkMemoryAllocateInfo& bai) {
     for (auto* s = prev->pNext; s; prev = s, s = s->pNext) {
         if (s->sType != VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR) continue;
         auto* im = (VkImportMemoryFdInfoKHR*)s;
-        VkDeviceMemory am = VK_NULL_HANDLE;
+        Export ex{};
         {
-            std::lock_guard<std::mutex> l(md->lock);
-            auto it = md->exported.find(ino);
-            if (ino && it != md->exported.end()) am = u2h<VkDeviceMemory>(it->second);
+            std::lock_guard<std::mutex> l(g_exp_lock);
+            auto it = g_exported.find(ino);
+            if (ino && it != g_exported.end()) ex = it->second;
         }
-        VkMemoryGetFdInfoKHR gi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR, nullptr, am ? xl_handle(am) : VK_NULL_HANDLE, im->handleType};
+        VkMemoryGetFdInfoKHR gi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR, nullptr,
+                                ex.md ? xl_handle(u2h<VkDeviceMemory>(ex.mem)) : VK_NULL_HANDLE, im->handleType};
         int bfd = -1;
-        if (gi.memory && md->b.GetMemoryFdKHR && md->b.GetMemoryFdKHR(md->bdev, &gi, &bfd) >= 0) {
+        if (gi.memory && ex.md->b.GetMemoryFdKHR && ex.md->b.GetMemoryFdKHR(ex.md->bdev, &gi, &bfd) >= 0) {
             im->fd = bfd;
-            logf("mirror: memory fd import shares B's twin of the exporting memory");
+            logf("mirror: memory fd import shares B's twin of the exporting memory%s", ex.md == md ? "" : " (exported by another device)");
         } else {
             prev->pNext = s->pNext;
             logf("mirror: memory fd import from an unknown exporter: plain memory on B (contents not shared)");
@@ -1012,7 +1018,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateMemory(VkDevice dev, const VkMem
     VkDeviceMemory bm = VK_NULL_HANDLE;
     VkResult rb = c.ok() ? md->b.AllocateMemory(md->bdev, &bai, nullptr, &bm) : VK_ERROR_UNKNOWN;
     ctx_end(c);
-    if (rb < 0) { mirror_fail(md, "vkAllocateMemory failed on B"); return r; }
+    if (rb < 0) {
+        std::string chain;
+        for (auto* s = (const VkBaseInStructure*)bai.pNext; s; s = s->pNext) chain += " " + std::to_string(int(s->sType));
+        logf("mirror: vkAllocateMemory on B returned %d (size %llu, type %u, pNext sTypes:%s)", int(rb),
+             (unsigned long long)bai.allocationSize, bai.memoryTypeIndex, chain.empty() ? " none" : chain.c_str());
+        mirror_fail(md, "vkAllocateMemory failed on B");
+        return r;
+    }
     record_handle(*out, bm);
     VkMemoryPropertyFlags f = md->amp.memoryTypes[ai->memoryTypeIndex].propertyFlags;
     if (f & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
@@ -1083,8 +1096,11 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeMemory(VkDevice dev, VkDeviceMemory mem,
             wp::remove(it->second.wp);
             md->mems.erase(it);
         }
-        for (auto e = md->exported.begin(); e != md->exported.end();)
-            e = e->second == h2u(mem) ? md->exported.erase(e) : std::next(e);
+        {
+            std::lock_guard<std::mutex> el(g_exp_lock);
+            for (auto e = g_exported.begin(); e != g_exported.end();)
+                e = e->second.md == md && e->second.mem == h2u(mem) ? g_exported.erase(e) : std::next(e);
+        }
         // a new allocation may get the same handle: forget pending writes into this one
         auto gone = [&](const MemRange& r) { return r.mem == h2u(mem); };
         for (auto& w : md->wbs) w.r.erase(std::remove_if(w.r.begin(), w.r.end(), gone), w.r.end());
@@ -1983,6 +1999,10 @@ static void destroy_twin(DeviceData* dd) {
     md->b.DeviceWaitIdle(md->bdev);
     for (auto& kv : dd->swapchains) destroy_swapchain_twin(dd, kv.second);
     for (auto& kv : md->mems) free_shadow(kv.second);
+    {
+        std::lock_guard<std::mutex> l(g_exp_lock);
+        for (auto e = g_exported.begin(); e != g_exported.end();) e = e->second.md == md ? g_exported.erase(e) : std::next(e);
+    }
     free_param_buffer(md->b, md->bdev, md->bep);
     free_copy_res(md->b, md->bdev, md->bcr);
     logf("mirror: %s, %llu memory syncs", md->live ? "ran to the end" : "had stopped", (unsigned long long)md->pushes);

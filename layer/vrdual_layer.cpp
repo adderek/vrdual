@@ -1327,6 +1327,17 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     uint64_t frame = dd->frame;
     std::unique_lock<std::mutex> el(g_shm_lock);
     int own = g_cfg.eye >= 0 && g_cfg.export_frames && s && s->pixfmt ? shm_claim(sc_id(pi->pSwapchains[0]), s->extent) : kNotOwner;
+    {  // why a present is not exported, each reason logged once (a game whose HMD picture stops)
+        static unsigned told = 0;
+        int why = g_cfg.eye < 0 || !g_cfg.export_frames ? 0 : !s ? 1 : !s->pixfmt ? 2 : !own ? 3 : 0;
+        if (why && !(told & (1u << why))) {
+            told |= 1u << why;
+            static const char* const kWhy[] = {"", "swapchain unknown to the layer", "format not exported", "another swapchain is exported"};
+            std::string sz = s ? " " + std::to_string(s->extent.width) + "x" + std::to_string(s->extent.height) : "";
+            logf("present not exported: %s (swapchain 0x%llx%s)", kWhy[why],
+                 (unsigned long long)(pi->swapchainCount ? sc_id(pi->pSwapchains[0]) : 0), sz.c_str());
+        }
+    }
     if (own == kNewOwner) {
         g_aspect = float(s->extent.width) / float(s->extent.height ? s->extent.height : 1);
         VkPhysicalDeviceProperties p;

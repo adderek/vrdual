@@ -34,10 +34,15 @@
 
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -57,6 +62,10 @@
 static volatile sig_atomic_t g_quit = 0;
 static volatile sig_atomic_t g_user_quit = 0;  // Ctrl-C / --frames: no reconnect
 static const int kLost = 3;                    // runtime / session gone: main() reconnects
+// Frame loop heartbeat (CLOCK_MONOTONIC ms, 0 = no running session). WiVRn can
+// leave a call blocked in IPC for good after the headset's network dropped and
+// came back; the watchdog (main) then reconnects in a new process.
+static std::atomic<int64_t> g_beat{0};
 static PFN_xrGetInstanceProcAddr g_gipa;
 static XrInstance g_inst = XR_NULL_HANDLE;
 
@@ -226,7 +235,7 @@ static void barrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImage
 // picture is vrdual's stereo. Head-locked quad at 1.5 m, drawn on the CPU with
 // the baked font (common/vrdual_font.hpp), uploaded only when the text changes.
 struct Overlay {
-    static constexpr uint32_t kW = 1024, kH = 128;
+    static constexpr uint32_t kW = 1408, kH = 128;  // 86 characters per line
     static constexpr int kLines = 3;
     EyeOut o;
     bool rgba = true;                 // swapchain byte order
@@ -364,17 +373,20 @@ static XrQuaternionf level(XrQuaternionf q) {
     return qmul({0, sinf(yaw / 2), 0, cosf(yaw / 2)}, {sinf(pitch / 2), 0, 0, cosf(pitch / 2)});
 }
 
-// input = tune, a: keep world_scale / hud_depth / hfov for this game. Steam
-// games read a copy of the config (vrdual steam-install): refresh it too.
-static void tune_save(const char* app, const float v[3]) {
+// input = tune, a: keep world_scale / hud_depth / hfov (+ screen_fov for a
+// flat / curved screen) for this game. Steam games read a copy of the config
+// (vrdual steam-install): refresh it too.
+static void tune_save(const char* app, const vrdual::Tuner& t) {
     std::string sec = app[0] ? std::string("app:") + app : "global", path = vrdual::config_path();
-    const char* keys[3] = {"world_scale", "hud_depth", "hfov"};
-    for (int i = 0; i < 3; ++i) {
+    const char* keys[vrdual::Tuner::N] = {"world_scale", "hud_depth", "hfov", "screen_fov"};
+    const float* v = t.v;
+    for (int i = 0; i < (t.screen ? 4 : 3); ++i) {
         char b[32];
         snprintf(b, sizeof b, "%g", v[i]);
         if (!vrdual::save_key(path, sec, keys[i], b)) { fprintf(stderr, "[xr] tune: cannot write %s\n", path.c_str()); return; }
     }
-    fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g into [%s] of %s\n", v[0], v[1], v[2], sec.c_str(), path.c_str());
+    fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g%s into [%s] of %s\n", v[0], v[1], v[2],
+            t.screen ? (" screen_fov " + std::to_string(int(lroundf(v[3])))).c_str() : "", sec.c_str(), path.c_str());
     const char* h = getenv("HOME");
     for (const char* d : {"/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf", "/.local/share/vrdual/vrdual.conf"}) {
         std::string c = std::string(h ? h : "") + d;
@@ -430,6 +442,17 @@ static ScreenGeom screen_geom(const Screen& sc, XrPosef base, const vrdual::Scre
     }
     return G;
 }
+// $XDG_STATE_HOME/vrdual, else ~/.local/state/vrdual (created).
+static std::string state_dir() {
+    const char* x = getenv("XDG_STATE_HOME");
+    const char* h = getenv("HOME");
+    std::string d = x && *x ? std::string(x) : std::string(h ? h : "/tmp") + "/.local/state";
+    mkdir(d.c_str(), 0755);
+    d += "/vrdual";
+    mkdir(d.c_str(), 0755);
+    return d;
+}
+
 // Local play log for the user (`vrdual games`, `vrdual report`); never sent
 // anywhere. One line per game process: start (local time), seconds with
 // frames, app, GPU, profile (config / built-in / none). Tab separated.
@@ -439,15 +462,7 @@ struct GameLog {
     time_t start = 0;
     double t0 = 0, t1 = 0;
 
-    static std::string path() {
-        const char* x = getenv("XDG_STATE_HOME");
-        const char* h = getenv("HOME");
-        std::string d = x && *x ? std::string(x) : std::string(h ? h : "/tmp") + "/.local/state";
-        mkdir(d.c_str(), 0755);
-        d += "/vrdual";
-        mkdir(d.c_str(), 0755);
-        return d + "/games.tsv";
-    }
+    static std::string path() { return state_dir() + "/games.tsv"; }
     void begin(const std::string& a, const char* g, const std::string& prof) {
         flush();
         app = a, gpu = g, profile = prof;
@@ -468,6 +483,10 @@ struct GameLog {
     }
 };
 
+static void tune_help(int mode) {
+    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = %s, a = save, b = undo (saved, start, defaults); "
+                    "both grips = move / scale the screen, + left trigger = turn it\n", mode == SCREEN_FULL ? "hfov" : "screen_fov");
+}
 static int screen_parse(const std::string& s) { return s == "flat" ? SCREEN_FLAT : s == "curved" ? SCREEN_CURVED : SCREEN_FULL; }
 static const char* screen_name(int m) { return m == SCREEN_FLAT ? "flat" : m == SCREEN_CURVED ? "curved" : "full"; }
 
@@ -640,6 +659,7 @@ static int run(int argc, char** argv) {
     bool world = true, swap = false;
     long max_frames = -1;
     long lose_at = getenv("VRDUAL_XR_LOSE_AT") ? atol(getenv("VRDUAL_XR_LOSE_AT")) : 0;  // selftest
+    long hang_at = getenv("VRDUAL_XR_HANG_AT") ? atol(getenv("VRDUAL_XR_HANG_AT")) : 0;  // selftest: a runtime call that never returns
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--session" && i + 1 < argc) session = argv[++i];
@@ -865,6 +885,13 @@ static int run(int argc, char** argv) {
     // head_lean: head position relative to a reference, in the frame of the
     // reference yaw (x right, y up, z forward), soft-clamped -> control block
     vrdual::InputCfg icfg;
+    // config file mtime: button maps reload when it changes (desktop editor, `_ map`)
+    auto cfg_mtime = [] {
+        struct stat s;
+        return stat(vrdual::config_path().c_str(), &s) ? 0 : int64_t(s.st_mtim.tv_sec) * 1000000000 + s.st_mtim.tv_nsec;
+    };
+    int64_t cfg_seen = 0;
+    double cfg_checked = 0;
     bool lean_ref = false;
     float ref_p[3] = {}, ref_yaw = 0;
     int recentres = 0;
@@ -905,6 +932,11 @@ static int run(int argc, char** argv) {
         }
         if (exit_loop) break;
         if (lose_at && submitted >= lose_at) { fprintf(stderr, "[xr] VRDUAL_XR_LOSE_AT: pretending the session is lost\n"); break; }
+        if (hang_at && submitted >= hang_at) {
+            fprintf(stderr, "[xr] VRDUAL_XR_HANG_AT: pretending a runtime call blocks\n");
+            for (;;) pause();
+        }
+        g_beat = running && !g_quit ? int64_t(vrdual::now_s() * 1000) : 0;
         if (!running) {
             if (g_quit) break;
             usleep(10000);
@@ -935,6 +967,7 @@ static int run(int argc, char** argv) {
             for (size_t i = 0; i < dirs.size(); ++i) {
                 if (i == dir_i) continue;
                 vrdual::Eye p{0, dirs[i] + "/vrdual-" + session + "-0"};
+                p.quiet = true;
                 bool there = vrdual::eye_map(p) && vrdual::eye_age_s(p) < 1.0;
                 if (p.hdr) munmap(p.hdr, p.bytes);
                 if (there) {
@@ -960,6 +993,7 @@ static int run(int argc, char** argv) {
             fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s (input: %s)\n", input_app.c_str(), ic.input.c_str(),
                     ic.mouse_mode.c_str(), ic.head_look.c_str(), ic.lean ? "on" : "off", ic.input_src.c_str());
             icfg = ic;
+            cfg_seen = cfg_mtime();
             vrdual::Settings st = vrdual::load_settings({input_app});
             std::string prof = !st.profile.empty() ? "config" : "none";
             for (auto& kv : st.src)
@@ -987,9 +1021,10 @@ static int run(int argc, char** argv) {
             grab_recentres = 0;
             tune = vrdual::Tuner{};
             tune.dz = ic.deadzone;
+            tune.screen = scr.mode != SCREEN_FULL;
             tune_on = ic.input == "tune";
             tune_seeded = false;
-            if (tune_on) fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults); both grips = move / scale the screen\n");
+            if (tune_on) tune_help(scr.mode);
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
             else fprintf(stderr, "[xr] screen: %s, %g deg wide at %g m, scale %g x %g\n", screen_name(scr.mode), scr.fov, scr.dist, scr.sx, scr.sy);
             lean_ref = false;
@@ -1034,22 +1069,43 @@ static int run(int argc, char** argv) {
             if (tune_on && !ctl) ctl = vrdual::ctl_open(session, nullptr);
             if (tune_on && ctl) {
                 vrdual_ctl k = vrdual::ctl_read(ctl);
-                if (!tune.moving) { tune.v[0] = k.world_scale; tune.v[1] = k.hud_depth; tune.v[2] = k.hfov; }  // `vrdual set` counts too
+                if (!tune.moving) { tune.v[0] = k.world_scale; tune.v[1] = k.hud_depth; tune.v[2] = k.hfov; tune.v[3] = scr.fov; }  // `vrdual set` counts too
                 if (!tune_seeded) { memcpy(tune.start, tune.v, sizeof tune.v); tune_seeded = true; }
                 vrdual::Controls ct = c;
                 if (c.menu) ct.a = ct.b = false;  // menu + a / b switches the control mode
                 int r = tune.step(ct, t_now - t_input);
-                if (r & vrdual::TUNE_CHANGED)
+                if (r & vrdual::TUNE_CHANGED) {
                     vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = tune.v[0]; w.hud_depth = tune.v[1]; w.hfov = tune.v[2]; });
+                    scr.fov = tune.v[3];
+                }
                 if (r & (vrdual::TUNE_SETTLED | vrdual::TUNE_RESET))
-                    fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g\n", r & vrdual::TUNE_RESET ? " (undo)" : "", tune.v[0], tune.v[1], tune.v[2]);
+                    fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g screen_fov %.3g\n", r & vrdual::TUNE_RESET ? " (undo)" : "",
+                            tune.v[0], tune.v[1], tune.v[2], tune.v[3]);
                 if (r & vrdual::TUNE_CHANGED) notify(!(r & vrdual::TUNE_RESET) ? "tune"
                                                    : tune.undone_to == vrdual::Tuner::UNDO_SAVED ? "tune: back to the saved values"
                                                    : tune.undone_to == vrdual::Tuner::UNDO_START ? "tune: back to the start values"
                                                    : "tune: back to the defaults", false);
                 if (r & vrdual::TUNE_SAVE) {
-                    tune_save(k.app, tune.v);
+                    tune_save(k.app, tune);
                     notify(std::string("tune: saved into [app:") + k.app + "]", false);
+                }
+            }
+            if (mapper && t_now - cfg_checked >= 1) {
+                cfg_checked = t_now;
+                if (int64_t m = cfg_mtime(); m != cfg_seen) {
+                    cfg_seen = m;
+                    vrdual::InputCfg r = vrdual::load_input_cfg(input_app);
+                    if (memcmp(r.map, icfg.map, sizeof r.map)) {
+                        memcpy(icfg.map, r.map, sizeof r.map);
+                        mapper->remap(r);
+                        std::string ch;
+                        for (int md = 0; md < vrdual::M_COUNT; ++md)
+                            for (int b = 0; b < vrdual::B_COUNT; ++b)
+                                if (r.map[md][b] >= 0)
+                                    ch += std::string(" ") + vrdual::kMapModes[md] + "_" + vrdual::kBtnNames[b] + "=" + vrdual::input_name(r.map[md][b]);
+                        fprintf(stderr, "[xr] config changed: button maps reloaded (set:%s)\n", ch.empty() ? " none" : ch.c_str());
+                        notify("button mapping reloaded", false);
+                    }
                 }
             }
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
@@ -1061,8 +1117,9 @@ static int run(int argc, char** argv) {
                 if (t && !tune_on) {
                     tune = vrdual::Tuner{};
                     tune.dz = icfg.deadzone;
+                    tune.screen = scr.mode != SCREEN_FULL;
                     tune_seeded = false;
-                    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = hfov, a = save, b = undo (saved, start, defaults); both grips = move / scale the screen\n");
+                    tune_help(scr.mode);
                 }
                 tune_on = t;
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
@@ -1312,7 +1369,10 @@ static int run(int argc, char** argv) {
                 if (ctl) k = vrdual::ctl_read(ctl);
                 char b[3][160];
                 snprintf(b[0], sizeof b[0], "vrdual stereo VR  |  %s", ov_event.c_str());
-                snprintf(b[1], sizeof b[1], "game: %s   screen: %s   input: %s", fresh ? input_app.c_str() : "none", screen_name(scr.mode),
+                char sn[32];
+                if (scr.mode == SCREEN_FULL) snprintf(sn, sizeof sn, "full");
+                else snprintf(sn, sizeof sn, "%s %.0f deg", screen_name(scr.mode), scr.fov);
+                snprintf(b[1], sizeof b[1], "game: %s   screen: %s   input: %s", fresh ? input_app.c_str() : "none", sn,
                          fresh ? icfg.input.c_str() : "-");
                 if (ctl) {
                     char ipd[40], hud[24];
@@ -1344,7 +1404,7 @@ static int run(int argc, char** argv) {
                 ovq.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
                 ovq.subImage = {ov.o.sc, {{0, 0}, {int32_t(ov.o.w), int32_t(ov.o.h)}}, 0};
                 ovq.pose = {{0, 0, 0, 1}, {0, -0.25f, -1.5f}};
-                ovq.size = {0.8f, 0.8f * Overlay::kH / Overlay::kW};
+                ovq.size = {1.1f, 1.1f * Overlay::kH / Overlay::kW};  // same text size as 0.8 m at 1024 px
                 layers.push_back((XrCompositionLayerBaseHeader*)&ovq);
             }
         }
@@ -1398,18 +1458,160 @@ static int run(int argc, char** argv) {
 
 // Headset gone, WiVRn restarted, session lost: start over in a fresh process
 // (re-exec: no runtime state survives), waiting for the runtime meanwhile.
+// Output log: every stderr line, time-stamped, into xr.log in the state dir
+// (VRDUAL_XR_LOG = other path, 0 = off), rotated at VRDUAL_XR_LOG_BYTES
+// (1 MB) with 4 old files: 5 MB at most. A terminal gets the lines a person
+// needs (state changes, errors) with the time; redirected stderr gets every
+// line unchanged (scripts, selftest).
+namespace outlog {
+static int g_orig = -1, g_pipe = -1;
+static pthread_t g_thread;
+static std::string g_path;
+static size_t g_max = 1 << 20;
+static const int kOld = 4;
+
+// periodic or detailed lines: log file only
+static bool console_line(const std::string& l) {
+    // the runtime's client library logs blocks: "LOG in xrCreateInstance: ..." + indented lines
+    static bool in_block = false;
+    if (!l.compare(0, 7, "LOG in ")) { in_block = true; return false; }
+    if (in_block && (l.empty() || l[0] == ' ' || l[0] == '\t')) return false;
+    in_block = false;
+    static const char* const kQuiet[] = {
+        "frames submitted", "[compositor] ", "[xr] eye ", "screen moved", ": world_scale ", "[xr] cursor ",
+        "[xr] overlay: ", "[xr] session state ", "[xr] HMD recommends", "[xr] runtime: ", "[xr] system: ",
+        "[xr] Vulkan device: ", "[xr] controller actions attached", "[xr] blank frame", "[xr] new frame sequence",
+        "[xr] first frame", "[xr] watching ", "[input] virtual device", "[input] head look",
+    };
+    for (const char* q : kQuiet)
+        if (l.find(q) != std::string::npos) return false;
+    return true;
+}
+
+static std::string stamp(bool date) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    struct tm tm;
+    localtime_r(&ts.tv_sec, &tm);
+    char b[40];
+    size_t n = strftime(b, sizeof b, date ? "%Y-%m-%d %H:%M:%S" : "%H:%M:%S", &tm);
+    if (date) snprintf(b + n, sizeof b - n, ".%03ld", ts.tv_nsec / 1000000);
+    return b;
+}
+
+static void rotate() {
+    for (int i = kOld - 1; i >= 1; --i)
+        rename((g_path + "." + std::to_string(i)).c_str(), (g_path + "." + std::to_string(i + 1)).c_str());
+    rename(g_path.c_str(), (g_path + ".1").c_str());
+}
+
+static void* pump(void*) {
+    bool tty = isatty(g_orig);
+    FILE* f = g_path.empty() ? nullptr : fopen(g_path.c_str(), "a");
+    size_t size = f ? (size_t)ftell(f) : 0;
+    std::string buf;
+    char rd[4096];
+    for (ssize_t n; (n = read(g_pipe, rd, sizeof rd)) > 0 || (n < 0 && errno == EINTR);) {
+        if (n < 0) continue;
+        buf.append(rd, n);
+        for (size_t nl; (nl = buf.find('\n')) != std::string::npos; buf.erase(0, nl + 1)) {
+            std::string l = buf.substr(0, nl);
+            if (!tty) {
+                std::string o = l + "\n";
+                if (write(g_orig, o.data(), o.size()) < 0) {}
+            } else if (console_line(l)) {
+                std::string o = stamp(false) + " " + l + "\n";
+                if (write(g_orig, o.data(), o.size()) < 0) {}
+            }
+            if (!f) continue;
+            std::string o = stamp(true) + " " + l + "\n";
+            if (size + o.size() > g_max && size) {
+                fclose(f);
+                rotate();
+                f = fopen(g_path.c_str(), "a");
+                size = 0;
+                if (!f) continue;
+            }
+            fwrite(o.data(), 1, o.size(), f);
+            fflush(f);
+            size += o.size();
+        }
+    }
+    if (f) fclose(f);
+    return nullptr;
+}
+
+static void start() {
+    const char* p = getenv("VRDUAL_XR_LOG");
+    if (p && !strcmp(p, "0")) return;
+    g_path = p && *p ? p : state_dir() + "/xr.log";
+    if (const char* m = getenv("VRDUAL_XR_LOG_BYTES")) g_max = std::max(256, atoi(m));
+    int fds[2];
+    if (pipe2(fds, O_CLOEXEC)) return;
+    g_orig = fcntl(2, F_DUPFD_CLOEXEC, 3);
+    g_pipe = fds[0];
+    dup2(fds[1], 2);
+    close(fds[1]);
+    if (pthread_create(&g_thread, nullptr, pump, nullptr)) { dup2(g_orig, 2); g_orig = -1; }
+}
+
+// before exit / exec: the last lines reach the file, fd 2 is the terminal again
+static void stop() {
+    if (g_orig < 0) return;
+    fflush(stderr);
+    dup2(g_orig, 2);  // closes the pipe's last write end: the pump sees EOF
+    struct timespec t;    // unless a child (the runtime's?) inherited fd 2
+    clock_gettime(CLOCK_REALTIME, &t);
+    t.tv_sec += 1;
+    if (pthread_timedjoin_np(g_thread, nullptr, &t)) return;
+    close(g_pipe);
+    close(g_orig);
+    g_orig = -1;
+}
+}  // namespace outlog
+
+static char** g_argv;
+static void reconnect() {
+    setenv("VRDUAL_XR_RECONNECT", "1", 1);
+    unsetenv("VRDUAL_XR_LOSE_AT");  // selftest: lose / hang once
+    unsetenv("VRDUAL_XR_HANG_AT");
+    outlog::stop();
+    execv("/proc/self/exe", g_argv);
+    perror("[xr] re-exec");
+}
+
+// VRDUAL_XR_HANG_S (default 10): frame loop stuck that long in a running
+// session -> new process (the blocked call cannot be cancelled).
+static void* watchdog(void*) {
+    const char* e = getenv("VRDUAL_XR_HANG_S");
+    double limit = e ? atof(e) : 10;
+    for (;;) {
+        sleep(1);
+        int64_t b = g_beat;
+        double stuck = b ? vrdual::now_s() - b / 1000.0 : 0;
+        if (limit <= 0 || g_quit || stuck < limit) continue;
+        fprintf(stderr, "[xr] frame loop stuck %.0f s in a runtime call (headset network dropped?); reconnecting in a new process\n", stuck);
+        reconnect();
+        _exit(1);
+    }
+    return nullptr;
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && !strcmp(argv[1], "--version")) { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
+    g_argv = argv;
+    outlog::start();
+    atexit(outlog::stop);
     fprintf(stderr, "[xr] %s\n", VRDUAL_BUILD_INFO);
+    pthread_t wd;
+    if (!pthread_create(&wd, nullptr, watchdog, nullptr)) pthread_detach(wd);
     int rc = run(argc, argv);
     if (rc != kLost || g_user_quit) return rc == kLost ? 0 : rc;
     alarm(0);
+    g_beat = 0;
     fprintf(stderr, "[xr] session lost; reconnecting in 2 s (Ctrl-C to stop)\n");
     sleep(2);
     if (g_user_quit) return 0;
-    setenv("VRDUAL_XR_RECONNECT", "1", 1);
-    unsetenv("VRDUAL_XR_LOSE_AT");  // selftest: lose once
-    execv("/proc/self/exe", argv);
-    perror("[xr] re-exec");
+    reconnect();
     return 1;
 }

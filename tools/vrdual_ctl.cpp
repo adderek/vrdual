@@ -17,6 +17,7 @@
 
 #include "../common/vrdual_version.h"
 #include "../common/vrdual_ctl.hpp"
+#include "../common/vrdual_input.hpp"
 
 using namespace vrdual;
 
@@ -26,7 +27,8 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 }
 
 static int usage() {
-    fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | live | set KEY VALUE | save [--global]   [--session S]\n");
+    fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
+                    "                  | live | set KEY VALUE | save [--global]   [--session S]\n");
     return 2;
 }
 
@@ -56,7 +58,17 @@ int main(int argc, char** argv) {
         fprintf(f, "# vrdual configuration. Precedence: defaults < [global] < [app:NAME] < VRDUAL_* env.\n"
                    "# NAME = VkApplicationInfo name or exe basename (case-insensitive).\n\n[global]\n");
         for (auto& k : kKeys) fprintf(f, "# %s\n%s = %s\n", k.help, k.name, k.def);
-        fprintf(f, "\n# Example profile:\n# [app:vrdual-cube]\n# hfov = 90\n# world_scale = 1\n");
+        fprintf(f, "\n# Controller buttons -> game (vrdual xr): map_<mode>_<button> for one mode,\n"
+                   "# map_<button> for both; KEY_* / BTN_* (linux/input-event-codes.h) or none.\n"
+                   "# In [app:NAME] they override these for one game. Built-in defaults:\n");
+        for (int m = 0; m < M_COUNT; ++m)
+            for (int b = 0; b < B_COUNT; ++b) {
+                int c = kMapDefault[m][b];
+                const char* why = m == M_GAMEPAD && (b == B_LT || b == B_RT) ? "   (trigger axis)"
+                                : m == M_MOUSE && b == B_MENU ? "   (none: cycles mouse_mode)" : "";
+                fprintf(f, "# map_%s_%s = %s%s\n", kMapModes[m], kBtnNames[b], input_name(c), why);
+            }
+        fprintf(f, "\n# Example profile:\n# [app:vrdual-cube]\n# hfov = 90\n# world_scale = 1\n# map_mouse_x = KEY_E\n");
         fclose(f);
         printf("%s\n", p.c_str());
         return 0;
@@ -66,6 +78,39 @@ int main(int argc, char** argv) {
         Settings st = load_settings({args.size() > 1 ? args[1] : ""});
         fprintf(stderr, "config: %s   profile: %s\n", config_path().c_str(), st.profile.empty() ? "(none)" : st.profile.c_str());
         for (auto& k : kKeys) printf("%-20s %-18s # %s\n", k.name, st.s(k.name).c_str(), st.src[k.name].c_str());
+        return 0;
+    }
+
+    // effective button maps: "mode button code source" (source: built-in or [section] key)
+    if (cmd == "map") {
+        InputCfg ic = load_input_cfg(args.size() > 1 ? args[1] : "");
+        for (int m = 0; m < M_COUNT; ++m)
+            for (int b = 0; b < B_COUNT; ++b) {
+                int code = ic.map[m][b] >= 0 ? ic.map[m][b] : kMapDefault[m][b];
+                printf("%s\t%s\t%s\t%s\n", kMapModes[m], kBtnNames[b], input_name(code), ic.map_src[m][b].empty() ? "built-in" : ic.map_src[m][b].c_str());
+            }
+        return 0;
+    }
+    // map-set: writes map_<mode>_<button> (both: map_<button>) into [app:APP] or [global];
+    // default removes that key, so the less specific setting applies again
+    if (cmd == "map-set") {
+        std::vector<std::string> a(args.begin() + 1, args.end());
+        if (!global && a.empty()) return usage();
+        std::string sec = global ? "global" : "app:" + a[0];
+        if (!global) a.erase(a.begin());
+        if (a.size() != 3) return usage();
+        const std::string &mode = a[0], &btn = a[1], &val = a[2];
+        bool okm = mode == "both", okb = false;
+        for (auto n : kMapModes) okm |= mode == n;
+        for (auto n : kBtnNames) okb |= btn == n;
+        if (!okm || !okb) { fprintf(stderr, "mode: gamepad | mouse | both; button: a b x y l3 r3 lt rt lg rg menu\n"); return 2; }
+        std::string key = "map_" + (mode == "both" ? "" : mode + "_") + btn;
+        bool ok;
+        if (lower(val) == "default") ok = remove_key(config_path(), sec, key);
+        else if (lower(val) == "none" || input_code(val) >= 0) ok = save_key(config_path(), sec, key, lower(val) == "none" ? "none" : val);
+        else { fprintf(stderr, "unknown code '%s' (KEY_* / BTN_* from linux/input-event-codes.h, none, default)\n", val.c_str()); return 2; }
+        if (!ok) { fprintf(stderr, "cannot write %s\n", config_path().c_str()); return 1; }
+        fprintf(stderr, "[%s] %s %s\n", sec.c_str(), key.c_str(), lower(val) == "default" ? "removed" : ("= " + val).c_str());
         return 0;
     }
 

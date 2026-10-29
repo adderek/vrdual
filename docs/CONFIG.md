@@ -77,7 +77,7 @@ map_x = KEY_E
 
 | key | default | values | meaning |
 |---|---|---|---|
-| `screen` | `full` | `full` `flat` `curved` | full = game FOV around you; flat / curved = cinema screen |
+| `screen` | `curved` | `curved` `flat` `full` | full = game FOV around you; flat / curved = cinema screen |
 | `screen_dist` | `2.5` | meters | flat/curved screen distance |
 | `screen_fov` | `60` | degrees | flat/curved screen width seen from the centre |
 | `screen_scale_x` | `1` | 0.1..10 | picture width scale (grab changes it; the release log prints the value) |
@@ -104,9 +104,10 @@ elsewhere the grips are the game's):
 |---|---|---|
 | menu (≡, left) held 1 s | picture in front of the current gaze | freeze in place / follow again |
 | menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → tune (notice in the headset) | same |
-| both grips held (`tune`) | move with the hands, turn with the hands' line (15° snap; press a trigger during the grab for free turning), hand distance scales | same |
+| both grips held (`tune`) | move with the hands, hand distance scales; no turning | same |
+| … + left trigger held | also turn with the hands' line (15° snap; press the right trigger during the grab for free turning) and orbit with the left stick | same |
 | … + right stick | stretch width (x) / height (y) | same |
-| … + left stick | orbit the picture around you | same |
+| … + left trigger + left stick | orbit the picture around you | same |
 
 ## Controllers → game (`vrdual xr`, needs `/dev/uinput`)
 
@@ -118,7 +119,7 @@ elsewhere the grips are the game's):
 | `mouse_curve` | `2.5` | exponent | stick response (stick mode) |
 | `deadzone` | `0.15` | 0..1 | stick dead zone |
 | `lstick` | `wasd` | `wasd` `arrows` `none` | left stick in mouse mode |
-| `map_<button>` | per mode | `KEY_*` `BTN_*` `none` | buttons `a b x y l3 r3 lt rt lg rg menu`, e.g. `map_a = KEY_ENTER`, `map_b = KEY_ESC` |
+| `map_<mode>_<button>` | built-in per mode | `KEY_*` `BTN_*` `none` | mode `gamepad` or `mouse`, buttons `a b x y l3 r3 lt rt lg rg menu`, e.g. `map_mouse_x = KEY_E`. `map_<button>` (no mode) applies to both. Most specific wins: `[app:NAME]` `map_<mode>_<button>` > `[app:NAME]` `map_<button>` > `[global]` `map_<mode>_<button>` > `[global]` `map_<button>` > built-in (listed commented by `vrdual config init`). `vrdual xr` reloads them when the file changes (no restart). Edit: `_ map` (menu: game → mode → button → key), `vrdual map APP\|--global MODE BUTTON CODE\|none\|default`, `vrdual map APP` shows the effective maps and where each comes from |
 | `head_look` | `off` | `off` `mouse` `edge` | head turns the game camera: `mouse` = 1:1 (natural for games where you point with the mouse; in first-person games it takes getting used to, and pairs well with a controller: the stick turns slowly and imprecisely, the head adds quick precise turns); `edge` = turn while looking past the dead zone (easier start in first-person games) |
 | `head_deadzone` | `15` | degrees | edge mode dead zone |
 | `head_rate` | `120` | deg/s | edge mode turn rate at 45° past the dead zone |
@@ -131,9 +132,9 @@ both grips: the screen grab above):
 |---|---|
 | left stick up / down | `world_scale` ×2 / ÷2 per second at full deflection |
 | right stick up / down | `hud_depth` farther / nearer, ×2 per second (from infinity: down starts at 100 m; past 100 m back to infinity) |
-| right stick left / right | `hfov` ±20°/s |
-| a | save the three into `[app:NAME]` (and the Steam copy of the config) |
-| b | undo: back to the last saved values; again: to the values the game started with; again: to the defaults (`world_scale` 1, `hud_depth` 0, `hfov` 90) |
+| right stick left / right | `screen = full`: `hfov` ±20°/s; flat / curved: `screen_fov` ±20°/s (screen width; there `hfov` only scales the depth like `world_scale`, set it with `vrdual set` if needed) |
+| a | save them into `[app:NAME]` (and the Steam copy of the config); flat / curved also `screen_fov` |
+| b | undo: back to the last saved values; again: to the values the game started with; again: to the defaults (`world_scale` 1, `hud_depth` 0, `hfov` 90, `screen_fov` 60) |
 
 Default buttons in mouse mode: a = Enter, b = Esc, x = Space, y = Tab,
 l3 = Alt, r3 = middle click, lt = Shift, rt = left click, lg = Ctrl,
@@ -161,7 +162,11 @@ calls), `VRDUAL_SHADOW=0`, `VRDUAL_TRANSIENT_MAPS=1`, `VRDUAL_DIRTY=0` (full mem
 diff, no userfaultfd), `VRDUAL_CACHED_SHADOW=0` (mirror: cached memory
 mapped directly, full diff every submit), `VRDUAL_MIRROR_FAIL_AT=N`
 (selftest), `VRDUAL_XR_TEST_RUNTIME` (selftest), `VRDUAL_XR_STATS=S` (`vrdual xr`
-stats line every S seconds, default 5, 0 = off), `VRDUAL_BACKTRACE=1` (on
+stats line every S seconds, default 5, 0 = off), `VRDUAL_XR_LOG=PATH`
+(`vrdual xr` output log, default `~/.local/state/vrdual/xr.log`, `0` = off;
+every line with date and time; a terminal shows only the state lines, with
+the time), `VRDUAL_XR_LOG_BYTES=N` (rotation size, default 1 MB; 4 old files
+kept, 5 MB at most), `VRDUAL_BACKTRACE=1` (on
 SIGABRT, e.g. glibc "double free", log the aborting thread's native frames as
 module + offset for `addr2line`, then abort as before; also the first 8
 SIGSEGVs in native code with the faulting ip, then Wine's handler, which

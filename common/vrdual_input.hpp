@@ -10,8 +10,11 @@
 //                     edge:  past head_deadzone from the start direction,
 //                            the angle sets a turn rate
 //
-// Buttons are remapped with map_<button> = KEY_*|BTN_*|none in [global] or
-// [app:NAME]; buttons: a b x y l3 r3 lt rt lg rg menu. In mouse mode the menu
+// Buttons are remapped with map_<mode>_<button> = KEY_*|BTN_*|none (mode:
+// gamepad, mouse) or map_<button> (both modes) in [global] or [app:NAME];
+// buttons: a b x y l3 r3 lt rt lg rg menu. Most specific wins: [app:NAME]
+// map_<mode>_<button>, [app:NAME] map_<button>, [global] ..., built-in
+// (kMapDefault). vrdual-xr reloads them when the config file changes. In mouse mode the menu
 // button (unmapped) cycles mouse_mode; held 1 s it re-centres head_look=edge.
 // Menu held + a / b: next / previous control mode (off, gamepad, mouse stick,
 // motion, aim, tune), in every mode; so menu's own code (gamepad: Start) is
@@ -46,6 +49,13 @@ inline int input_code(const std::string& name) {
     for (auto& e : kInputNames)
         if (lower(name) == lower(e.n)) return e.c;
     return -1;
+}
+inline const char* input_name(int code) {  // "none" for 0; of aliases the last defined (BTN_A, not BTN_GAMEPAD)
+    if (code == 0) return "none";
+    const char* n = "?";
+    for (auto& e : kInputNames)
+        if (e.c == code && strcmp(e.n, "KEY_MIN_INTERESTING")) n = e.n;
+    return n;
 }
 
 // One snapshot of the controllers (OpenXR conventions: y up, yaw positive = left).
@@ -130,7 +140,10 @@ struct ScreenGrab {
     float sx = 1, sy = 1;        // width / height scale
     float orbit[2] = {0, 0};     // yaw (left +), pitch (up +) about the viewer, rad
     float basis[4] = {0, 0, 0, 1};
-    bool both = false, fine = false;  // fine: trigger pressed during this grab -> no snap until release
+    // turn: left trigger held -> the hands' twist and the left stick rotate
+    // (without it a grab only moves and scales: no accidental yaw / pivot)
+    // fine: right trigger pressed during this grab -> no snap until release
+    bool both = false, fine = false, turn = false;
     int recentres = 0;
     double menu_t = 0;
     float m0[3] = {}, off0[3] = {}, v0[3] = {}, rot0[4] = {0, 0, 0, 1}, s0 = 0, sx0 = 1, sy0 = 1;
@@ -168,13 +181,15 @@ struct ScreenGrab {
             sx0 = sx;
             sy0 = sy;
         };
+        bool t = c.lt > 0.5f;
         if (now && !both) {
             regrab();
             fine = false;
         } else if (now) {
+            if (t != turn) regrab();  // rotation on / off: no jump
             float b[4], bi[4], q[4];
             float dz = 0.2f;
-            float oy = std::fabs(c.lx) > dz ? -c.lx * kOrbitRate * float(dt) : 0, op = std::fabs(c.ly) > dz ? c.ly * kOrbitRate * float(dt) : 0;
+            float oy = t && std::fabs(c.lx) > dz ? -c.lx * kOrbitRate * float(dt) : 0, op = t && std::fabs(c.ly) > dz ? c.ly * kOrbitRate * float(dt) : 0;
             if (oy != 0 || op != 0) {  // R = B' B^-1 about the viewer: off -> R off, rot -> R rot R^-1
                 float B[4], B1[4], R[4], Ri[4];
                 orbit_q(q); qmul(basis, q, B); qinv(B, bi);
@@ -187,10 +202,12 @@ struct ScreenGrab {
                 regrab();  // hand motion keeps working from here
             }
             for (int k = 0; k < 3; ++k) off[k] = off0[k] + m[k] - m0[k];
-            qarc(v0, v, q);
-            qmul(q, rot0, rot);
-            fine |= c.lt > 0.5f || c.rt > 0.5f;
-            if (!fine) {  // snap in the base frame: B^-1 rot B
+            if (t) {
+                qarc(v0, v, q);
+                qmul(q, rot0, rot);
+            }
+            fine |= c.rt > 0.5f;
+            if (t && !fine) {  // snap in the base frame: B^-1 rot B
                 orbit_q(q); qmul(basis, q, b); qinv(b, bi);
                 qmul(bi, rot, q); qmul(q, b, q);
                 qsnap(q, kSnap);
@@ -204,6 +221,7 @@ struct ScreenGrab {
             sy = std::fmin(10.0f, std::fmax(0.1f, sy0 * k));
         }
         both = now;
+        turn = t;
         return now;
     }
 };
@@ -212,20 +230,22 @@ struct ScreenGrab {
 // driving the game (vrdual-xr, while no grip or trigger is held):
 //   left stick y   world_scale  x2 per second at full deflection (up = more depth)
 //   right stick y  hud_depth    x2 per second (up = farther; past 100 m = 0 = infinity)
-//   right stick x  hfov         20 deg/s
-//   a              save the three into [app:NAME]
+//   right stick x  hfov         20 deg/s; with screen set (flat / curved
+//                  screen, where hfov only scales the depth) screen_fov instead
+//   a              save them into [app:NAME]
 //   b              undo: back to the last saved values; pressed again, to the
 //                  values the game started with, then to the built-in defaults
 // step() returns TUNE_* bits (undone_to says where b went); the caller seeds
-// v[] and start[] from the control block.
+// v[] and start[] from the control block (screen_fov: from the screen).
 enum { TUNE_CHANGED = 1, TUNE_SETTLED = 2, TUNE_SAVE = 4, TUNE_RESET = 8 };
 struct Tuner {
-    enum { WORLD_SCALE, HUD_DEPTH, HFOV };
-    float v[3] = {1, 0, 90};
-    float start[3] = {1, 0, 90};
-    float saved[3] = {NAN, NAN, NAN};  // NAN = not saved in this session
+    enum { WORLD_SCALE, HUD_DEPTH, HFOV, SCREEN_FOV, N };
+    float v[N] = {1, 0, 90, 60};
+    float start[N] = {1, 0, 90, 60};
+    float saved[N] = {NAN, NAN, NAN, NAN};  // NAN = not saved in this session
     enum { UNDO_SAVED, UNDO_START, UNDO_DEFAULTS } undone_to = UNDO_SAVED;
     bool moving = false, a = false, b = false, undid = false;
+    bool screen = false;  // right stick x = screen_fov
     float dz = 0.15f;
 
     int step(const Controls& c, double dt) {
@@ -236,14 +256,16 @@ struct Tuner {
             return idle && m > 0 ? std::copysign(m * m, s) : 0.0f;
         };
         float ws = rate(c.ly), hd = rate(c.ry), fv = rate(c.rx);
-        float old[3] = {v[0], v[1], v[2]};
+        float old[N];
+        memcpy(old, v, sizeof v);
         if (ws != 0) v[WORLD_SCALE] = std::fmin(10000.0f, std::fmax(0.01f, v[WORLD_SCALE] * std::exp2(ws * float(dt))));
         if (hd < 0 && v[HUD_DEPTH] <= 0) v[HUD_DEPTH] = 100;  // in from infinity
         if (hd != 0 && v[HUD_DEPTH] > 0) {
             v[HUD_DEPTH] = std::fmax(0.1f, v[HUD_DEPTH] * std::exp2(hd * float(dt)));
             if (v[HUD_DEPTH] > 100) v[HUD_DEPTH] = 0;
         }
-        if (fv != 0) v[HFOV] = std::fmin(170.0f, std::fmax(20.0f, v[HFOV] + 20 * fv * float(dt)));
+        if (fv != 0 && !screen) v[HFOV] = std::fmin(170.0f, std::fmax(20.0f, v[HFOV] + 20 * fv * float(dt)));
+        if (fv != 0 && screen) v[SCREEN_FOV] = std::fmin(170.0f, std::fmax(10.0f, v[SCREEN_FOV] + 20 * fv * float(dt)));
         bool now = ws != 0 || hd != 0 || fv != 0;
         if (memcmp(old, v, sizeof v)) r |= TUNE_CHANGED;
         if (moving && !now) r |= TUNE_SETTLED;
@@ -254,7 +276,7 @@ struct Tuner {
         }
         if (idle && c.b && !b) {
             // first press: saved; each press with nothing moved since: one step further
-            static const float defaults[3] = {1, 0, 90};
+            static const float defaults[N] = {1, 0, 90, 60};
             const float* to[3] = {saved, start, defaults};
             int i = undid && !memcmp(v, to[undone_to], sizeof v) ? undone_to + 1 : 0;
             while (i < UNDO_DEFAULTS && (to[i][0] != to[i][0] || !memcmp(v, to[i], sizeof v))) ++i;  // unsaved or no-op
@@ -278,6 +300,14 @@ struct InEvent {
 
 enum Btn { B_A, B_B, B_X, B_Y, B_L3, B_R3, B_LT, B_RT, B_LG, B_RG, B_MENU, B_COUNT };
 static const char* const kBtnNames[B_COUNT] = {"a", "b", "x", "y", "l3", "r3", "lt", "rt", "lg", "rg", "menu"};
+enum MapMode { M_GAMEPAD, M_MOUSE, M_COUNT };
+static const char* const kMapModes[M_COUNT] = {"gamepad", "mouse"};
+// Built-in button codes per mode. Gamepad triggers are axes (0 = no button);
+// mouse menu 0 = cycles mouse_mode; mouse lg is the clutch in motion mode.
+static const int kMapDefault[M_COUNT][B_COUNT] = {
+    {BTN_A, BTN_B, BTN_X, BTN_Y, BTN_THUMBL, BTN_THUMBR, 0, 0, BTN_TL, BTN_TR, BTN_START},
+    {KEY_ENTER, KEY_ESC, KEY_SPACE, KEY_TAB, KEY_LEFTALT, BTN_MIDDLE, KEY_LEFTSHIFT, BTN_LEFT, KEY_LEFTCTRL, BTN_RIGHT, 0},
+};
 
 struct InputCfg {
     std::string input = "off", mouse_mode = "stick", lstick = "wasd", head_look = "off";
@@ -285,7 +315,8 @@ struct InputCfg {
     float head_dz = 15, head_rate = 120, head_cpd = 10;
     bool lean = false;
     float lean_max = 0.1f;
-    int map[B_COUNT];  // code, 0 = none, -1 = mode default
+    int map[M_COUNT][B_COUNT];  // code, 0 = none, -1 = mode default
+    std::string map_src[M_COUNT][B_COUNT];  // "[app:NAME] map_mouse_a", "" = built-in
     std::string input_src;  // where input came from (load_input_cfg)
 };
 
@@ -328,6 +359,27 @@ inline bool input_last_save(const std::string& app, const std::string& input, co
     return ok && rename(tmp.c_str(), p.c_str()) == 0;
 }
 
+// map_* keys of [global] and [app:PROFILE], least specific first (see top).
+inline void load_input_maps(InputCfg& c, const std::string& profile) {
+    for (int m = 0; m < M_COUNT; ++m)
+        for (int b = 0; b < B_COUNT; ++b) c.map[m][b] = -1, c.map_src[m][b].clear();
+    Ini ini = parse_ini(config_path());
+    for (std::string sec : {std::string("global"), "app:" + lower(profile)}) {
+        auto it = ini.find(sec);
+        if (it == ini.end()) continue;
+        for (int spec = 0; spec < 2; ++spec)
+            for (int m = 0; m < M_COUNT; ++m)
+                for (int b = 0; b < B_COUNT; ++b) {
+                    std::string k = std::string("map_") + (spec ? std::string(kMapModes[m]) + "_" : "") + kBtnNames[b];
+                    auto kv = it->second.find(k);
+                    if (kv == it->second.end()) continue;
+                    int code = lower(kv->second) == "none" ? 0 : input_code(kv->second);
+                    if (code < 0) { if (m == 0 || spec) fprintf(stderr, "[input] %s: unknown code '%s'\n", k.c_str(), kv->second.c_str()); }
+                    else c.map[m][b] = code, c.map_src[m][b] = "[" + sec + "] " + k;
+                }
+    }
+}
+
 // Settings + raw map_* keys of [global] and [app:NAME].
 inline InputCfg load_input_cfg(const std::string& app) {
     Settings st = load_settings({app});
@@ -359,19 +411,7 @@ inline InputCfg load_input_cfg(const std::string& app) {
     c.head_cpd = st.f("head_counts_per_deg");
     c.lean = st.s("head_lean") == "on";
     c.lean_max = st.f("lean_max");
-    for (int& m : c.map) m = -1;
-    Ini ini = parse_ini(config_path());
-    for (std::string sec : {std::string("global"), "app:" + lower(st.profile)}) {
-        auto it = ini.find(sec);
-        if (it == ini.end()) continue;
-        for (int b = 0; b < B_COUNT; ++b) {
-            auto kv = it->second.find(std::string("map_") + kBtnNames[b]);
-            if (kv == it->second.end()) continue;
-            int code = lower(kv->second) == "none" ? 0 : input_code(kv->second);
-            if (code < 0) fprintf(stderr, "[input] map_%s: unknown code '%s'\n", kBtnNames[b], kv->second.c_str());
-            else c.map[b] = code;
-        }
-    }
+    load_input_maps(c, st.profile);
     return c;
 }
 
@@ -395,19 +435,14 @@ public:
 
     // Code a button sends in the current input mode (0 = nothing).
     int code_of(int b) const {
-        if (cfg_.map[b] >= 0) return cfg_.map[b];
-        if (cfg_.input == "gamepad") {
-            static const int pad[B_COUNT] = {BTN_A, BTN_B, BTN_X, BTN_Y, BTN_THUMBL, BTN_THUMBR, 0, 0, BTN_TL, BTN_TR, BTN_START};
-            return pad[b];  // triggers are axes
-        }
-        if (cfg_.input == "mouse") {
-            static const int mouse[B_COUNT] = {KEY_ENTER, KEY_ESC, KEY_SPACE, KEY_TAB, KEY_LEFTALT, BTN_MIDDLE,
-                                               KEY_LEFTSHIFT, BTN_LEFT, KEY_LEFTCTRL, BTN_RIGHT, 0};
-            if (b == B_LG && mode_ == 1) return 0;  // clutch
-            return mouse[b];
-        }
-        return 0;
+        int m = cfg_.input == "gamepad" ? M_GAMEPAD : cfg_.input == "mouse" ? M_MOUSE : -1;
+        if (m < 0) return 0;
+        if (cfg_.map[m][b] >= 0) return cfg_.map[m][b];
+        if (m == M_MOUSE && b == B_LG && mode_ == 1) return 0;  // clutch
+        return kMapDefault[m][b];
     }
+    // New button maps (config reloaded); held buttons release what they pressed.
+    void remap(const InputCfg& c) { memcpy(cfg_.map, c.map, sizeof cfg_.map); }
 
     std::vector<InEvent> step(const Controls& c, double dt) {
         std::vector<InEvent> ev;
