@@ -237,6 +237,8 @@ vrdual_xr() {
     # across games (Heroic's dir exists only while Heroic runs)
     if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM:$HEROIC_SHM"; fi
     steam_layer_check
+    # checked again by vrdual-xr at each game start (the conf may be edited meanwhile)
+    [[ -f $STEAM_FLATPAK/vrdual/vrdual.conf ]] && export VRDUAL_CONF_COPY="$STEAM_FLATPAK/vrdual/vrdual.conf"
     if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
         local w
         w=$(flatpak info --show-location io.github.wivrn.wivrn 2>/dev/null) && export XR_RUNTIME_JSON=$w/files/share/openxr/1/openxr_wivrn.json
@@ -889,14 +891,14 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
             check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SCREEN=${sm%:*} VRDUAL_SCREEN_SCALE_Y=0.8 timeout 30 '$B/vrdual-xr' --session $sess --frames 30 --lock ${sm#*:} >'$tmp/xr-${sm%:*}.log' 2>&1;
                 grep -q 'screen: ${sm%:*}.*scale 1 x 0.8' '$tmp/xr-${sm%:*}.log' && grep -q '30 frames submitted' '$tmp/xr-${sm%:*}.log' || { cat '$tmp/xr-${sm%:*}.log'; false; }"
         done
-        label="openxr: button maps reload when the config file changes (no restart)"
+        label="openxr: button maps and mouse_speed reload when the config file changes (no restart)"
         check bash -c "printf '[global]\\nipd = 0.064\\n' >'$tmp/live.conf'
             XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_CONFIG='$tmp/live.conf' timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr-map.log' 2>&1 & p=\$!
             for i in \$(seq 150); do grep -q \"app 'vrdual-cube'\" '$tmp/xr-map.log' && break; sleep 0.1; done
-            printf '[app:vrdual-cube]\\nmap_mouse_a = KEY_E\\nmap_y = none\\n' >>'$tmp/live.conf'
+            printf '[app:vrdual-cube]\\nmap_mouse_a = KEY_E\\nmap_y = none\\nmouse_speed = 2.5\\n' >>'$tmp/live.conf'
             for i in \$(seq 50); do grep -q 'button maps reloaded' '$tmp/xr-map.log' && break; sleep 0.1; done
             kill -INT \$p; wait \$p
-            grep -q 'button maps reloaded (set: gamepad_y=none mouse_a=KEY_E mouse_y=none)' '$tmp/xr-map.log' || { grep '\\[xr\\]' '$tmp/xr-map.log'; false; }"
+            grep -q 'button maps reloaded (set: gamepad_y=none mouse_a=KEY_E mouse_y=none)' '$tmp/xr-map.log' && grep -q 'config changed: mouse_speed 2.5' '$tmp/xr-map.log' || { grep '\\[xr\\]' '$tmp/xr-map.log'; false; }"
         # output log: time-stamped file, rotated (VRDUAL_XR_LOG_BYTES), lines also on redirected stderr
         label="openxr: output log time-stamped and rotated (4 old files kept), stderr unchanged"
         check bash -c "rm -f '$tmp'/xrlog*; XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_LOG='$tmp/xrlog' VRDUAL_XR_LOG_BYTES=600 VRDUAL_XR_STATS=0.2 \
@@ -951,28 +953,36 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         # second dir, reloads on the new process; the new game re-seeds the block
         rm -f /dev/shm/vrdual-$sess-*
         local cube="exec env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both '$B/vrdual-cube' --scene calib --title 'selftest xr2'"
-        label="openxr: started before the games, follows a game restart"
+        label="openxr: started before the games, follows a game restart (next game RGBA: new swapchain)"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SHM_DIR='$tmp/none:/dev/shm' VRDUAL_XR_STATS=1 timeout 60 '$B/vrdual-xr' --session $sess >'$tmp/xr5.log' 2>&1 & p=\$!
             w() { for i in \$(seq 40); do [[ \$(grep -c \"\$1\" '$tmp/xr5.log') -ge \$2 ]] && return 0; sleep 0.5; done; return 1; }
             w 'session state 5' 1; $cube >'$tmp/g1.log' 2>&1 & g=\$!
             w 'game frames arriving' 1; kill \$g; wait \$g; w 'no game frames' 2
-            VRDUAL_HFOV=70 $cube >'$tmp/g2.log' 2>&1 & g=\$!
+            VRDUAL_HFOV=70 $cube --swapchain-format rgba8 >'$tmp/g2.log' 2>&1 & g=\$!
             w 'game frames arriving' 2; ok=\$?; hf=\$('$B/vrdual-ctl' live --session $sess 2>/dev/null | awk '\$1==\"hfov\"{print \$2}')
             kill \$g \$p; wait
             [[ \$ok == 0 ]] && grep -q 'found in /dev/shm' '$tmp/xr5.log' && grep -q 'new frame sequence' '$tmp/xr5.log' && [[ \$(grep -c \"app 'vrdual-cube'\" '$tmp/xr5.log') -ge 2 ]] &&
-                grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
+                grep -q 're-seeded' '$tmp/g2.log' && [[ \$hf == 70 ]] &&
+                grep -q 'eye 0: .* swapchain for BGRA frames' '$tmp/xr5.log' && grep -q 'eye 0: .* swapchain for RGBA frames' '$tmp/xr5.log' || { echo hfov=\$hf; cat '$tmp/xr5.log'; grep 'control block' '$tmp/g2.log'; false; }"
         label="openxr: stats line (game fps, headset Hz, frame age, L-R skew)"
         check grep -qE 'new game frames \([0-9.]+/s\), headset [0-9.]+ Hz, [0-9]+ without a new game frame, frame age [0-9.]+ ms avg / [0-9.]+ max \(layer publish -> upload\), L-R [0-9.]+ ms, per headset frame: xrWaitFrame [0-9.]+ ms, our work [0-9.]+ ms avg / [0-9.]+ max \(xrBeginFrame [0-9.]+, input .* xrEndFrame [0-9.]+\)' "$tmp/xr5.log"
         label="openxr: edge mask at each eye's outer edge (ipd 64 mm, hfov 90, 960 px: 15 px)"
         check bash -c "grep -q 'eye 0: edge mask 15 px at the left edge' '$tmp/xr5.log' && grep -q 'eye 1: edge mask 15 px at the right edge' '$tmp/xr5.log' ||
             { grep 'edge mask' '$tmp/xr5.log'; false; }"
         label="openxr: staging in cached memory, edge mask phase under 2 ms (write-combined reads: 89 ms per frame)"
-        check bash -c "[[ \$(grep -c 'swapchain, .* images.*, staging cached' '$tmp/xr5.log') -ge 2 ]] &&
+        check bash -c "[[ \$(grep -c 'swapchain for .* images.*, staging cached' '$tmp/xr5.log') -ge 2 ]] &&
             grep -o 'edge [0-9.]*, cursor' '$tmp/xr5.log' | awk '{ n++; if (\$2 >= 2) bad++ } END { exit !(n && !bad) }' ||
             { grep -E 'staging|our work' '$tmp/xr5.log'; false; }"
         label="openxr: play log has one line per game process, no-profile hint"
         check bash -c "f='$tmp/state/vrdual/games.tsv'; [[ \$(grep -cE \$'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}\t[0-9]+\tvrdual-cube\t[^\t]+\tnone\$' \"\$f\") -ge 2 ]] &&
             grep -q \"no vrdual profile for 'vrdual-cube'\" '$tmp/xr5.log' || { cat \"\$f\"; false; }"
+        # a game outside /dev/shm (Flatpak) whose config copy differs from the host config
+        label="openxr: warns at game start when steam-install's config copy is stale"
+        mkdir -p "$tmp/fshm" && echo 'world_scale = 2' >"$tmp/copy.conf"
+        check bash -c "VRDUAL_SHM_DIR='$tmp/fshm' $cube >'$tmp/g3.log' 2>&1 & g=\$!
+            XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SHM_DIR='$tmp/fshm' VRDUAL_CONF_COPY='$tmp/copy.conf' timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr8.log' 2>&1
+            kill \$g; wait \$g
+            grep -q 'copy.conf differs from .*run: vrdual steam-install' '$tmp/xr8.log' && grep -q 'overlay: game started, OLD CONFIG' '$tmp/xr8.log' || { cat '$tmp/xr8.log'; false; }"
     else
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
     fi

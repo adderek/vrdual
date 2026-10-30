@@ -183,7 +183,7 @@ struct Gpu {
 struct EyeOut {
     XrSwapchain sc = XR_NULL_HANDLE;
     std::vector<XrSwapchainImageVulkan2KHR> images;
-    uint32_t w = 0, h = 0;
+    uint32_t w = 0, h = 0, fmt = 0;  // fmt: the frame's vrdual_pixfmt it was made for
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     uint8_t* map = nullptr;
@@ -642,7 +642,8 @@ struct XrInput {
         c.hands_ok = true;
         for (int h = 0; h < 2; ++h) {
             loc = {XR_TYPE_SPACE_LOCATION};
-            c.hands_ok &= xrLocateSpace(grip_space[h], screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT);
+            c.hand_p_ok[h] = xrLocateSpace(grip_space[h], screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT);
+            c.hands_ok &= c.hand_p_ok[h];
             c.hand_p[h][0] = loc.pose.position.x; c.hand_p[h][1] = loc.pose.position.y; c.hand_p[h][2] = loc.pose.position.z;
         }
         loc = {XR_TYPE_SPACE_LOCATION};
@@ -1021,7 +1022,22 @@ static int run(int argc, char** argv) {
             edge_mode = st.s("edge_mask") == "off" ? 0 : st.s("edge_mask") == "both" ? 2 : 1;
             edge_dist = st.f("edge_mask_dist");
             cur_d_ok = false;
-            notify(prof == "none" ? "game started, no profile (vrdual request)" : "game started");
+            // Flatpak games read steam-install's config copy (VRDUAL_CONF_COPY, set
+            // by `vrdual xr`); edits to the host config reach them only via a re-install
+            bool stale_conf = false;
+            if (const char* cp = getenv("VRDUAL_CONF_COPY"); cp && *cp && dirs[dir_i] != "/dev/shm") {
+                std::ifstream a(vrdual::config_path(), std::ios::binary), b(cp, std::ios::binary);
+                if (a && b) {
+                    std::stringstream sa, sb;
+                    sa << a.rdbuf();
+                    sb << b.rdbuf();
+                    stale_conf = sa.str() != sb.str();
+                }
+                if (stale_conf) fprintf(stderr, "[xr] warning: %s differs from %s, the game runs the old config (run: vrdual steam-install)\n",
+                                        cp, vrdual::config_path().c_str());
+            }
+            if (stale_conf) notify("game started, OLD CONFIG (vrdual steam-install)");
+            else notify(prof == "none" ? "game started, no profile (vrdual request)" : "game started");
             grab = vrdual::ScreenGrab{};
             grab.sx = scr.sx;
             grab.sy = scr.sy;
@@ -1142,6 +1158,14 @@ static int run(int argc, char** argv) {
                 if (int64_t m = cfg_mtime(); m != cfg_seen) {
                     cfg_seen = m;
                     vrdual::InputCfg r = vrdual::load_input_cfg(input_app);
+                    if (r.speed != icfg.speed) {
+                        icfg.speed = r.speed;
+                        mapper->set_speed(r.speed);
+                        fprintf(stderr, "[xr] config changed: mouse_speed %g\n", r.speed);
+                        char t[48];
+                        snprintf(t, sizeof t, "mouse speed %g", r.speed);
+                        notify(t, false);
+                    }
                     if (memcmp(r.map, icfg.map, sizeof r.map)) {
                         memcpy(icfg.map, r.map, sizeof r.map);
                         mapper->remap(r);
@@ -1225,7 +1249,7 @@ static int run(int argc, char** argv) {
                 vrdual::Eye* src[2] = {swap ? &R : &L, swap ? &L : &R};
                 for (int e = 0; e < 2; ++e) {
                     EyeOut& o = out[e];
-                    if (o.sc && (o.w != src[e]->w || o.h != src[e]->h)) {  // game resized: new swapchain
+                    if (o.sc && (o.w != src[e]->w || o.h != src[e]->h || o.fmt != src[e]->fmt)) {  // game resized or other format (next game): new swapchain
                         vkDeviceWaitIdle(g.dev);
                         xrDestroySwapchain(o.sc);
                         vkDestroyBuffer(g.dev, o.buf, nullptr);
@@ -1243,6 +1267,7 @@ static int run(int argc, char** argv) {
                         o.swizzle = fmt != want;
                         o.w = src[e]->w;
                         o.h = src[e]->h;
+                        o.fmt = src[e]->fmt;
                         XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
                         ci.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
                         ci.format = fmt;
@@ -1256,7 +1281,8 @@ static int run(int argc, char** argv) {
                         o.images.assign(ni, {XR_TYPE_SWAPCHAIN_IMAGE_VULKAN2_KHR});
                         xrEnumerateSwapchainImages(o.sc, ni, &ni, (XrSwapchainImageBaseHeader*)o.images.data());
                         if (!make_staging(g, o)) { fprintf(stderr, "[xr] staging buffer failed\n"); return 1; }
-                        fprintf(stderr, "[xr] eye %d: %ux%u swapchain, %u images%s, staging %s\n", e, o.w, o.h, ni, o.swizzle ? " (R/B swizzle)" : "",
+                        fprintf(stderr, "[xr] eye %d: %ux%u swapchain for %s frames, %u images%s, staging %s\n", e, o.w, o.h, bgra ? "BGRA" : "RGBA", ni,
+                                o.swizzle ? " (R/B swizzle)" : "",
                                 o.cached ? "cached" : "uncached");
                     }
                     size_t n = size_t(o.w) * o.h * 4;

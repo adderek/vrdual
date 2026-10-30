@@ -6,6 +6,9 @@
 //                       motion  right controller rotation -> relative motion,
 //                               left grip held = clutch (re-centre the hand)
 //                       aim     right controller ray -> absolute pointer
+//                       move    right controller position (across the
+//                               screen) -> relative motion, like a desk
+//                               mouse; left grip held = clutch
 //   head_look         mouse: head yaw/pitch deltas -> relative mouse (1:1)
 //                     edge:  past head_deadzone from the start direction,
 //                            the angle sets a turn rate
@@ -18,7 +21,7 @@
 // map edits them in the headset (MapEditor). In mouse mode the menu button
 // (unmapped) cycles mouse_mode; held 1 s it re-centres head_look=edge.
 // Menu held + a / b: next / previous control mode (off, gamepad, mouse stick,
-// motion, aim, tune, map), in every mode; so menu's own code (gamepad: Start) is
+// motion, aim, move, tune, map), in every mode; so menu's own code (gamepad: Start) is
 // sent as a tap when it is released without a chord and before 1 s.
 //
 // Mapper is pure (state in, events out) so it can be tested without devices;
@@ -72,6 +75,7 @@ struct Controls {
     float head_yaw = 0, head_pitch = 0;     // degrees
     float head_px = 0, head_py = 0, head_pz = 0;  // meters, OpenXR LOCAL space
     bool hands_ok = false;                  // both grip poses valid
+    bool hand_p_ok[2] = {};                 // that grip's position valid
     float hand_p[2][3] = {};                // left, right grip position, meters, screen space
 };
 
@@ -478,9 +482,9 @@ inline float wrap180(float a) {
 class Mapper {
 public:
     explicit Mapper(const InputCfg& c) : cfg_(c) {
-        mode_ = cfg_.mouse_mode == "motion" ? 1 : cfg_.mouse_mode == "aim" ? 2 : 0;
+        mode_ = cfg_.mouse_mode == "motion" ? 1 : cfg_.mouse_mode == "aim" ? 2 : cfg_.mouse_mode == "move" ? 3 : 0;
     }
-    const char* mouse_mode() const { return mode_ == 1 ? "motion" : mode_ == 2 ? "aim" : "stick"; }
+    const char* mouse_mode() const { return mode_ == 1 ? "motion" : mode_ == 2 ? "aim" : mode_ == 3 ? "move" : "stick"; }
     const std::string& input() const { return cfg_.input; }
     // "gamepad", "mouse: aim", ... for notices
     std::string controls() const { return cfg_.input == "mouse" ? std::string("mouse: ") + mouse_mode() : cfg_.input; }
@@ -492,11 +496,12 @@ public:
         int m = cfg_.input == "gamepad" ? M_GAMEPAD : cfg_.input == "mouse" ? M_MOUSE : -1;
         if (m < 0) return 0;
         if (cfg_.map[m][b] >= 0) return cfg_.map[m][b];
-        if (m == M_MOUSE && b == B_LG && mode_ == 1) return 0;  // clutch
+        if (m == M_MOUSE && b == B_LG && (mode_ == 1 || mode_ == 3)) return 0;  // clutch
         return kMapDefault[m][b];
     }
     // New button maps (config reloaded); held buttons release what they pressed.
     void remap(const InputCfg& c) { memcpy(cfg_.map, c.map, sizeof cfg_.map); }
+    void set_speed(float s) { cfg_.speed = s; }
 
     std::vector<InEvent> step(const Controls& c, double dt) {
         std::vector<InEvent> ev;
@@ -518,7 +523,8 @@ public:
                     int code = code_of(b);
                     if (code > 0) key(ev, code, true), menu_up_ = code;
                     else if (cfg_.input == "mouse") {
-                        mode_ = (mode_ + 1) % 3;
+                        mode_ = (mode_ + 1) % 4;
+                        hand_prev_ok_ = pos_prev_ok_ = false;
                         ++changes;
                         fprintf(stderr, "[input] mouse mode: %s\n", mouse_mode());
                     }
@@ -558,9 +564,9 @@ private:
     // Next (+1) / previous (-1) control mode. Releases whatever the old mode
     // holds down (keys, buttons, pad axes) so nothing sticks.
     void cycle(int dir, std::vector<InEvent>& ev) {
-        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "tune", "map"};
-        const int n = 7;
-        int pos = cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 5 : cfg_.input == "map" ? 6 : 0;
+        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "mouse", "tune", "map"};
+        const int n = 8;
+        int pos = cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 6 : cfg_.input == "map" ? 7 : 0;
         for (int b = 0; b < B_COUNT; ++b)
             if (down_code_[b] > 0) key(ev, down_code_[b], false), down_code_[b] = 0;
         for (int i = 0; i < 4; ++i)
@@ -569,8 +575,8 @@ private:
             for (int a : {ABS_X, ABS_Y, ABS_RX, ABS_RY, ABS_Z, ABS_RZ}) axis(ev, a, 0);
         pos = (pos + dir + n) % n;
         cfg_.input = kIn[pos];
-        if (pos >= 2 && pos <= 4) mode_ = pos - 2;
-        hand_prev_ok_ = false;
+        if (pos >= 2 && pos <= 5) mode_ = pos - 2;
+        hand_prev_ok_ = pos_prev_ok_ = false;
         ++changes;
         fprintf(stderr, "[input] controls: %s\n", controls().c_str());
     }
@@ -583,8 +589,8 @@ private:
     bool dir_[4] = {};         // left stick directions held (mouse mode)
     float fx_ = 0, fy_ = 0, fw_ = 0;  // sub-count remainders
     int tab_u_ = -1, tab_v_ = -1;
-    bool hand_prev_ok_ = false;
-    float hand_yaw_ = 0, hand_pitch_ = 0;
+    bool hand_prev_ok_ = false, pos_prev_ok_ = false;
+    float hand_yaw_ = 0, hand_pitch_ = 0, pos_x_ = 0, pos_y_ = 0;
     bool head_prev_ok_ = false, head_ref_ok_ = false;
     float head_yaw_ = 0, head_pitch_ = 0, ref_yaw_ = 0, ref_pitch_ = 0;
 
@@ -640,6 +646,16 @@ private:
             hand_prev_ok_ = c.hand_ok;
             hand_yaw_ = c.hand_yaw;
             hand_pitch_ = c.hand_pitch;
+        }
+        if (mode_ == 3) {  // move: 5000 counts per metre of hand travel across the screen
+            bool ok = c.hand_p_ok[1];
+            if (ok && pos_prev_ok_ && !an_[B_LG]) {
+                fx_ += (c.hand_p[1][0] - pos_x_) * 5000 * cfg_.speed;
+                fy_ -= (c.hand_p[1][1] - pos_y_) * 5000 * cfg_.speed;
+            }
+            pos_prev_ok_ = ok;
+            pos_x_ = c.hand_p[1][0];
+            pos_y_ = c.hand_p[1][1];
         }
         if (mode_ == 2 && c.aim_ok) {
             int u = int(lrintf(c.aim_u * 65535)), v = int(lrintf(c.aim_v * 65535));

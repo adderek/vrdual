@@ -1410,6 +1410,26 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_QueueSubmit2(VkQueue q, uint32_t n, cons
     return r;
 }
 
+// Sparse binds write no memory; like a submit, B's queue is shared with our
+// own extra submits and B's fence must be waited for before a reset.
+static VKAPI_ATTR VkResult VKAPI_CALL m_QueueBindSparse(VkQueue q, uint32_t n, const VkBindSparseInfo* bi, VkFence f) {
+    MDev* md = mdev_of(key(q));
+    VkResult r = md->a.QueueBindSparse(q, n, bi, f);
+    if (r < 0 || !md->live) return r;
+    Ctx& c = ctx_begin(md);
+    auto* bbi = c.alloc<VkBindSparseInfo>(n);
+    for (uint32_t i = 0; i < n; ++i) tr_VkBindSparseInfo(c, &bi[i], &bbi[i]);
+    VkResult rb = VK_ERROR_UNKNOWN;
+    if (c.ok()) {
+        std::lock_guard<std::mutex> l(md->qlock);
+        rb = md->b.QueueBindSparse(c.xl(q), n, bbi, c.xl(f));
+    }
+    ctx_end(c);
+    if (rb < 0) mirror_fail(md, "vkQueueBindSparse failed on B");
+    else pending_add(md, f);
+    return r;
+}
+
 // ------------------------------------------------------ command buffers -----
 static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateCommandBuffers(VkDevice dev, const VkCommandBufferAllocateInfo* ai, VkCommandBuffer* cbs) {
     MDev* md = mdev_of(key(dev));
@@ -1810,7 +1830,7 @@ static PFN_vkVoidFunction lookup(const char* name) {
         M(AllocateMemory); M(FreeMemory); M(MapMemory); M(UnmapMemory); M(MapMemory2); M(UnmapMemory2);
         M(FlushMappedMemoryRanges); M(InvalidateMappedMemoryRanges); M(WaitForFences); M(GetFenceStatus);
         M(ResetFences); M(WaitSemaphores); M(GetSemaphoreCounterValue); M(GetDeviceQueue); M(GetDeviceQueue2);
-        M(QueueSubmit); M(QueueSubmit2); M(AllocateCommandBuffers); M(FreeCommandBuffers); M(BeginCommandBuffer);
+        M(QueueSubmit); M(QueueSubmit2); M(QueueBindSparse); M(AllocateCommandBuffers); M(FreeCommandBuffers); M(BeginCommandBuffer);
         M(CreateDescriptorUpdateTemplate); M(DestroyDescriptorUpdateTemplate); M(UpdateDescriptorSetWithTemplate);
         M(CmdPushDescriptorSetWithTemplate); M(CmdPushDescriptorSetWithTemplate2); M(CreateShaderModule);
         M(CreateGraphicsPipelines); M(AcquireNextImageKHR); M(AcquireNextImage2KHR); M(CreateBuffer);

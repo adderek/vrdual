@@ -36,10 +36,11 @@ inline double now_s() {
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
-// (Re)map when the producer appears or re-creates its swapchain.
+// (Re)map when the producer appears or re-creates its swapchain (size or
+// format: the next game may write the same file).
 inline bool eye_map(Eye& e) {
     if (e.hdr && e.hdr->magic == VRDUAL_MAGIC && e.hdr->width == e.w && e.hdr->height == e.h &&
-        vrdual_file_bytes(e.hdr->slot_bytes) <= e.bytes)
+        e.hdr->pixfmt == e.fmt && vrdual_file_bytes(e.hdr->slot_bytes) <= e.bytes)
         return true;
     if (e.hdr) { munmap(e.hdr, e.bytes); e.hdr = nullptr; }
     int fd = open(e.name.c_str(), O_RDONLY | O_CLOEXEC);

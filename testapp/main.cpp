@@ -198,7 +198,8 @@ int main(int argc, char** argv) {
     for (auto& f : fmts) if (f.format == VK_FORMAT_B8G8R8A8_SRGB) fmt = f;
     if (!want_fmt.empty()) {
         VkFormat w = want_fmt == "a2b10g10r10" ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : want_fmt == "a2r10g10b10" ? VK_FORMAT_A2R10G10B10_UNORM_PACK32
-                   : want_fmt == "rgba16f" ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_UNDEFINED;
+                   : want_fmt == "rgba16f" ? VK_FORMAT_R16G16B16A16_SFLOAT : want_fmt == "rgba8" ? VK_FORMAT_R8G8B8A8_UNORM
+                   : VK_FORMAT_UNDEFINED;
         bool found = false;
         for (auto& f : fmts) if (f.format == w && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) fmt = f, found = true;
         if (!found) for (auto& f : fmts) if (f.format == w) fmt = f, found = true;

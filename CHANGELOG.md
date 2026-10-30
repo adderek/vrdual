@@ -70,6 +70,15 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
 - `vrdual-xr` staging in cached memory (the edge mask read write-combined
   memory: 89 ms per frame, 10 Hz in the headset); stats split a headset frame
   into xrWaitFrame and our phases. `wivrn_gpu` puts the server on 0b.
+- `vrdual xr` re-creates the headset swapchain when the frame format changes
+  (an RGBA game after a BGRA one at the same size showed red and blue swapped).
+- `mouse_mode = move`: moving the right controller across the screen moves
+  the pointer like a desk mouse (left grip = clutch); for strategy games where
+  the stick is too coarse. `mouse_speed` (per game) reloads live.
+- Mirror: `vkQueueBindSparse` replay on the second GPU takes the queue lock
+  and tracks its fence like a submit (Witcher 3 DX12 with `sparse = 1`).
+- `vrdual xr` warns at each Flatpak game start when steam-install's config
+  copy differs from the host config (headset notice: `OLD CONFIG`).
 - Games: see docs/GAMES.md.
 
 Known limits: mirror mode needs identical GPUs; Wayland-native GL apps

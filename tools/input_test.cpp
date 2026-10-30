@@ -80,6 +80,22 @@ int main() {
         c.aim_ok = true; c.aim_u = 0.5f; c.aim_v = 0.25f;
         ev = m.step(c, 0.01);
         expect(has(ev, {DEV_TABLET, EV_ABS, ABS_X, 32768}) && has(ev, {DEV_TABLET, EV_ABS, ABS_Y, 16384}), "aim: ray -> absolute pointer");
+        c = Controls{}; c.menu = true; m.step(c, 0.1);
+        c.menu = false; m.step(c, 0.1);
+        expect(!strcmp(m.mouse_mode(), "move"), "menu tap cycles aim -> move");
+        c.hand_p_ok[1] = true; c.hand_p[1][0] = 0.5f; c.hand_p[1][1] = 0; m.step(c, 0.01);
+        c.hand_p[1][0] = 0.625f; c.hand_p[1][1] = 0.125f; ev = m.step(c, 0.01);  // 12.5 cm right and up
+        expect(rel(ev, REL_X) == 625 && rel(ev, REL_Y) == -625, "move: 12.5 cm right and up -> 625, -625 counts");
+        c.lg = 1; c.hand_p[1][0] = 1; ev = m.step(c, 0.01);
+        expect(ev.empty(), "move: left grip = clutch, no key");
+        c.lg = 0; ev = m.step(c, 0.01);
+        expect(rel(ev, REL_X) == 0, "move: clutch released, no jump");
+        m.set_speed(2);
+        c.hand_p[1][0] = 1.0625f; ev = m.step(c, 0.01);
+        expect(rel(ev, REL_X) == 625, "move: mouse_speed 2 doubles it (set_speed, live)");
+        c = Controls{}; c.menu = true; m.step(c, 0.1);
+        c.menu = false; m.step(c, 0.1);
+        expect(!strcmp(m.mouse_mode(), "stick"), "menu tap cycles move -> stick");
     }
     {
         InputCfg k = cfg("mouse");
@@ -339,8 +355,8 @@ int main() {
         chord(false);
         expect(w.input() == "map", "off: menu + b -> map");
         std::string seen;
-        for (int i = 0; i < 7; ++i) { chord(true); seen += w.controls() + ","; }
-        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,tune,map,", ("cycle: " + seen).c_str());
+        for (int i = 0; i < 8; ++i) { chord(true); seen += w.controls() + ","; }
+        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,mouse: move,tune,map,", ("cycle: " + seen).c_str());
     }
     {  // map editor: pick a button, right stick steps through the choices, left stick switches the mode
         MapEditor e;

@@ -34,6 +34,7 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ![Duke Nukem Forever](screenshots/DukeNukem4ever_1.gif)
 ![Civilization V](screenshots/CivV_1.gif)
 ![Magicka](screenshots/Magicka_1.gif)
+![The Witcher 3](screenshots/Witcher3.gif)
 
 ## Requirements
 

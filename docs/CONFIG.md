@@ -25,7 +25,8 @@ found for specific games, e.g. Psychonauts `skip_w1 = 0`, Mirror's Edge
 | Steam games (the layer inside the game) | the copy `vrdual steam-install` makes: `~/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf` (Flatpak) or `~/.local/share/vrdual/vrdual.conf` |
 
 Edit the host file, then run `./vrdual steam-install` so games see the change
-(`vrdual xr` warns when the copy is out of date). `./vrdual-ctl path` prints
+(`vrdual xr` warns when the copy is out of date: at its start, and for a
+Flatpak game at each game start, in the headset notice as `OLD CONFIG`). `./vrdual-ctl path` prints
 the host path, `./vrdual-ctl init` writes a commented default file there,
 `./vrdual-ctl show [APP]` shows each effective value and where it came from.
 
@@ -54,7 +55,7 @@ map_x = KEY_E
 | `hfov` | `90` | degrees | the game's horizontal FOV (sets the eye shift and the HMD picture size); **live** |
 | `stereo` | `1` | `0` `1` | `0` = the layer stays passive in this app (no mirror, shader patch, export), as without `VRDUAL_EYE`; for launchers started by the same wrapper as the game. Built in for Ubisoft Connect (`upc.exe`, `UplayWebCore.exe`) and the EA app (`EADesktop.exe`), Wine's `explorer.exe` and Proton's `xalia.exe`. Wine processes also match `[app:NAME]` by the .exe in their command line (`upc.exe`), not only by `pApplicationName` |
 | `skip_w1` | `1` | `0` `1` | leave `w == 1` draws (HUD, post-process, 2D) unshifted |
-| `sparse` | `0` | `0` `1` | `1` = sparse binding / residency stay visible (hidden by default with the other features the mirror may not replay); vkd3d-proton needs them for D3D12 feature level 12_0 (Tiled Resources Tier 2). The mirror replays `vkQueueBindSparse` on the 2nd GPU (untested in a game; Witcher 3 with `sparse = 1` ended in a 06:00.0 hang, GAMES.md) |
+| `sparse` | `0` | `0` `1` | `1` = sparse binding / residency stay visible (hidden by default with the other features the mirror may not replay); vkd3d-proton needs them for D3D12 feature level 12_0 (Tiled Resources Tier 2). The mirror replays `vkQueueBindSparse` on the 2nd GPU (Witcher 3 with `sparse = 1` ended in a 06:00.0 hang before the replay got queue locking and fence tracking, 2026-10-30; GAMES.md) |
 | `hud_depth` | `0` | meters, 0 = infinity | show `w == 1` draws (HUD) at this distance; live mode only; **live** |
 | `live` | `1` | `0` `1` | live params (shader reads a GPU buffer); falls back to baked automatically |
 | `export` | `1` | `0` `1` | publish frames to `/dev/shm` |
@@ -103,7 +104,7 @@ elsewhere the grips are the game's):
 | control | world lock | head lock |
 |---|---|---|
 | menu (≡, left) held 1 s | picture in front of the current gaze | freeze in place / follow again |
-| menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → tune → map (notice in the headset) | same |
+| menu held + a / b | next / previous control mode: off → gamepad → mouse: stick → motion → aim → move → tune → map (notice in the headset) | same |
 | both grips held (`tune`) | move with the hands, hand distance scales; no turning | same |
 | … + left trigger held | also turn with the hands' line (15° snap; press the right trigger during the grab for free turning) and orbit with the left stick | same |
 | … + right stick | stretch width (x) / height (y) | same |
@@ -114,8 +115,8 @@ elsewhere the grips are the game's):
 | key | default | values | meaning |
 |---|---|---|---|
 | `input` | `gamepad` | `gamepad` `mouse` `tune` `map` `off` | gamepad = virtual Xbox 360 pad; mouse = mouse + keyboard; tune = the controllers tune stereo settings and move the screen (below), the game gets nothing. The mode a game starts in; menu + a / b switches it in the headset. Each switch is remembered per game (`~/.local/state/vrdual/input_last.tsv`, with `mouse_mode`) and the next start uses it instead of `[global]` / built-in; `input` in `[app:NAME]` (or `VRDUAL_INPUT`) wins over the remembered mode. The `vrdual xr` log says which one applied (`input: …`) |
-| `mouse_mode` | `stick` | `stick` `motion` `aim` | right stick moves the pointer / right controller rotation / controller ray = absolute pointer. A short menu press cycles them |
-| `mouse_speed` | `1` | factor | pointer speed |
+| `mouse_mode` | `stick` | `stick` `motion` `aim` `move` | right stick moves the pointer / right controller rotation / controller ray = absolute pointer / right controller moved across the screen, like a desk mouse (5000 counts per metre × `mouse_speed`). motion and move: left grip held = clutch (re-centre the hand), right stick y = wheel. A short menu press cycles them |
+| `mouse_speed` | `1` | factor | pointer speed (stick, motion, move), per game in `[app:NAME]`; `vrdual xr` picks up a changed value within 1 s (no restart) |
 | `mouse_curve` | `2.5` | exponent | stick response (stick mode) |
 | `deadzone` | `0.15` | 0..1 | stick dead zone |
 | `lstick` | `wasd` | `wasd` `arrows` `none` | left stick in mouse mode |

@@ -24,7 +24,7 @@ MANUAL = {
     'vkGetDeviceProcAddr', 'vkDestroyDevice', 'vkGetDeviceQueue', 'vkGetDeviceQueue2',
     'vkCreateShaderModule', 'vkAllocateMemory', 'vkFreeMemory', 'vkMapMemory', 'vkUnmapMemory',
     'vkMapMemory2', 'vkUnmapMemory2', 'vkFlushMappedMemoryRanges', 'vkInvalidateMappedMemoryRanges',
-    'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
+    'vkQueueSubmit', 'vkQueueSubmit2', 'vkQueueBindSparse', 'vkQueuePresentKHR', 'vkCreateSwapchainKHR',
     'vkDestroySwapchainKHR', 'vkGetSwapchainImagesKHR', 'vkAcquireNextImageKHR', 'vkAcquireNextImage2KHR',
     'vkWaitForFences', 'vkGetFenceStatus', 'vkResetFences', 'vkWaitSemaphores',
     'vkGetSemaphoreCounterValue', 'vkAllocateCommandBuffers', 'vkFreeCommandBuffers',

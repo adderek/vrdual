@@ -337,7 +337,9 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
 - `input = mouse`: mouse + keyboard; `mouse_mode` `stick` (right stick →
   velocity, `|x|^mouse_curve`), `motion` (right controller rotation → relative,
   left grip = clutch), `aim` (controller ray ∩ picture → absolute pointer
-  device, maps to the whole desktop: best with fullscreen games). The menu
+  device, maps to the whole desktop: best with fullscreen games), `move`
+  (right grip position in screen space → relative, 5000 counts/m, left grip
+  = clutch). The menu
   button cycles the modes; left stick = WASD/arrows (`lstick`).
 - `map_<button> = KEY_*|BTN_*|none` for a b x y l3 r3 lt rt lg rg menu.
 - `head_look = mouse` (head yaw/pitch deltas × `head_counts_per_deg` → mouse)
