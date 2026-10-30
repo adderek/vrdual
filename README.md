@@ -36,6 +36,8 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ![Magicka](screenshots/Magicka_1.gif)
 ![The Witcher 3](screenshots/Witcher3.gif)
 
+Video: [The Witcher 3, 5 s side-by-side](screenshots/Witcher3.mp4) (3840x1080, made with `vrdual record`; play it in a VR video player as SBS).
+
 ## Requirements
 
 - Linux with a Vulkan driver (Mesa RADV, NVIDIA proprietary, …)
