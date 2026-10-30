@@ -14,6 +14,7 @@ frame index. Near cube shifts ~25 px between eyes, far cubes ~0, the HUD bar
 ```bash
 ./vrdual build | gpus | demo | calib | selftest | clean
 ./vrdual snapshot out.png 150                  # one paired SBS frame, no window
+./vrdual record [--seconds 5] [--half]         # running game -> screenshots/<app>_<time>_LR.mp4 (SBS, audio)
 ./vrdual run [--left-gpu G --right-gpu G --session S --snapshot PNG --at N] -- APP ARGS...
 ./vrdual config show [APP] | init | path
 ./vrdual live | set KEY VALUE | save [--global]

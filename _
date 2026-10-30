@@ -485,6 +485,27 @@ vrdual_report() {
     return 0
 }
 
+# Stereo video of a running game: SBS mp4 (_LR: VR players detect the layout),
+# default into screenshots/ as <app>_<time>_LR.mp4. Game audio from the default
+# output's monitor (the headset sink while xr streams); stdout = the file.
+vrdual_record() {
+    local out="$VRDUAL_ROOT/screenshots" audio=1 args=()
+    while (($#)); do
+        case $1 in
+            --no-audio) audio=0 ;;
+            --seconds|--fps|--session) args+=("$1" "$2"); shift ;;
+            --half|--swap) args+=("$1") ;;
+            -*) say "record: unknown option $1"; return 2 ;;
+            *) out=$1 ;;
+        esac
+        shift
+    done
+    command -v ffmpeg >/dev/null || { say "record: ffmpeg not installed"; return 1; }
+    ((audio)) && command -v pactl >/dev/null && args+=(--audio @DEFAULT_MONITOR@)
+    pick_shm "${args[@]}"
+    "$B/vrdual-compositor" --record "$out" --timeout 10 "${args[@]}"
+}
+
 vrdual_snapshot() {
     local out="${1:-$VRDUAL_ROOT/sbs.png}"
     vrdual_run --snapshot "$out" --at "${2:-150}" -- "$B/vrdual-cube" --frames 100000
@@ -627,6 +648,13 @@ vrdual_selftest() {
     label="mirror: live ipd 200mm";   check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m2.png' && $M '$tmp/m2.png' --ipd 0.2 --anchor center"
     set_live ipd=0.064 head_x=0.05
     label="mirror: head offset 50mm right"; check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m3.png' && $M '$tmp/m3.png' --ipd 0.064 --anchor center --head-x 0.05"
+    label="record: 1 s SBS mp4 at 30 fps, full and half width (ffprobe)"
+    check bash -c "w=\$(identify -format %w '$tmp/m1.png') h=\$(identify -format %h '$tmp/m1.png')
+        p() { ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=width,height,nb_read_frames -of csv=p=0 \"\$1\"; }
+        '$B/vrdual-compositor' --session $sess --record '$tmp/rec.mp4' --seconds 1 --fps 30 --timeout 20 2>'$tmp/rec.log' | grep -qx '$tmp/rec.mp4' &&
+        '$B/vrdual-compositor' --session $sess --record '$tmp/rech.mp4' --seconds 1 --fps 30 --half --timeout 20 2>>'$tmp/rec.log' >/dev/null &&
+        [[ \$(p '$tmp/rec.mp4') == \$((w / 2 * 2)),\$((h / 2 * 2)),30 && \$(p '$tmp/rech.mp4') == \$((w / 4 * 2)),\$((h / 2 * 2)),30 ]] &&
+        grep -q 'recorded 30 frames' '$tmp/rec.log' || { echo w=\$w h=\$h; p '$tmp/rec.mp4'; p '$tmp/rech.mp4'; cat '$tmp/rec.log'; false; }"
     set_live head_x=0
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 
@@ -1012,6 +1040,9 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
   snapshot [out.png] [frame]    same, but save one paired SBS frame and exit
+  record [out.mp4|DIR] [--seconds N] [--fps N] [--half] [--no-audio] [--session S]
+                                stereo video of the running game: side-by-side mp4 (default
+                                  5 s, 60 fps, screenshots/<app>_<time>_LR.mp4, game audio)
   wiggle [PNG|DIR...]           SBS screenshots -> wiggle GIFs next to them (default
                                   screenshots/; skips PNGs that already have a .gif)
   steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
@@ -1044,7 +1075,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
@@ -1056,7 +1087,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ $# -gt 0 ]]; then vrdual_dispatch "$@"; exit; fi
     vrdual_help
     PS3=$'\nchoose: '
-    select c in build gpus demo calib config snapshot steam-install view wivrn xr map request report clean quit; do
+    select c in build gpus demo calib config snapshot record steam-install view wivrn xr map request report clean quit; do
         [[ $c == quit || -z $c ]] && exit 0
         case $c in request|report) vrdual_dispatch "$c" --open ;; *) vrdual_dispatch "$c" ;; esac
         break

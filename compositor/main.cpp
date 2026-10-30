@@ -4,6 +4,9 @@
 //
 //   vrdual-compositor [--session S] [--swap] [--scale F]
 //   vrdual-compositor --snapshot out.png [--at N] [--timeout SEC]   (no window)
+//   vrdual-compositor --record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]
+//                     SBS video through ffmpeg (no window); DIR: <app>_<time>_LR.mp4 in it,
+//                     the path is printed on stdout
 #include <SDL3/SDL.h>
 
 #include <fcntl.h>
@@ -12,9 +15,13 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cctype>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -115,8 +122,82 @@ static void draw_overlay(SDL_Renderer* ren, vrdual_ctl* c, float half_w, const s
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
 }
 
+// Fixed-rate SBS video: at each output tick the newest pair (a slower game
+// repeats its frame), raw pixels piped into ffmpeg (libx264 on the CPU: no
+// load on either GPU). Video length is always seconds * fps frames.
+static int record(Eye& L, Eye& R, bool swap, std::string out, double seconds, int fps, bool half, const std::string& audio, double timeout) {
+    double t0 = now_s();
+    uint64_t F = 0;
+    for (;;) {
+        if (now_s() - t0 > timeout) { fprintf(stderr, "[compositor] timeout waiting for game frames\n"); return 1; }
+        if (eye_map(L) && eye_map(R) && pair_newest(L, R, 0, &F)) break;
+        usleep(2000);
+    }
+    if (L.fmt != R.fmt || L.h != R.h) { fprintf(stderr, "[compositor] eyes differ in format or height, cannot record\n"); return 1; }
+    struct stat st;
+    if (stat(out.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        std::string app = L.hdr->app[0] ? std::string(L.hdr->app, strnlen(L.hdr->app, sizeof L.hdr->app)) : "game";
+        for (char& c : app) if (!isalnum((unsigned char)c) && c != '-' && c != '.') c = '_';
+        time_t t = time(nullptr);
+        char ts[32];
+        strftime(ts, sizeof ts, "%Y-%m-%d_%H%M%S", localtime(&t));
+        out += "/" + app + "_" + ts + "_LR.mp4";
+    }
+    const uint32_t w0 = L.w, h = L.h, W = L.w + R.w, fmt = L.fmt;
+    auto q = [](const std::string& a) {  // single-quoted for sh
+        std::string r = "'";
+        for (char c : a) r += c == '\'' ? std::string("'\\''") : std::string(1, c);
+        return r + "'";
+    };
+    std::string cmd = "ffmpeg -hide_banner -loglevel error -y -f rawvideo -pix_fmt " + std::string(fmt == VRDUAL_FMT_BGRA8 ? "bgra" : "rgba") +
+                      " -s " + std::to_string(W) + "x" + std::to_string(h) + " -r " + std::to_string(fps) + " -i -";
+    if (!audio.empty()) cmd += " -f pulse -i " + q(audio) + " -c:a aac -b:a 192k";
+    // x264 needs even sizes; half = each eye squeezed to half width (half SBS)
+    cmd += std::string(" -vf 'scale=") + (half ? "trunc(iw/4)*2" : "trunc(iw/2)*2") + ":trunc(ih/2)*2'" +
+           " -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p -movflags +faststart -t " + std::to_string(seconds) + " " + q(out);
+    signal(SIGPIPE, SIG_IGN);  // ffmpeg gone: fwrite fails, reported below
+    FILE* ff = popen(cmd.c_str(), "w");
+    if (!ff) { fprintf(stderr, "[compositor] cannot start ffmpeg\n"); return 1; }
+    fprintf(stderr, "[compositor] recording %ux%u%s, %g s at %d fps -> %s\n", W, h, half ? " (half SBS)" : "", seconds, fps, out.c_str());
+    std::vector<uint8_t> buf(size_t(W) * h * 4);
+    auto compose = [&] {
+        Eye* e[2] = {swap ? &R : &L, swap ? &L : &R};
+        for (uint32_t y = 0; y < h; ++y) {
+            memcpy(&buf[size_t(y) * W * 4], &e[0]->px[size_t(y) * e[0]->w * 4], size_t(e[0]->w) * 4);
+            memcpy(&buf[(size_t(y) * W + e[0]->w) * 4], &e[1]->px[size_t(y) * e[1]->w * 4], size_t(e[1]->w) * 4);
+        }
+    };
+    compose();
+    const long n = lround(seconds * fps);
+    long fresh = 1, written = 0;
+    uint64_t shown = F + 1;
+    double start = now_s(), behind = 0;
+    bool ok = true;
+    for (long i = 0; i < n; ++i) {
+        double due = start + double(i) / fps, t = now_s();
+        if (t < due) usleep(useconds_t((due - t) * 1e6));
+        else behind = std::max(behind, t - due);
+        if (eye_map(L) && eye_map(R)) {
+            if (L.w != w0 || R.w != W - w0 || L.h != h || R.h != h || L.fmt != fmt) { fprintf(stderr, "[compositor] game swapchain changed, recording stopped\n"); break; }
+            if (pair_newest(L, R, shown, &F)) shown = F + 1, ++fresh, compose();
+        }
+        if (fwrite(buf.data(), buf.size(), 1, ff) != 1) { ok = false; break; }
+        ++written;
+    }
+    int rc = pclose(ff);
+    fprintf(stderr, "[compositor] recorded %ld frames (%ld new game frames, %.1f/s), behind schedule at most %.0f ms%s; ffmpeg %s\n", written,
+            fresh, fresh / std::max(1e-3, now_s() - start), behind * 1e3, behind > 1.0 / fps ? " (encoder too slow: try --half)" : "",
+            rc == 0 && ok ? "ok" : "failed");
+    if (rc != 0 || !ok) return 1;
+    printf("%s\n", out.c_str());
+    return 0;
+}
+
 int main(int argc, char** argv) {
-    std::string session = "default", snapshot;
+    std::string session = "default", snapshot, rec, audio;
+    double seconds = 5;
+    int fps = 60;
+    bool half = false;
     bool swap = false;
     float scale = 1.0f;
     uint64_t at = 0;
@@ -129,13 +210,19 @@ int main(int argc, char** argv) {
         else if (a == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
         else if (a == "--at" && i + 1 < argc) at = strtoull(argv[++i], nullptr, 10);
         else if (a == "--timeout" && i + 1 < argc) timeout = strtod(argv[++i], nullptr);
+        else if (a == "--record" && i + 1 < argc) rec = argv[++i];
+        else if (a == "--seconds" && i + 1 < argc) seconds = strtod(argv[++i], nullptr);
+        else if (a == "--fps" && i + 1 < argc) fps = atoi(argv[++i]);
+        else if (a == "--half") half = true;
+        else if (a == "--audio" && i + 1 < argc) audio = argv[++i];
         else if (a == "--version") { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
-        else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--at N] [--timeout SEC]]\n", argv[0]); return 2; }
+        else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--at N] [--timeout SEC]] [--record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]]\n", argv[0]); return 2; }
     }
     std::string base = vrdual::shm_dir() + "/vrdual-" + session + "-";
     Eye L{0, base + "0"}, R{1, base + "1"};
     double t0 = now_s();
 
+    if (!rec.empty()) return record(L, R, swap, rec, seconds, fps > 0 ? fps : 60, half, audio, timeout);
     if (!snapshot.empty()) {
         uint64_t F = 0;
         for (;;) {

@@ -77,6 +77,9 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   the stick is too coarse. `mouse_speed` (per game) reloads live.
 - Mirror: `vkQueueBindSparse` replay on the second GPU takes the queue lock
   and tracks its fence like a submit (Witcher 3 DX12 with `sparse = 1`).
+- `vrdual record`: a few seconds of the running game as a side-by-side mp4
+  (`_LR`, full or `--half` SBS, game audio from the default output's monitor);
+  fixed frame rate, libx264 on the CPU.
 - `vrdual xr` warns at each Flatpak game start when steam-install's config
   copy differs from the host config (headset notice: `OLD CONFIG`).
 - Games: see docs/GAMES.md.

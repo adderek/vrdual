@@ -44,7 +44,7 @@ automatically.
 | `common/vrdual_shm.h` | shm frame ring + control block structs (C ABI shared by all processes) |
 | `common/vrdual_config.hpp` | `.conf` parser, precedence, `save_key` (keys documented in `docs/CONFIG.md`; selftest checks) |
 | `common/vrdual_ctl.hpp` | control block open/read/write, eye param math, `ctl_save` |
-| `compositor/main.cpp` | SBS window, frame pairing, calibration overlay + keys, `--snapshot` |
+| `compositor/main.cpp` | SBS window, frame pairing, calibration overlay + keys, `--snapshot`, `--record` (SBS mp4 via ffmpeg) |
 | `testapp/main.cpp` | stereo-unaware test app; `--scene calib` = static posts at 0.5/1/2/5/20 m |
 | `tools/vrdual_ctl.cpp` | `vrdual-ctl` CLI (config show/init, live/set/save) |
 | `tools/spvpatch.cpp` | offline patcher driver for `spirv-val` checks |
