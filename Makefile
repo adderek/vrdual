@@ -82,5 +82,5 @@ clean:
 .PHONY: all lib32 clean ci
 
 # GPU-free targets for `vrdual ci` (no SDL3, no 32-bit toolchain; the layer is
-# built so gen_mirror.py and the layer code compile)
+# built so gen_mirror.py and the layer code compile: needs xcb + xfixes headers)
 ci: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test
