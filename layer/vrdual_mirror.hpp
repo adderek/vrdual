@@ -1944,6 +1944,8 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
         if (dd->aer)
             logf("mirror: single-GPU mode — no other GPU matches '%s', alternate-eye rendering on the app's GPU (pci %s), half the frame rate per eye",
                  g_cfg.mirror_gpu.c_str(), apci.c_str());
+        if (dd->aer)  // GAMES.md "Game settings that cause problems"
+            logf("mirror: one GPU: turn off temporal AA / upscaling (TAA, DLSS, FSR, XeSS), motion blur and frame generation, they mix the eyes");
         else
             logf("mirror: no GPU matching '%s' and no live params for alternate-eye rendering — left eye only", g_cfg.mirror_gpu.c_str());
         return nullptr;

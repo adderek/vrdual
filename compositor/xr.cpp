@@ -234,7 +234,7 @@ static void barrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImage
 // happened (headset connected, game started, tune values, ...) and that the
 // picture is vrdual's stereo. Head-locked quad at 1.5 m, drawn on the CPU with
 // the baked font (common/vrdual_font.hpp), uploaded only when the text changes.
-// Notices use 3 lines; input = map shows the button list (14).
+// Notices use 3 lines (4 with one GPU: settings hint); input = map shows the button list (14).
 struct Overlay {
     static constexpr uint32_t kW = 1408, kH = 576;  // 86 characters per line, 40 px per line
     static constexpr int kLines = 14;
@@ -860,6 +860,7 @@ static int run(int argc, char** argv) {
     Overlay ov;
     float overlay_time = vrdual::load_settings({}).f("overlay_time");
     std::string ov_event;  // line 0 after "vrdual stereo VR | "
+    bool one_gpu = false;  // both eyes from one GPU (alternate-eye rendering): settings hint in the overlay
     auto notify = [&](const std::string& what, bool log = true) {
         if (overlay_time <= 0) return;
         ov_event = what;
@@ -1007,6 +1008,10 @@ static int run(int argc, char** argv) {
             for (auto& kv : st.src)
                 if (prof == "none" && kv.second.rfind("built-in", 0) == 0) prof = "built-in";
             games.begin(input_app, L.hdr->gpu_name, prof);
+            one_gpu = L.hdr->pci[0] && !strncmp(L.hdr->pci, R.hdr->pci, sizeof L.hdr->pci);
+            if (one_gpu)
+                fprintf(stderr, "[xr] one GPU (%s, alternate eyes): temporal AA / upscaling, motion blur and frame generation mix the eyes\n",
+                        L.hdr->gpu_name);
             if (prof == "none") fprintf(stderr, "[xr] no vrdual profile for '%s' (ask for one: vrdual request)\n", input_app.c_str());
             scr.mode = screen_parse(st.s("screen"));
             scr.dist = std::max(0.2f, st.f("screen_dist"));
@@ -1448,7 +1453,7 @@ static int run(int argc, char** argv) {
             } else if (ov.until > vrdual::now_s()) {
                 vrdual_ctl k{};
                 if (ctl) k = vrdual::ctl_read(ctl);
-                char b[3][160];
+                char b[4][160];
                 snprintf(b[0], sizeof b[0], "vrdual stereo VR  |  %s", ov_event.c_str());
                 char sn[32];
                 if (scr.mode == SCREEN_FULL) snprintf(sn, sizeof sn, "full");
@@ -1465,7 +1470,9 @@ static int run(int argc, char** argv) {
                 } else {
                     b[2][0] = 0;
                 }
-                for (int l = 0; l < 3; ++l) ov.text[l] = b[l];
+                // 80 characters: the panel takes 86
+                snprintf(b[3], sizeof b[3], "%s", fresh && one_gpu ? "one GPU: turn off TAA / DLSS / FSR / XeSS, motion blur, frame generation" : "");
+                for (int l = 0; l < 4; ++l) ov.text[l] = b[l];
             }
             std::string all;
             for (auto& t : ov.text) all += t + "\n";

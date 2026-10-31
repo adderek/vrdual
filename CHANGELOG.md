@@ -28,6 +28,8 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   DXVK d3d9 games went from 16–24 ms per submit (full compare of cached
   memory) towards the ~0.1 ms of the other memory.
 - Exported frames are opaque (games leaving alpha 0 showed black).
+- One GPU: the layer log and the headset overlay say to turn off temporal
+  AA / upscaling, motion blur and frame generation (they mix the eyes).
 - Tessellation and geometry shaders are shifted (the last pre-raster stage of
   each pipeline, once): hair through tessellation (NVIDIA HairWorks in The
   Witcher 3) sat at screen depth before.

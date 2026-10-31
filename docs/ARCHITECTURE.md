@@ -304,7 +304,9 @@ edge.
 **Overlay** (`overlay_time` s, 0 = off): on events (headset connected,
 game started / stopped, screen recentred or moved, `input = tune` changes) a
 head-locked `XrCompositionLayerQuad` 1.5 m ahead shows the event, the game,
-screen and input mode, ipd, world_scale, hud_depth and hfov. Drawn on the CPU
+screen and input mode, ipd, world_scale, hud_depth and hfov; with one GPU
+(both frame files from the same PCI address) a fourth line says to turn off
+temporal AA / upscaling, motion blur and frame generation. Drawn on the CPU
 from a baked font (`common/vrdual_font.hpp`, `tools/gen_font.py`), uploaded
 only when the text changes; after it expires one transparent image is sent
 (WiVRn would keep showing the last one when no game layer follows).
