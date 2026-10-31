@@ -678,8 +678,8 @@ _selftest_nogpu() {
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
 
     # Input mapping (controllers -> pad / mouse / keys) and a uinput pad round trip.
-    label="input: mapper scenarios$( "$B/vrdual-input-test" 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped: module not loaded)' || echo ', uinput pad read back')"
-    check "$B/vrdual-input-test"
+    label="input: mapper scenarios$( "$B/vrdual-input-test" ${CI:+--no-uinput} 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped)' || echo ', uinput pad read back')"
+    check "$B/vrdual-input-test" ${CI:+--no-uinput}  # GitHub sets CI: its /dev/uinput is root-only
 }
 
 # GPU-free checks only, no windows (seconds): the local pre-push gate and

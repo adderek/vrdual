@@ -1,7 +1,7 @@
 // vrdual-input-test: checks the input Mapper with scripted controller states,
 // then a uinput round trip with a virtual pad (read back through evdev when
 // the event node is accessible; joysticks get a uaccess ACL on logind seats).
-// Exit 0 = all good. Never creates a mouse or keyboard (would move the desktop).
+// --no-uinput: Mapper only (CI). Exit 0 = all good. Never creates a mouse or keyboard (would move the desktop).
 #include <dirent.h>
 
 #include <algorithm>
@@ -39,7 +39,8 @@ static InputCfg cfg(const char* input, const char* mode = "stick") {
     return c;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    bool no_uinput = argc > 1 && !strcmp(argv[1], "--no-uinput");  // CI runners: /dev/uinput there but not ours
     {
         Mapper m(cfg("gamepad"));
         Controls c;
@@ -472,9 +473,9 @@ int main() {
         };
         std::set<std::string> before = pad_nodes();
         Uinput u;
-        bool made = u.emit({{DEV_PAD, EV_ABS, ABS_X, 0}});
-        if (!made && u.error().find("No such device") != std::string::npos) {
-            printf("skip  uinput: %s\n", u.error().c_str());
+        bool made = !no_uinput && u.emit({{DEV_PAD, EV_ABS, ABS_X, 0}});
+        if (no_uinput || (!made && u.error().find("No such device") != std::string::npos)) {
+            printf("skip  uinput: %s\n", no_uinput ? "--no-uinput" : u.error().c_str());
             printf("%s\n", fails ? "input test: FAILED" : "input test: all passed (uinput skipped)");
             return fails ? 1 : 0;
         }
