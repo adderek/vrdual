@@ -60,6 +60,7 @@ automatically.
 ```bash
 ./vrdual build                # make; outputs in build/
 ./vrdual selftest             # THE check
+./vrdual ci                   # its GPU-free part (seconds, no windows); GitHub CI runs it
 ./vrdual run --session S -- APP ARGS   # any Vulkan app, one copy per eye
 ./vrdual-ctl / ./vrdual live|set|save  # live control of session S (VRDUAL_SESSION or --session)
 ./vrdual clean                # stale /dev/shm/vrdual-* from manual runs

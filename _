@@ -635,16 +635,9 @@ vrdual_wiggle() {
     done
 }
 
-# Automated verification; exit 0 = everything passed. Opens two small windows
-# for ~20 s (one per GPU). Uses an empty temporary config, session "selftest".
-vrdual_selftest() {
-    local tmp fails=0 sess=selftest
-    tmp=$(mktemp -d)
-    _VRDUAL_SELFTEST_TMP=$tmp
-    trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
-    check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
-    vrdual_build || return 1
-
+# GPU-free part of selftest (also `vrdual ci`): patcher, parsers, file
+# formats, CLI. Runs in the caller's scope (tmp, B, check, label, fails).
+_selftest_nogpu() {
     # 1. SPIR-V patcher: baked + live variants must validate; non-vertex must be refused.
     glslc "$VRDUAL_ROOT/testapp/cube.vert" -o "$tmp/glsl.spv"
     glslc -fshader-stage=vertex -x hlsl "$VRDUAL_ROOT/tools/test-shaders/hlsl_vs.hlsl" -o "$tmp/hlsl.spv"
@@ -683,6 +676,37 @@ vrdual_selftest() {
         grep -q '&notes=Played%2010%20min.*built-in' <<<\"\$p\" || { echo \"\$r\"; echo \"\$p\"; false; }"
     label="docs/CONFIG.md lists every config key"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
+
+    # Input mapping (controllers -> pad / mouse / keys) and a uinput pad round trip.
+    label="input: mapper scenarios$( "$B/vrdual-input-test" 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped: module not loaded)' || echo ', uinput pad read back')"
+    check "$B/vrdual-input-test"
+}
+
+# GPU-free checks only, no windows (seconds): the local pre-push gate and
+# GitHub's CI (.github/workflows/ci.yml). exit 0 = pass.
+vrdual_ci() {
+    local tmp fails=0
+    tmp=$(mktemp -d)
+    _VRDUAL_SELFTEST_TMP=$tmp
+    trap 'rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; trap - RETURN' RETURN
+    check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
+    make -C "$VRDUAL_ROOT" -j"$(nproc)" ci >&2 || return 1
+    _selftest_nogpu
+    if ((fails)); then say "ci: $fails FAILED"; return 1; fi
+    say "ci: all passed"
+}
+
+# Automated verification; exit 0 = everything passed. Opens two small windows
+# for ~20 s (one per GPU). Uses an empty temporary config, session "selftest".
+vrdual_selftest() {
+    local tmp fails=0 sess=selftest
+    tmp=$(mktemp -d)
+    _VRDUAL_SELFTEST_TMP=$tmp
+    trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
+    check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
+    vrdual_build || return 1
+
+    _selftest_nogpu
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
@@ -976,10 +1000,6 @@ vrdual_selftest() {
         check bash -c "(( $brc == 139 )) && grep -q 'SIGSEGV in thread' '$tmp/bts.log' && grep -q ' ip .* + 0x' '$tmp/bts.log' || { echo rc $brc; cat '$tmp/bts.log'; false; }"
     fi
 
-    # 4b. Input mapping (controllers -> pad / mouse / keys) and a uinput pad round trip.
-    label="input: mapper scenarios$( "$B/vrdual-input-test" 2>/dev/null | grep -q '^skip  uinput' && echo ' (uinput skipped: module not loaded)' || echo ', uinput pad read back')"
-    check "$B/vrdual-input-test"
-
     # audio: the headset's sink becomes the default when it appears, a later
     # manual choice stays, the old default comes back (fake pactl)
     mkdir -p "$tmp/pa" && cat >"$tmp/pa/pactl" <<'PA' && chmod +x "$tmp/pa/pactl"
@@ -1221,6 +1241,7 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   report [GAME] [--open]        how a game runs: prefilled GitHub issue form URL; you submit it
                                   GAME defaults to the last one played; nothing is sent by vrdual
   selftest                      automated verification (~20 s, two small windows); exit 0 = pass
+  ci                            selftest's GPU-free checks only (seconds, no windows; GitHub CI runs it)
 
 Settings: config file, overridable per run by VRDUAL_<KEY> env (VRDUAL_IPD=0.066 ...).
 EOF
@@ -1229,7 +1250,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;

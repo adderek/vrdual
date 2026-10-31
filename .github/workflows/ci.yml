@@ -1,0 +1,23 @@
+# Minimal CI: selftest's GPU-free checks (`./vrdual ci`, ~1 min with setup).
+# The full check is `./vrdual selftest` on real hardware, run by hand.
+name: ci
+on:
+  push:
+    branches: [master]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0  # git describe for the build identity
+      - run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends glslc spirv-tools
+      - run: ./vrdual ci
