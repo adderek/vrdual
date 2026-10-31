@@ -25,3 +25,8 @@ that differ between the eyes). witcher3-vr keeps one history per eye ("FSR
 per eye") through engine hooks; app-unaware, the closest equivalent is
 replaying each frame for both eyes (option a), where each eye's frames stay
 consecutive for the app. Two-GPU mode has one history per GPU by design.
+Confirmed 2026-10-31 (Witcher 3 DX12, RTX 5070 Ti): XeSS and FSR upscaling
+mix the eyes; with FXAA and motion blur off both eyes are clean (GAMES.md
+"Game settings that cause problems"). Cheap next step: the layer logs a hint
+once when alternate-eye rendering starts (turn off temporal AA / upscaling /
+motion blur / frame generation), and `vrdual xr` shows it in the headset.
