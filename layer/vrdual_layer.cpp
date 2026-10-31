@@ -1041,7 +1041,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     spv::PatchResult pr = spv::patch_vertex(code, o);
     if (!pr.patched) {
         ep.skipped++;
-        if (pr.why != "no vertex entry point") logf("shader module not patched: %s", pr.why.c_str());
+        if (pr.why != spv::kNoEntry) logf("shader module not patched: %s", pr.why.c_str());
         return false;
     }
     ep.patched++;
@@ -1203,11 +1203,55 @@ static size_t stage_pnext_size(VkStructureType t) {
     }
 }
 
+static constexpr VkShaderStageFlags kPreRaster =
+    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT;
+
+// With TES or GS in a pipeline only the last pre-raster stage outputs clip
+// space: the earlier ones get the patch's gate spec constant set false
+// (spirv_patch.hpp). Returns cis with that applied (storage in g), or cis.
+struct GatePatch {
+    std::vector<VkGraphicsPipelineCreateInfo> cis;
+    std::vector<std::vector<VkPipelineShaderStageCreateInfo>> stages;
+    std::deque<VkSpecializationInfo> infos;
+    std::deque<std::vector<VkSpecializationMapEntry>> maps;
+    std::deque<std::vector<uint8_t>> data;
+};
+static const VkGraphicsPipelineCreateInfo* gate_stages(uint32_t n, const VkGraphicsPipelineCreateInfo* cis, GatePatch& g) {
+    for (uint32_t i = 0; i < n; ++i) {
+        VkShaderStageFlags have = 0;
+        for (uint32_t s = 0; s < cis[i].stageCount && cis[i].pStages; ++s) have |= cis[i].pStages[s].stage;
+        if (!(have & (VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT))) continue;
+        VkShaderStageFlags last = have & VK_SHADER_STAGE_GEOMETRY_BIT ? VK_SHADER_STAGE_GEOMETRY_BIT : VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+        for (uint32_t s = 0; s < cis[i].stageCount; ++s) {
+            const VkPipelineShaderStageCreateInfo& st = cis[i].pStages[s];
+            if (!(st.stage & kPreRaster) || st.stage == last) continue;
+            if (g.cis.empty()) { g.cis.assign(cis, cis + n); g.stages.resize(n); }
+            if (g.stages[i].empty()) g.stages[i].assign(cis[i].pStages, cis[i].pStages + cis[i].stageCount);
+            const VkSpecializationInfo* old = st.pSpecializationInfo;
+            g.maps.emplace_back();
+            g.data.emplace_back();
+            auto& m = g.maps.back();
+            auto& d = g.data.back();
+            if (old) {
+                m.assign(old->pMapEntries, old->pMapEntries + old->mapEntryCount);
+                d.assign((const uint8_t*)old->pData, (const uint8_t*)old->pData + old->dataSize);
+            }
+            d.resize((d.size() + 3) & ~size_t(3));
+            m.push_back({spv::kGateSpecId, uint32_t(d.size()), sizeof(VkBool32)});
+            d.resize(d.size() + sizeof(VkBool32), 0);  // VK_FALSE
+            g.infos.push_back({uint32_t(m.size()), m.data(), d.size(), d.data()});
+            g.stages[i][s].pSpecializationInfo = &g.infos.back();
+            g.cis[i].pStages = g.stages[i].data();
+        }
+    }
+    return g.cis.empty() ? cis : g.cis.data();
+}
+
 static const VkGraphicsPipelineCreateInfo* patch_inline(EyeBuf& ep, uint32_t n, const VkGraphicsPipelineCreateInfo* cis, InlinePatch& p) {
     for (uint32_t i = 0; i < n; ++i)
         for (uint32_t s = 0; s < cis[i].stageCount && cis[i].pStages; ++s) {
             const VkPipelineShaderStageCreateInfo& st = cis[i].pStages[s];
-            if (st.module || st.stage != VK_SHADER_STAGE_VERTEX_BIT) continue;
+            if (st.module || !(st.stage & kPreRaster)) continue;
             const VkBaseInStructure* sm = (const VkBaseInStructure*)st.pNext;
             std::vector<const VkBaseInStructure*> before;
             for (; sm && sm->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO; sm = sm->pNext) before.push_back(sm);
@@ -1246,8 +1290,9 @@ static const VkGraphicsPipelineCreateInfo* patch_inline(EyeBuf& ep, uint32_t n, 
 static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateGraphicsPipelines(VkDevice dev, VkPipelineCache cache, uint32_t n, const VkGraphicsPipelineCreateInfo* cis,
                                                                 const VkAllocationCallbacks* alloc, VkPipeline* out) {
     DeviceData* dd = dev_of(key(dev));
+    GatePatch g;
     InlinePatch p;
-    return dd->d.CreateGraphicsPipelines(dev, cache, n, patch_inline(dd->ep, n, cis, p), alloc, out);
+    return dd->d.CreateGraphicsPipelines(dev, cache, n, patch_inline(dd->ep, n, gate_stages(n, cis, g), p), alloc, out);
 }
 
 // ----------------------------------------------------------- swapchain -----

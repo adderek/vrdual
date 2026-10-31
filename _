@@ -651,12 +651,24 @@ _selftest_nogpu() {
         done
     done
     label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+    # tessellation evaluation / geometry: the last pre-raster stage when present
+    for sh in tese geom; do
+        glslc "$VRDUAL_ROOT/testapp/cube.$sh" -o "$tmp/$sh.spv"
+        for m in "baked 0.03" "live 0x123456789a0" "live 0x123456789a0 hide"; do
+            label="spirv $sh ${m%% *}${m##*[0-9]}"
+            # shellcheck disable=SC2086
+            check bash -c "'$B/spvpatch' '$tmp/$sh.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv'"
+        done
+    done
+    label="spirv geometry: patched before every EmitVertex, gate spec constant 'vrd1'"
+    check bash -c "'$B/spvpatch' '$tmp/geom.spv' '$tmp/p.spv' live 0x123456789a0 && d=\$(spirv-dis '$tmp/p.spv') &&
+        grep -q 'SpecId 1987208241' <<<\"\$d\" && grep -q 'OpSpecConstantTrue' <<<\"\$d\""
     # uvec2 -> PhysicalStorageBuffer pointer bitcast: core only since SPIR-V 1.5,
     # legal earlier through SPV_KHR_physical_storage_buffer (which the patch adds)
     label="spirv live output validates as SPIR-V 1.0 (glslc's default)"
     check bash -c "'$B/spvpatch' '$tmp/glsl.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env spv1.0 '$tmp/p.spv'"
-    label="spirv fuzz: 2x50000 mutated modules through every patch mode under ASan"
-    check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv"
+    label="spirv fuzz: 3x50000 mutated modules through every patch mode under ASan"
+    check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv" "$tmp/geom.spv"
     label="frame reader: producer re-init to a bigger size is refused until remap; no per-frame allocation"
     mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
     label="built-in game profile: Psychonauts gets skip_w1 = 0"
@@ -914,10 +926,25 @@ vrdual_selftest() {
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hs.png' && $M '$tmp/hs.png' --ipd 0.064 --anchor center || { cat '$tmp/hs.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
+    # 3c'''. Tessellation / geometry stages (HairWorks, DX11 terrain): only
+    # the last pre-raster stage shifts (the VS before it gets the gate spec
+    # constant false); a doubled shift would measure 128 mm.
+    local opt
+    for opt in --tess --geom "--tess --geom"; do
+        rm -f /dev/shm/vrdual-$sess-*
+        # shellcheck disable=SC2086
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            "$B/vrdual-cube" --scene calib $opt --title "selftest stages" >"$tmp/ts.log" 2>&1 &
+        for i in $(seq 100); do grep -q 'twin images' "$tmp/ts.log" && break; sleep 0.1; done
+        label="mirror ${opt//--/}: last pre-raster stage shifted once, ipd 64mm"
+        check bash -c "'$B/vrdual-compositor' --session $sess --snapshot '$tmp/ts.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
+            $M '$tmp/ts.png' --ipd 0.064 --anchor center && ! grep -q 'STOPPED\|not patched' '$tmp/ts.log' || { cat '$tmp/ts.log'; false; }"
+        kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+    done
+
     # 3d. Single-GPU mode: right_gpu = the app's GPU -> alternate-eye rendering
     # on that GPU (no twin device). With --bda the app's own device addresses
     # must keep working (a twin on the same GPU could not replay them).
-    local opt
     for opt in "" --bda; do
         rm -f /dev/shm/vrdual-$sess-*
         env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \

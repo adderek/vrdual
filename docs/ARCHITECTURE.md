@@ -93,7 +93,12 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
 1. **GPU filter** — `vkEnumeratePhysicalDevices{,Groups}` return only `VRDUAL_GPU`.
    The app never knows the other GPU exists.
 2. **Eye offset** — every vertex shader gets `gl_Position.x += clip_dx` appended
-   before each `OpReturn` (`layer/spirv_patch.hpp`). For a perspective projection
+   before each `OpReturn` (`layer/spirv_patch.hpp`); tessellation evaluation
+   shaders too, geometry shaders before each `OpEmitVertex`. Only the last
+   pre-raster stage of a pipeline may shift: the patch is gated by a
+   specialization constant (SpecId `0x76726431`, default true), which
+   `vkCreateGraphicsPipelines` sets false for the VS (and TES) ahead of a TES
+   or GS (`gate_stages`); vkCreateShaderModule knows no pipeline. For a perspective projection
    P, moving the camera by *d* along view-space X changes clip X by exactly
    `-P[0][0]·d` and leaves clip W unchanged, so a constant clip offset is a true
    parallel-camera eye shift — no need to find the app's view matrix. (This is
@@ -133,7 +138,9 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   submit writes the other eye's live params with vkCmdUpdateBuffer, after
   that frame's draws on the queue: no CPU wait); both
   are published as pair F, so consumers pair them unchanged. Half the frame
-  rate per eye, one frame of time between the eyes. Needs live params (baked
+  rate per eye, one frame of time between the eyes. Temporal effects (TAA,
+  DLSS/FSR, motion blur, frame generation) then blend the other eye's frame
+  in: they must be off (GAMES.md "Game settings that cause problems"). Needs live params (baked
   → left eye only). A twin device on the same GPU cannot replay A's device
   addresses (NVIDIA: one GPU VA space per process, "vkAllocateMemory failed
   on B"), which breaks DXVK and Zink.

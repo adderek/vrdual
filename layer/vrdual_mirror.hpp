@@ -1666,6 +1666,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_CreateGraphicsPipelines(VkDevice dev, Vk
                                                               const VkAllocationCallbacks* alloc, VkPipeline* out) {
     MDev* md = mdev_of(key(dev));
     // Inline modules need the left-eye patch on A as well (B's: in the pNext translation).
+    GatePatch g;
+    cis = gate_stages(n, cis, g);  // both devices
     InlinePatch ip;
     const VkGraphicsPipelineCreateInfo* acis = patch_inline(md->dd->ep, n, cis, ip);
     VkResult r = md->a.CreateGraphicsPipelines(dev, cache, n, acis, alloc, out);

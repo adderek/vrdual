@@ -43,7 +43,7 @@ $(B)/lib32/VkLayer_vrdual.json: layer/VkLayer_vrdual.json.in | $(B)/lib32
 $(B)/%.inc: testapp/% | $(B)
 	glslc -mfmt=c $< -o $@
 
-$(B)/vrdual-cube: testapp/main.cpp $(B)/cube.vert.inc $(B)/cube_bda.vert.inc $(B)/cube.frag.inc | $(B)
+$(B)/vrdual-cube: testapp/main.cpp $(B)/cube.vert.inc $(B)/cube_bda.vert.inc $(B)/cube.frag.inc $(B)/cube.tesc.inc $(B)/cube.tese.inc $(B)/cube.geom.inc | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -o $@ $< -lvulkan $(SDL)
 
 $(B)/vrdual-gltest: testapp/gltest.cpp | $(B)

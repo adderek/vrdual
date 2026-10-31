@@ -5,8 +5,10 @@
 //
 //   vrdual-cube [--frames N] [--size WxH] [--title T] [--scene cubes|calib] [--bda] [--extra-window]
 //              [--clear-alpha A] [--late-verts N] [--verts-file] [--cached] [--readback]
-//              [--swapchain-format a2b10g10r10|a2r10g10b10|rgba16f]
+//              [--swapchain-format a2b10g10r10|a2r10g10b10|rgba16f] [--tess] [--geom]
 //
+// --tess / --geom: draw through passthrough tessellation / geometry stages
+// (the layer must shift the last pre-raster stage only, once).
 // --late-verts N: vertices zero until frame N, then written into the same
 // mapping (the mirror must push writes long after the first sync).
 // --swapchain-format: a 10-bit or FP16 swapchain (as UE4 games pick), exit 3
@@ -61,6 +63,15 @@ static const uint32_t kVertBda[] =
 static const uint32_t kFrag[] =
 #include "cube.frag.inc"
     ;
+static const uint32_t kTesc[] =
+#include "cube.tesc.inc"
+    ;
+static const uint32_t kTese[] =
+#include "cube.tese.inc"
+    ;
+static const uint32_t kGeom[] =
+#include "cube.geom.inc"
+    ;
 
 #define CK(x) do { VkResult r_ = (x); if (r_ != VK_SUCCESS) { fprintf(stderr, "%s:%d %s -> %d\n", __FILE__, __LINE__, #x, r_); exit(1); } } while (0)
 
@@ -94,6 +105,7 @@ struct PC { M4 mvp; float color[4]; VkDeviceAddress verts; };
 int main(int argc, char** argv) {
     int frames = 0, W = 960, H = 720;
     std::string title = "vrdual-cube", scene = "cubes";
+    bool tess = false, geom = false;
     bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
     int late_verts = 0;
@@ -105,6 +117,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--title") && i + 1 < argc) title = argv[++i];
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) scene = argv[++i];
         else if (!strcmp(argv[i], "--bda")) bda = true;
+        else if (!strcmp(argv[i], "--tess")) tess = true;
+        else if (!strcmp(argv[i], "--geom")) geom = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
         else if (!strcmp(argv[i], "--mem-export")) mem_export = true;
         else if (!strcmp(argv[i], "--mem-export-dev2")) mem_export = dev2_export = true;
@@ -174,6 +188,10 @@ int main(int argc, char** argv) {
     dci.pQueueCreateInfos = &qci;
     dci.enabledExtensionCount = mem_fd ? 2 : 1;
     dci.ppEnabledExtensionNames = dext;
+    VkPhysicalDeviceFeatures feats{};
+    feats.tessellationShader = tess;
+    feats.geometryShader = geom;
+    dci.pEnabledFeatures = &feats;
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     f12.bufferDeviceAddress = VK_TRUE;
     VkPhysicalDeviceVulkan14Features f14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
@@ -329,14 +347,22 @@ int main(int argc, char** argv) {
     VkShaderModule vs = bda ? VK_NULL_HANDLE : mkmod(kVert, sizeof kVert), fs = mkmod(kFrag, sizeof kFrag);
     VkShaderModuleCreateInfo vsi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, sizeof kVertBda, kVertBda};
     VkPipelineRobustnessCreateInfo rob{VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO, &vsi};  // all DEVICE_DEFAULT
-    VkPipelineShaderStageCreateInfo st[2]{};
-    st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, bda ? &rob : nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
-    st[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main"};
+    VkPipelineShaderStageCreateInfo st[5]{};
+    uint32_t nst = 0;
+    st[nst++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, bda ? &rob : nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
+    st[nst++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main"};
+    if (tess) {
+        st[nst++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, mkmod(kTesc, sizeof kTesc), "main"};
+        st[nst++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, mkmod(kTese, sizeof kTese), "main"};
+    }
+    if (geom) st[nst++] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_GEOMETRY_BIT, mkmod(kGeom, sizeof kGeom), "main"};
+    VkPipelineTessellationStateCreateInfo tss{VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO, nullptr, 0, 3};
     VkVertexInputBindingDescription vb{0, 24, VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription va[2] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12}};
     VkPipelineVertexInputStateCreateInfo vis{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, nullptr, 0, 1, &vb, 2, va};
     if (bda) vis = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkPipelineInputAssemblyStateCreateInfo ias{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, nullptr, 0, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+    VkPipelineInputAssemblyStateCreateInfo ias{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, nullptr, 0,
+                                               tess ? VK_PRIMITIVE_TOPOLOGY_PATCH_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     VkViewport vp{0, 0, float(ext.width), float(ext.height), 0, 1};
     VkRect2D scis{{0, 0}, ext};
     VkPipelineViewportStateCreateInfo vps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, nullptr, 0, 1, &vp, 1, &scis};
@@ -361,8 +387,9 @@ int main(int argc, char** argv) {
     VkPipelineLayout pl;
     CK(vkCreatePipelineLayout(dev, &plci, nullptr, &pl));
     VkGraphicsPipelineCreateInfo gpci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    gpci.stageCount = 2;
+    gpci.stageCount = nst;
     gpci.pStages = st;
+    gpci.pTessellationState = tess ? &tss : nullptr;
     gpci.pVertexInputState = &vis;
     gpci.pInputAssemblyState = &ias;
     gpci.pViewportState = &vps;

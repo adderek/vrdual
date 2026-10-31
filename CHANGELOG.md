@@ -28,6 +28,9 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   DXVK d3d9 games went from 16–24 ms per submit (full compare of cached
   memory) towards the ~0.1 ms of the other memory.
 - Exported frames are opaque (games leaving alpha 0 showed black).
+- Tessellation and geometry shaders are shifted (the last pre-raster stage of
+  each pipeline, once): hair through tessellation (NVIDIA HairWorks in The
+  Witcher 3) sat at screen depth before.
 - `left_gpu` / `right_gpu` / `wivrn_gpu` default to `auto` (the GPU with a
   monitor left, the headless one right / for WiVRn) instead of this
   machine's PCI addresses.

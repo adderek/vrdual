@@ -1,6 +1,8 @@
-// Minimal SPIR-V rewriter: shifts clip-space X of the vertex shader output.
+// Minimal SPIR-V rewriter: shifts clip-space X of the last pre-raster stage's
+// output (vertex, tessellation evaluation or geometry shader).
 //
-// Before every OpReturn of each Vertex entry point we append:
+// Before every OpReturn of each Vertex / TessellationEvaluation entry point
+// (Geometry: before every OpEmitVertex / OpEmitStreamVertex) we append:
 //     v   = load gl_Position
 //     p   = eye params vec4 (a, b, wf, inv)   -- baked constant, or loaded
 //                                               from a GPU buffer (live mode)
@@ -29,6 +31,12 @@
 // reads a uvec4 (lo, hi, mode, 0) at addr+32 and, if lo <= key <= hi (key =
 // high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift | 3 hud
 // at runtime: the hunt for a shader's key.
+//
+// Gate: the result is selected against the original by a specialization
+// constant (SpecId kGateSpecId, default true). A pipeline with TES or GS sets
+// it false for the stages before the last one: their output is not clip space
+// yet (the TES or GS would shift it a second time). The layer does that in
+// vkCreateGraphicsPipelines, since vkCreateShaderModule knows no pipeline.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -46,10 +54,12 @@ enum : uint32_t {
     OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133, OpFDiv = 136,
     OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalOr = 166, OpLogicalAnd = 167, OpIEqual = 170,
     OpUGreaterThanEqual = 174, OpULessThanEqual = 178,
-    OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253,
+    OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253, OpEmitVertex = 218, OpEmitStreamVertex = 220,
+    OpSpecConstantTrue = 48, OpDecorateId = 332, OpDecorateString = 5632, OpMemberDecorateString = 5633,
+    OpDecorationGroup = 73, OpGroupDecorate = 74, OpGroupMemberDecorate = 75,
 };
 enum : uint32_t {
-    ExecModelVertex = 0, StorageOutput = 3, StoragePhysicalStorageBuffer = 5349, DecBuiltIn = 11,
+    ExecModelVertex = 0, ExecModelTessEval = 2, ExecModelGeometry = 3, StorageOutput = 3, DecSpecId = 1, StoragePhysicalStorageBuffer = 5349, DecBuiltIn = 11,
     BuiltInPosition = 0, AddrLogical = 0, AddrPhysicalStorageBuffer64 = 5348,
     CapPhysicalStorageBufferAddresses = 5347, MemAccessAligned = 2, GLSLFClamp = 43,
 };
@@ -63,6 +73,9 @@ struct PatchOptions {
     bool hide = false;  // rule: draw nothing
     uint32_t key = 0;   // live hunt: high 32 bits of the shader hash
 };
+
+constexpr uint32_t kGateSpecId = 0x76726431;  // 'vrd1': spec constant gating the patch
+inline const char* const kNoEntry = "no vertex, tessellation evaluation or geometry entry point";
 
 // Shader key: FNV-1a 64 over the SPIR-V bytes as the app passed them.
 inline uint64_t shader_hash(const uint32_t* code, size_t words) {
@@ -122,11 +135,15 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     }
     auto w = [&](const Inst& I, uint32_t k) { return in[I.off + k]; };
 
-    // 1. Vertex entry points.
+    // 1. Vertex / tessellation evaluation / geometry entry points.
     std::vector<uint32_t> entry_fns, interface_ids;
+    bool geom = false;
     for (auto& I : insts) {
-        if (I.op != OpEntryPoint || w(I, 1) != ExecModelVertex) continue;
-        entry_fns.push_back(w(I, 2));
+        if (I.op != OpEntryPoint) continue;
+        uint32_t model = w(I, 1);
+        if (model != ExecModelVertex && model != ExecModelTessEval && model != ExecModelGeometry) continue;
+        if (model == ExecModelGeometry) geom = true;
+        else entry_fns.push_back(w(I, 2));
         uint32_t k = 3;  // skip the nul-terminated name literal
         for (; k < I.wc; ++k) {
             uint32_t word = in[I.off + k];
@@ -134,11 +151,12 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         }
         for (; k < I.wc; ++k) interface_ids.push_back(in[I.off + k]);
     }
-    if (entry_fns.empty()) { r.why = "no vertex entry point"; return r; }
+    if (entry_fns.empty() && !geom) { r.why = kNoEntry; return r; }
 
     // 2. Existing types, decorations, variables, module header state.
     uint32_t t_float = 0, t_vec4 = 0, t_bool = 0, t_int = 0, t_uint = 0, t_uvec2 = 0, t_uvec4 = 0, glsl = 0;
     uint32_t pos_var = 0, pos_struct = 0, pos_member = 0, addressing = AddrLogical;
+    std::vector<std::pair<uint32_t, uint32_t>> pos_structs;  // (struct, member): output and input blocks (TES/GS gl_in)
     bool has_psb_cap = false, has_psb_ext = false;
     std::vector<std::pair<uint32_t, uint32_t>> ptr_types;  // (ptr id, pointee) Output only
     std::vector<std::pair<uint32_t, uint32_t>> out_vars;   // (var id, ptr type)
@@ -161,7 +179,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             if (I.wc >= 4 && w(I, 2) == DecBuiltIn && w(I, 3) == BuiltInPosition) builtin_pos_vars.push_back(w(I, 1));
             break;
         case OpMemberDecorate:
-            if (I.wc >= 5 && w(I, 3) == DecBuiltIn && w(I, 4) == BuiltInPosition) { pos_struct = w(I, 1); pos_member = w(I, 2); }
+            if (I.wc >= 5 && w(I, 3) == DecBuiltIn && w(I, 4) == BuiltInPosition) pos_structs.push_back({w(I, 1), w(I, 2)});
             break;
         }
     }
@@ -188,11 +206,11 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         return 0;
     };
     for (auto v : builtin_pos_vars)
-        for (auto& ov : out_vars) if (ov.first == v && in_interface(v)) { pos_var = v; pos_struct = 0; }
-    if (!pos_var && pos_struct)
+        for (auto& ov : out_vars) if (ov.first == v && in_interface(v)) pos_var = v;
+    for (auto& ps : pos_structs)
         for (auto& ov : out_vars)
-            if (pointee(ov.second) == pos_struct && in_interface(ov.first)) { pos_var = ov.first; break; }
-    if (!pos_var) { r.why = "vertex shader does not write gl_Position (or it is arrayed)"; return r; }
+            if (!pos_var && pointee(ov.second) == ps.first && in_interface(ov.first)) { pos_var = ov.first; pos_struct = ps.first; pos_member = ps.second; }
+    if (!pos_var) { r.why = "shader does not write gl_Position (or it is arrayed)"; return r; }
 
     // 3. New ids and global declarations.
     uint32_t bound = in[3];
@@ -205,7 +223,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         out.push_back(uint32_t(ops.size() + 1) << 16 | op);
         out.insert(out.end(), ops.begin(), ops.end());
     };
-    std::vector<uint32_t> head_cap, head_ext, head_imp, globals;
+    std::vector<uint32_t> head_cap, head_ext, head_imp, annot, globals;
     if (!glsl) {
         glsl = fresh();
         std::vector<uint32_t> ops{glsl};
@@ -216,7 +234,10 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     if (live && !has_psb_cap) emit(head_cap, OpCapability, {CapPhysicalStorageBufferAddresses});
     if (live && !has_psb_ext) emit_v(head_ext, OpExtension, str_words("SPV_KHR_physical_storage_buffer"));
     bool hudpath = o.skip_w1 || o.hud;
-    if (!t_bool && (hudpath || live)) { t_bool = fresh(); emit(globals, OpTypeBool, {t_bool}); }
+    if (!t_bool) { t_bool = fresh(); emit(globals, OpTypeBool, {t_bool}); }
+    uint32_t c_gate = fresh();
+    emit(globals, OpSpecConstantTrue, {t_bool, c_gate});
+    emit(annot, OpDecorate, {c_gate, DecSpecId, kGateSpecId});
     uint32_t c_true = 0;
     if (o.hud) { c_true = fresh(); emit(globals, OpConstantTrue, {t_bool, c_true}); }
     uint32_t p_vec4 = 0;
@@ -260,9 +281,25 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     // 4. Rebuild the module, inserting each piece in its required section.
     std::vector<uint32_t> out(in.begin(), in.begin() + 5);
     out.reserve(in.size() + 128);
-    bool cap_done = false, ext_done = false, globals_done = false, in_entry = false;
+    bool cap_done = false, ext_done = false, annot_done = false, globals_done = false, in_entry = false;
     int returns = 0;
+    auto sel4 = [&](uint32_t cond, uint32_t a, uint32_t b) {  // vector OpSelect with a scalar condition needs SPIR-V 1.4
+        uint32_t c[4];
+        for (uint32_t k = 0; k < 4; ++k) {
+            uint32_t ca = fresh(), cb = fresh();
+            c[k] = fresh();
+            emit(out, OpCompositeExtract, {t_float, ca, a, k});
+            emit(out, OpCompositeExtract, {t_float, cb, b, k});
+            emit(out, OpSelect, {t_float, c[k], cond, ca, cb});
+        }
+        uint32_t r4 = fresh();
+        emit(out, OpCompositeConstruct, {t_vec4, r4, c[0], c[1], c[2], c[3]});
+        return r4;
+    };
     for (auto& I : insts) {
+        bool is_annot = I.op == OpDecorate || I.op == OpMemberDecorate || I.op == OpDecorateId || I.op == OpDecorateString ||
+                        I.op == OpMemberDecorateString || I.op == OpDecorationGroup || I.op == OpGroupDecorate || I.op == OpGroupMemberDecorate;
+        if (!annot_done && is_annot) { out.insert(out.end(), annot.begin(), annot.end()); annot_done = true; }
         if (!cap_done && I.op != OpCapability) { out.insert(out.end(), head_cap.begin(), head_cap.end()); cap_done = true; }
         if (!ext_done && I.op != OpCapability && I.op != OpExtension) { out.insert(out.end(), head_ext.begin(), head_ext.end()); ext_done = true; }
         if (I.op == OpMemoryModel) {
@@ -277,11 +314,13 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             in_entry = false;
             for (auto f : entry_fns) if (w(I, 2) == f) in_entry = true;
         }
-        if (in_entry && I.op == OpReturn) {
+        if ((in_entry && I.op == OpReturn) || (geom && (I.op == OpEmitVertex || I.op == OpEmitStreamVertex))) {
             uint32_t ptr = pos_var;
             if (pos_struct) { ptr = fresh(); emit(out, OpAccessChain, {p_vec4, ptr, pos_var, c_member}); }
             if (o.hide) {
-                emit(out, OpStore, {ptr, c_zero4});
+                uint32_t v0 = fresh();
+                emit(out, OpLoad, {t_vec4, v0, ptr});
+                emit(out, OpStore, {ptr, sel4(c_gate, c_zero4, v0)});
                 ++returns;
                 out.insert(out.end(), in.begin() + I.off, in.begin() + I.off + I.wc);
                 continue;
@@ -379,19 +418,6 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpLogicalAnd, {t_bool, inr, ge, le});
                 uint32_t vh = fresh();
                 emit(out, OpCompositeInsert, {t_vec4, vh, xh, v, 0});
-                auto sel4 = [&](uint32_t cond, uint32_t a, uint32_t b) {
-                    uint32_t c[4];
-                    for (uint32_t k = 0; k < 4; ++k) {
-                        uint32_t ca = fresh(), cb = fresh();
-                        c[k] = fresh();
-                        emit(out, OpCompositeExtract, {t_float, ca, a, k});
-                        emit(out, OpCompositeExtract, {t_float, cb, b, k});
-                        emit(out, OpSelect, {t_float, c[k], cond, ca, cb});
-                    }
-                    uint32_t r4 = fresh();
-                    emit(out, OpCompositeConstruct, {t_vec4, r4, c[0], c[1], c[2], c[3]});
-                    return r4;
-                };
                 uint32_t res = v2;
                 const uint32_t alt[4] = {0, c_zero4, v, vh};
                 for (uint32_t k = 3; k >= 1; --k) {
@@ -402,13 +428,14 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 }
                 v2 = res;
             }
-            emit(out, OpStore, {ptr, v2});
+            emit(out, OpStore, {ptr, sel4(c_gate, v2, v)});
             ++returns;
         }
         if (I.op == OpFunctionEnd) in_entry = false;
         out.insert(out.end(), in.begin() + I.off, in.begin() + I.off + I.wc);
     }
-    if (!returns) { r.why = "no OpReturn in vertex entry point"; return r; }
+    if (!returns) { r.why = geom ? "no OpEmitVertex in geometry shader" : "no OpReturn in entry point"; return r; }
+    if (!annot_done) { r.why = "no decorations"; return r; }  // unreachable: gl_Position is decorated
     out[3] = bound;
     in.swap(out);
     r.patched = true;

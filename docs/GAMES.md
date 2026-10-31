@@ -80,7 +80,21 @@ configured by hand (`docs/CONFIG.md`), free, at the cost of your own time.
 | ABZU | Epic (Heroic): positive | Proton (umu, Proton-CachyOS), D3D11 (UE4, DXVK, 64-bit `AbzuGame-Win64-Shipping.exe`) | works | gamescope 1920x1080 (Heroic); no own profile (ran at `world_scale` ~0.1 from the control block) | works, 2026-10-29 |
 
 Single GPU (RTX 5070 Ti, host "sharkoon", alternate-eye): Alice: Madness
-Returns, Zen Bound 2, Overlord (same Zink glow).
+Returns, Zen Bound 2, Overlord (same Zink glow), The Witcher 3 next-gen DX12
+(2026-10-31: eyes clean only with temporal AA/upscaling and motion blur off).
+
+## Game settings that cause problems
+
+| setting | why | effect | mode |
+|---|---|---|---|
+| temporal AA and upscalers (TAA, DLSS, DLAA, FSR 2/3, XeSS) | blend in the previous frame, which in alternate-eye rendering is the other eye's | each eye shows a ghost of the other eye's picture | single GPU |
+| motion blur | same: uses the previous frame | same ghosting, worst when moving | single GPU |
+| frame generation (DLSS FG, FSR FG, XeSS FG) | interpolates between the last two frames, i.e. between the eyes | generated frames mix both eyes | single GPU (untested with two GPUs) |
+| other temporal effects (temporal SSR/AO/volumetrics; not verified, same mechanism) | reuse history from the previous frame | weaker ghosting in those effects | single GPU |
+| tessellated hair/fur (NVIDIA HairWorks) | positions come out of tessellation/geometry shaders, the layer shifted only vertex shaders | hair at screen depth, detached from the head (Witcher 3, 2026-10-31) | both; fixed the same day (TES/GS patched), not yet confirmed in the game |
+| depth of field and other blur post effects | blur an image whose depth no longer matches the shifted geometry | a "ghost" around objects (LEGO Harry Potter) | both |
+| fullscreen on the portrait desktop | the game picks the desktop's 2880x5120 | tall picture in the HMD, cut menus | both (host "fractal") |
+
 
 Gamescope keeps a game at 1920x1080 whatever the (portrait) desktop is, e.g.
 Mirror's Edge launch option. `gamescope-pv-display` is a local helper
