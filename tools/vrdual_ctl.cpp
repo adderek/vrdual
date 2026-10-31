@@ -12,6 +12,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -28,7 +30,9 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 
 static int usage() {
     fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
-                    "                  | live | set KEY VALUE | save [--global]   [--session S]\n");
+                    "                  | live | set KEY VALUE | save [--global]   [--session S]\n"
+                    "                  | shaders | hunt [off | hide|noshift|hud LO HI]   (LO, HI: 8 hex digits, inclusive)\n"
+                    "                  | rule KEY noshift|hud|hide   (adds to shader_rules in the session's [app:NAME])\n");
     return 2;
 }
 
@@ -114,6 +118,16 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (cmd == "shaders") {  // vertex shader keys the layers saw, sorted, unique
+        std::ifstream f(shm_dir() + "/vrdual-" + session + "-shaders");
+        if (!f) { fprintf(stderr, "no shader list for session '%s'\n", session.c_str()); return 1; }
+        std::set<std::string> keys;
+        for (std::string l; std::getline(f, l);)
+            if (l.size() == 16) keys.insert(l);
+        for (auto& k : keys) printf("%s\n", k.c_str());
+        return 0;
+    }
+
     vrdual_ctl* c = ctl_open(session, nullptr);
     if (!c) { fprintf(stderr, "no running session '%s' (%s)\n", session.c_str(), ctl_path(session).c_str()); return 1; }
 
@@ -148,6 +162,39 @@ int main(int argc, char** argv) {
         vrdual_ctl now = ctl_read(c);
         if (!now.live) fprintf(stderr, "note: session runs in baked mode, change applies after app restart\n");
         printf("%s %s\n", k.c_str(), live_value(now, k).c_str());
+        return 0;
+    }
+
+    if (cmd == "hunt") {  // docs/tasks/shader-rules.md
+        static const char* const modes[] = {"off", "hide", "noshift", "hud"};
+        if (args.size() == 2 && args[1] == "off") ctl_write(c, [](vrdual_ctl& x) { x.hunt_mode = 0; });
+        else if (args.size() == 4) {
+            int m = 0;
+            for (int k = 1; k < 4; ++k) if (args[1] == modes[k]) m = k;
+            char *e1, *e2;
+            unsigned long lo = strtoul(args[2].c_str(), &e1, 16), hi = strtoul(args[3].c_str(), &e2, 16);
+            if (!m || *e1 || *e2 || lo > 0xffffffffull || hi > 0xffffffffull) return usage();
+            ctl_write(c, [&](vrdual_ctl& x) { x.hunt_lo = uint32_t(lo); x.hunt_hi = uint32_t(hi); x.hunt_mode = uint32_t(m); });
+        } else if (args.size() != 1) return usage();
+        vrdual_ctl now = ctl_read(c);
+        if (!now.live) fprintf(stderr, "note: session runs in baked mode, the hunt needs live mode\n");
+        printf("hunt %s %08x %08x\n", modes[now.hunt_mode & 3], now.hunt_lo, now.hunt_hi);
+        return 0;
+    }
+
+    if (cmd == "rule") {
+        if (args.size() != 3 || (args[2] != "noshift" && args[2] != "hud" && args[2] != "hide")) return usage();
+        std::string k = lower(args[1]);
+        if (k.size() < 8 || k.size() > 16 || k.find_first_not_of("0123456789abcdef") != std::string::npos) return usage();
+        vrdual_ctl v = ctl_read(c);
+        if (!v.app[0]) { fprintf(stderr, "session has no app name\n"); return 1; }
+        std::string sec = std::string("app:") + v.app, cur;
+        Ini ini = parse_ini(config_path());
+        if (ini.count(lower(sec)) && ini[lower(sec)].count("shader_rules")) cur = ini[lower(sec)]["shader_rules"];
+        std::string val = cur.empty() ? k + ":" + args[2] : cur + ", " + k + ":" + args[2];
+        if (!save_key(config_path(), sec, "shader_rules", val)) { fprintf(stderr, "cannot write %s\n", config_path().c_str()); return 1; }
+        fprintf(stderr, "[%s] shader_rules = %s (applies at the next game start)\n", sec.c_str(), val.c_str());
+        printf("%s\n", val.c_str());
         return 0;
     }
 

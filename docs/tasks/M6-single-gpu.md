@@ -18,3 +18,10 @@ reprojection of one rendered view (cheap, has disocclusion holes).
 
 **Done when:** `vrdual run --single-gpu -- APP` produces calib snapshots that
 pass `measure_posts.py`.
+
+**Temporal history (from witcher3-vr, 2026-10-31):** with alternate eyes the
+game's TAA / DLSS / FSR history mixes both eyes (smear, ghosting at edges
+that differ between the eyes). witcher3-vr keeps one history per eye ("FSR
+per eye") through engine hooks; app-unaware, the closest equivalent is
+replaying each frame for both eyes (option a), where each eye's frames stay
+consecutive for the app. Two-GPU mode has one history per GPU by design.

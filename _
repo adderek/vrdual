@@ -44,7 +44,7 @@ vrdual_clean() { rm -f /dev/shm/vrdual-* "$FLATPAK_SHM"/vrdual-* "$HEROIC_SHM"/v
 # variables in the environment (IPD, ANCHOR, ...) are passed through.
 vrdual_run() {
     local lg="" rg=""  # empty = left_gpu/right_gpu from the config file
-    local session="${VRDUAL_SESSION:-default}" snapshot="" at=120 scale="${VRDUAL_SCALE:-1}"
+    local session="${VRDUAL_SESSION:-default}" snapshot="" at=120 scale="${VRDUAL_SCALE:-0}"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --left-gpu) lg=$2; shift 2 ;;
@@ -87,7 +87,87 @@ vrdual_calib() { vrdual_run "$@" -- "$B/vrdual-cube" --scene calib; }
 vrdual_config() { "$B/vrdual-ctl" "${1:-show}" "${@:2}"; }
 vrdual_live() { pick_shm "$@"; "$B/vrdual-ctl" live "$@"; }
 vrdual_set() { pick_shm "$@"; "$B/vrdual-ctl" set "$@"; }
-vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@"; }
+vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@" && config_sync; }
+
+# Games in Flatpak Steam / Heroic read the copy steam-install made, not the
+# host config: refresh the copies after a write (they apply at the next start).
+config_sync() {
+    local c d
+    c=$("$B/vrdual-ctl" path)
+    [[ -f $c ]] || return 0
+    for d in "$STEAM_FLATPAK/vrdual" "$HOME/.local/share/vrdual"; do
+        [[ -f $d/run ]] || continue
+        cmp -s "$c" "$d/vrdual.conf" && continue
+        cp "$c" "$d/vrdual.conf" && say "copied $c -> $d/vrdual.conf (the game reads that one)"
+    done
+    return 0
+}
+
+# Shader hunt (docs/tasks/shader-rules.md). `hunt [off | MODE LO HI]` and
+# `hunt shaders` go straight to vrdual-ctl; `hunt find [MODE]` (needs a
+# terminal) bisects over the session's vertex shader keys: half of them get
+# MODE (default hide), you answer whether the thing you look for changed.
+vrdual_hunt() {
+    pick_shm "$@"
+    local -a ses=()
+    [[ -n ${VRDUAL_SESSION:-} ]] && ses=(--session "$VRDUAL_SESSION")
+    local a prev=""
+    for a; do [[ $prev == --session ]] && ses=(--session "$a"); prev=$a; done
+    case ${1:-} in
+        shaders) "$B/vrdual-ctl" "${ses[@]}" shaders; return ;;
+        rule) "$B/vrdual-ctl" "$@" && config_sync; return ;;
+        find) ;;
+        *) "$B/vrdual-ctl" hunt "$@"; return ;;
+    esac
+    [[ -t 0 ]] || { say "hunt find asks questions: run it in a terminal"; return 2; }
+    local mode=hide
+    case ${2:-} in hide|noshift|hud) mode=$2 ;; esac
+    local -a k
+    mapfile -t k < <("$B/vrdual-ctl" "${ses[@]}" shaders | cut -c1-8 | uniq) || true
+    (( ${#k[@]} )) || { say "no shaders recorded for this session (is the game running with the layer?)"; return 1; }
+    local what
+    case $mode in hide) what="not drawn" ;; noshift) what="not shifted per eye" ;; hud) what="at hud_depth" ;; esac
+    say "hunt: ${#k[@]} vertex shaders. Watch ONE thing (an artefact, a HUD element) in the HMD or 'vrdual view'."
+    say "Each step makes part of the shaders $what ($mode) and asks whether your thing changed: the answers"
+    say "narrow down which shader draws it. The rest of the picture may look broken meanwhile (many shaders"
+    say "changed at once); ignore that. Picture too broken to judge: answer ? (tries the other half)."
+    local lo=0 hi=$(( ${#k[@]} - 1 )) mid ans step=0 off
+    local q="your thing: changed/gone (y), as before (n), can't tell (?), quit (q): "
+    while (( lo < hi )); do
+        mid=$(( (lo + hi) / 2 )) step=$(( step + 1 ))
+        "$B/vrdual-ctl" "${ses[@]}" hunt "$mode" "${k[lo]}" "${k[mid]}" >/dev/null || return 1
+        read -r -p "[$step] $(( mid - lo + 1 )) of $(( hi - lo + 1 )) candidates $mode; $q" ans
+        off=0
+        if [[ $ans == "?"* ]]; then  # e.g. the picture went black: try the other half
+            "$B/vrdual-ctl" "${ses[@]}" hunt "$mode" "${k[mid + 1]}" "${k[hi]}" >/dev/null || return 1
+            read -r -p "[$step] the other $(( hi - mid )) candidates $mode instead; $q" ans
+            off=1
+        fi
+        case $ans in
+            y*) if (( off )); then lo=$(( mid + 1 )); else hi=$mid; fi ;;
+            n*) if (( off )); then hi=$mid; else lo=$(( mid + 1 )); fi ;;
+            *) "$B/vrdual-ctl" "${ses[@]}" hunt off >/dev/null
+               [[ $ans == "?"* ]] && say "cannot tell either way: try another mode (noshift keeps the picture visible)"
+               return 1 ;;
+        esac
+    done
+    "$B/vrdual-ctl" "${ses[@]}" hunt "$mode" "${k[lo]}" "${k[lo]}" >/dev/null
+    local full app
+    full=$("$B/vrdual-ctl" "${ses[@]}" shaders | grep "^${k[lo]}" | head -1)
+    app=$("$B/vrdual-ctl" "${ses[@]}" live | sed -n 's/^app //p')
+    read -r -p "only shader $full is $mode now. Your thing still changed/gone? [y/n] " ans
+    "$B/vrdual-ctl" "${ses[@]}" hunt off >/dev/null
+    [[ $ans == y* ]] || { say "not found (it may take several shaders together: run hunt find again, or another mode)"; return 1; }
+    echo "$full"
+    ans=""
+    while [[ $ans != [sd]* ]]; do read -r -p "rule $full:$mode for [app:$app]: (s)ave / (d)on't save: " ans || return 1; done
+    if [[ $ans == s* ]]; then
+        "$B/vrdual-ctl" "${ses[@]}" rule "$full" "$mode" >/dev/null && config_sync || return 1
+    else
+        say "not saved; later: vrdual hunt rule $full $mode"
+    fi
+    return 0
+}
 
 # ------------------------------------------------------------ steam / HMD --
 STEAM_FLATPAK="$HOME/.var/app/com.valvesoftware.Steam"
@@ -103,10 +183,23 @@ pick_shm() {
     local s="${VRDUAL_SESSION:-default}" a
     for a in "$@"; do [[ ${prev:-} == --session ]] && s=$a; prev=$a; done
     unset prev
-    if [[ ! -e /dev/shm/vrdual-$s-ctl && -e $HEROIC_SHM/vrdual-$s-ctl ]]; then
-        export VRDUAL_SHM_DIR=$HEROIC_SHM
-        say "session '$s': using Flatpak Heroic's /dev/shm ($HEROIC_SHM)"
-    elif [[ ! -e /dev/shm/vrdual-$s-ctl && -d $FLATPAK_SHM/ ]]; then
+    # Several dirs can hold session S (a stale one from the last game): take
+    # the one with the newest frame (else control block).
+    local d best="" bt=0 t f
+    for d in /dev/shm "$HEROIC_SHM" "$FLATPAK_SHM"; do
+        for f in "$d/vrdual-$s-0" "$d/vrdual-$s-ctl"; do
+            [[ -e $f ]] || continue
+            t=$(stat -c %Y "$f" 2>/dev/null) || continue
+            (( t > bt )) && { bt=$t; best=$d; }
+            break
+        done
+    done
+    if [[ -n $best ]]; then
+        [[ $best == /dev/shm ]] && return 0
+        export VRDUAL_SHM_DIR=$best
+        if [[ $best == "$HEROIC_SHM" ]]; then say "session '$s': using Flatpak Heroic's /dev/shm ($HEROIC_SHM)"
+        else say "session '$s': using Flatpak Steam's /dev/shm ($FLATPAK_SHM)"; fi
+    elif [[ -d $FLATPAK_SHM/ ]]; then
         export VRDUAL_SHM_DIR=$FLATPAK_SHM
         say "session '$s': using Flatpak Steam's /dev/shm ($FLATPAK_SHM)"
     fi
@@ -545,8 +638,8 @@ vrdual_selftest() {
     glslc "$VRDUAL_ROOT/testapp/cube.frag" -o "$tmp/frag.spv"
     local sh m
     for sh in glsl hlsl; do
-        for m in "baked 0.03 0.02 5 0.25" "live 0x123456789a0"; do
-            label="spirv $sh ${m%% *}"
+        for m in "baked 0.03 0.02 5 0.25" "live 0x123456789a0" "baked 0.03 hud" "live 0x123456789a0 hud" "live 0x123456789a0 hide"; do
+            label="spirv $sh ${m%% *}${m##*[0-9]}"
             # shellcheck disable=SC2086
             check bash -c "'$B/spvpatch' '$tmp/$sh.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv'"
         done
@@ -603,6 +696,17 @@ vrdual_selftest() {
     label="anchor right";        check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/d.png' && $M '$tmp/d.png' --ipd 0.064 --anchor right"
     set_live anchor=center ipd_near=0.2 near_dist=1 far_dist=5
     label="near/far blend";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/e.png' && $M '$tmp/e.png' --ipd 0.064 --ipd-near 0.2 --near 1 --far 5"
+    set_live ipd_near=0
+    # Shader hunt: both processes list the test shader's key; hide over the
+    # whole key range leaves only the background, off brings the posts back.
+    label="shader list: test shader key, once"
+    check bash -c "k=\$('$B/spvpatch' --hash '$tmp/glsl.spv') && [[ \$('$B/vrdual-ctl' --session $sess shaders) == \$k ]]"
+    "$B/vrdual-ctl" --session $sess hunt hide 00000000 ffffffff >/dev/null
+    label="hunt hide: all shaders hidden live"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hh.png' && (( \$(convert '$tmp/hh.png' -unique-colors -format %w info:) <= 2 ))"
+    "$B/vrdual-ctl" --session $sess hunt off >/dev/null
+    label="hunt off: posts back, ipd 64mm"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/ho.png' && $M '$tmp/ho.png' --ipd 0.064 --anchor center"
     label="config init: built-in button maps listed commented, both modes"
     check bash -c "VRDUAL_CONFIG='$tmp/init.conf' '$B/vrdual-ctl' init >/dev/null && [[ \$(grep -c '^# map_\\(gamepad\\|mouse\\)_' '$tmp/init.conf') == 23 ]] &&
         grep -qx '# map_mouse_rt = BTN_LEFT' '$tmp/init.conf' && grep -qx '# map_gamepad_a = BTN_A' '$tmp/init.conf' && ! grep -q '^map_' '$tmp/init.conf'"
@@ -738,6 +842,29 @@ vrdual_selftest() {
     label="mirror: 2 swapchains, biggest exported, ipd 64mm"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/xw.png' && $M '$tmp/xw.png' --ipd 0.064 --anchor center &&
         kill -0 $xw && ! grep -q 'exporting 64x48' '$tmp/xw.log' || { cat '$tmp/xw.log'; false; }"
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
+    # 3c'. shader_rules: noshift for the test shader (10-digit key prefix) ->
+    # both eyes render the same picture.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        VRDUAL_SHADER_RULES="$("$B/spvpatch" --hash "$tmp/glsl.spv" | cut -c1-10):noshift" \
+        "$B/vrdual-cube" --scene calib --title "selftest shader rules" >"$tmp/sr.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'exporting' "$tmp/sr.log" 2>/dev/null && break; sleep 0.1; done
+    label="shader_rules noshift: rule logged, both eyes equal"
+    check bash -c "grep -q 'rule noshift' '$tmp/sr.log' || { cat '$tmp/sr.log'; exit 1; }
+        for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-0 2>/dev/null) b=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-1 2>/dev/null)
+            [[ -n \$a && \${a#* } == \${b#* } ]] && exit 0; sleep 0.1; done; echo \"\$a / \$b\"; false"
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
+    # 3c''. hud_depth_scope = rules: without a hud rule the HUD (w == 1) stays
+    # at infinity although hud_depth = 1.5; posts unchanged.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        VRDUAL_HUD_DEPTH=1.5 VRDUAL_HUD_DEPTH_SCOPE=rules "$B/vrdual-cube" --scene calib --title "selftest hud scope" >"$tmp/hs.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'exporting' "$tmp/hs.log" 2>/dev/null && break; sleep 0.1; done
+    label="hud_depth_scope rules: HUD at infinity, ipd 64mm"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hs.png' && $M '$tmp/hs.png' --ipd 0.064 --anchor center || { cat '$tmp/hs.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3d. Single-GPU mode: right_gpu = the app's GPU -> alternate-eye rendering
@@ -1039,6 +1166,10 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
                                   A anchor, -/= HFOV, W save to profile, H help, S swap
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
+  hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions);
+                                  hunt MODE LO HI | off sets a key range, hunt shaders lists keys,
+                                  hunt rule KEY MODE saves a rule for the running game;
+                                  found keys go into shader_rules (docs/tasks/shader-rules.md)
   snapshot [out.png] [frame]    same, but save one paired SBS frame and exit
   record [out.mp4|DIR] [--seconds N] [--fps N] [--half] [--no-audio] [--session S]
                                 stereo video of the running game: side-by-side mp4 (default
@@ -1075,7 +1206,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         steam-install) vrdual_steam_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;

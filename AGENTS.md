@@ -39,7 +39,7 @@ automatically.
 | `common/vrdual_input.hpp` | controllers → virtual pad / mouse / keys (Mapper, pure) + uinput devices |
 | `tools/input_test.cpp` | `vrdual-input-test`: Mapper scenarios + uinput pad round trip |
 | `testapp/gltest.cpp` | `vrdual-gltest`: GL 2.1-style Xlib/GLX app for Zink tests (also built 32-bit) |
-| `layer/spirv_patch.hpp` | SPIR-V rewriter (baked or live params, near/far blend, `w==1` skip) |
+| `layer/spirv_patch.hpp` | SPIR-V rewriter (baked or live params, near/far blend, `w==1` skip, shader rules + live hunt range, `shader_hash`) |
 | `layer/VkLayer_vrdual.json.in` | layer manifest (`VK_LAYER_VRDUAL_stereo`, explicit) |
 | `common/vrdual_shm.h` | shm frame ring + control block structs (C ABI shared by all processes) |
 | `common/vrdual_config.hpp` | `.conf` parser, precedence, `save_key` (keys documented in `docs/CONFIG.md`; selftest checks) |

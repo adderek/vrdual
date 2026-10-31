@@ -69,6 +69,9 @@ struct Config {
     int eye = -1;              // -1 = stereo off, 0 left, 1 right (mirror: 0 = the app's device)
     bool mirror = false;       // VRDUAL_EYE=both: one process, twin device on mirror_gpu
     bool skip_w1 = true;
+    struct Rule { std::string prefix; int mode; };  // mode: 1 hide, 2 noshift, 3 hud (as hunt_mode)
+    std::vector<Rule> rules;   // shader_rules
+    bool hud_rules_only = false;  // hud_depth_scope = rules
     bool sparse = false;
     bool export_frames = true;
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
@@ -218,6 +221,23 @@ static void load_config(const VkApplicationInfo* app) {
     if (stereo_off) c.mirror = false, c.eye = -1;
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
+    c.hud_rules_only = st.s("hud_depth_scope") == "rules";
+    c.rules.clear();
+    {
+        std::stringstream ss(st.s("shader_rules"));
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            item = vrdual::trim(item);
+            if (item.empty()) continue;
+            size_t col = item.find(':');
+            std::string k = vrdual::lower(vrdual::trim(item.substr(0, col))), m = col == std::string::npos ? "" : vrdual::trim(item.substr(col + 1));
+            int mode = m == "hide" ? 1 : m == "noshift" ? 2 : m == "hud" ? 3 : 0;
+            if (k.size() < 8 || k.size() > 16 || k.find_first_not_of("0123456789abcdef") != std::string::npos || !mode)
+                logf("shader_rules: ignored '%s' (want KEY:noshift|hud|hide, KEY 8-16 hex digits)", item.c_str());
+            else c.rules.push_back({k, mode});
+        }
+        if (!c.rules.empty()) logf("shader_rules: %zu rule(s)", c.rules.size());
+    }
     c.sparse = st.i("sparse") != 0;
     c.export_frames = st.i("export") != 0;
     c.cached_wp = st.i("cached_wp") != 0;
@@ -314,7 +334,8 @@ struct EyeBuf {
     float aspect = 0;  // of the exported swapchain when params were last pushed
     int pushed_eye = -1;  // alternate-eye rendering flips `eye` every frame
     float last[2][4] = {};  // per eye: last pushed v[0..3] (log only real changes)
-    int patched = 0, skipped = 0;
+    int patched = 0, skipped = 0, ruled = 0;
+    uint32_t hunt[4] = {};  // last pushed hunt range (log changes)
 };
 
 struct SwapchainData {
@@ -829,6 +850,11 @@ static void push_params(EyeBuf& ep) {
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
     memcpy(ep.params, e.v, sizeof e.v);
+    uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
+    memcpy(ep.params + 8, hunt, sizeof hunt);
+    if (ep.ctl_seq != ~0ull && (c.hunt_mode != ep.hunt[2] || c.hunt_lo != ep.hunt[0] || c.hunt_hi != ep.hunt[1]))
+        logf("hunt[%s]: mode %u keys %08x..%08x", ep.eye ? "R" : "L", c.hunt_mode, c.hunt_lo, c.hunt_hi);
+    memcpy(ep.hunt, hunt, sizeof ep.hunt);
     memcpy(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));
     ep.aspect = g_aspect;
     ep.pushed_eye = ep.eye;
@@ -879,11 +905,53 @@ static void free_param_buffer(const Dispatch& d, VkDevice dev, EyeBuf& ep) {
 }
 
 // ------------------------------------------------------------- shaders -----
+// First sight of a vertex shader key: appended to /dev/shm/vrdual-SESSION-shaders
+// (the list `_ hunt` bisects over; one write per line, so both eye processes
+// can append). Returns false if the key was seen before.
+static bool note_shader(uint64_t h, int rule) {
+    static std::mutex m;
+    static auto* seen = new std::unordered_set<uint64_t>;  // never freed (layer globals live forever)
+    {
+        std::lock_guard<std::mutex> l(m);
+        if (!seen->insert(h).second) return false;
+    }
+    std::string p = vrdual::shm_dir() + "/vrdual-" + g_cfg.session + "-shaders";
+    int fd = open(p.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+    if (fd >= 0) {
+        char line[32];
+        int n = snprintf(line, sizeof line, "%016llx\n", (unsigned long long)h);
+        if (write(fd, line, size_t(n)) != n) {}
+        close(fd);
+    }
+    static const char* const names[] = {"", "hide", "noshift", "hud"};
+    if (rule) logf("shader %016llx: rule %s", (unsigned long long)h, names[rule]);
+    return true;
+}
+
+static int rule_for(uint64_t h) {
+    char hex[17];
+    snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
+    for (auto& r : g_cfg.rules)
+        if (!strncmp(hex, r.prefix.c_str(), r.prefix.size())) return r.mode;
+    return 0;
+}
+
 // Patched copy of a vertex shader for ep's eye; false = use the original.
 static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::vector<uint32_t>& code) {
     if (ep.eye < 0 || !g_cfg.ctl) return false;
+    uint64_t h = spv::shader_hash(ci->pCode, ci->codeSize / 4);
+    int rule = rule_for(h);
     spv::PatchOptions o;
     o.skip_w1 = g_cfg.skip_w1;
+    o.w1_hud = !g_cfg.hud_rules_only;
+    o.key = uint32_t(h >> 32);
+    o.hide = rule == 1;
+    o.hud = rule == 3;
+    if (rule == 2) {  // noshift: the original (vertex shaders only, else the rule matched by chance)
+        code.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
+        if (spv::patch_vertex(code, o).patched) { ep.ruled++; note_shader(h, rule); }
+        return false;
+    }
     if (ep.params) {
         o.addr = ep.addr;  // live: shader reads params every draw
     } else {
@@ -899,6 +967,8 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
         return false;
     }
     ep.patched++;
+    if (rule) ep.ruled++;
+    note_shader(h, rule);
     return true;
 }
 
@@ -999,6 +1069,7 @@ static void free_copy_res(const Dispatch& d, VkDevice dev, CopyRes& cr) {
 static VKAPI_ATTR void VKAPI_CALL vrd_DestroyDevice(VkDevice dev, const VkAllocationCallbacks* alloc) {
     DeviceData* dd = dev_of(key(dev));
     logf("device destroyed: %d vertex shaders patched, %d modules untouched, %llu frames", dd->ep.patched, dd->ep.skipped, (unsigned long long)dd->frame);
+    if (!g_cfg.rules.empty()) logf("shader_rules: %d shader(s) matched %zu rule(s)%s", dd->ep.ruled, g_cfg.rules.size(), dd->ep.ruled ? "" : " (stale keys? game or Proton updated)");
     if (dd->md) mirror::destroy_twin(dd);
     for (auto& kv : dd->swapchains)
         for (auto& rb : kv.second.rb) free_readback(dd->d, dev, rb);

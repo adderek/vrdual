@@ -28,6 +28,10 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   DXVK d3d9 games went from 16–24 ms per submit (full compare of cached
   memory) towards the ~0.1 ms of the other memory.
 - Exported frames are opaque (games leaving alpha 0 showed black).
+- Shader rules: `shader_rules = KEY:noshift|hud|hide` per game treats single
+  vertex shaders differently (key = hash of the SPIR-V); `_ hunt find` finds
+  a shader in the running game by live bisection (hide half, ask). Idea from
+  witcher3-vr's per-build shader fingerprints.
 - Heroic (Epic/GOG through umu): wrapper command, per-game Proton logs,
   launchers (Ubisoft Connect, EA app) passive with `stereo = 0`.
   Assassin's Creed Origins runs smoothly in the headset.

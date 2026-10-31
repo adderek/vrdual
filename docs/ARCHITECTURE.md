@@ -100,6 +100,13 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
    NVIDIA 3D Vision's "automatic" stereo trick with zero convergence, which is
    what an HMD wants.) Vertices with `w == 1` (HUD, full-screen post passes,
    orthographic shadow maps) are left alone (`VRDUAL_SKIP_W1`).
+   **Shader rules** override this per shader: the key is FNV-1a 64 over the
+   SPIR-V the app passes; `shader_rules` gives a shader `noshift`, `hud` or
+   `hide`. Every new key is appended to `/dev/shm/vrdual-SESSION-shaders`; in
+   live mode each patched shader also compares its key's high 32 bits with a
+   range in the param buffer (`addr + 32`: lo, hi, mode, from the control
+   block's `hunt_*`) and applies that mode at runtime, which `_ hunt find`
+   uses to bisect for one shader (docs/tasks/shader-rules.md).
 3. **Frame export** — at `vkQueuePresentKHR` the swapchain image is copied to a
    host buffer and published into a 4-slot seqlocked ring in `/dev/shm`.
 4. **Lockstep** — frame N is held until the other eye has published N, so two

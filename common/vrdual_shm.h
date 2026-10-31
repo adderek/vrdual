@@ -80,6 +80,10 @@ struct vrdual_ctl {
     float head_x, head_y, head_z;
     // version 3: HUD (w == 1 draws) shown at this distance, meters; 0 = infinity
     float hud_depth;
+    // version 4: shader hunt (docs/tasks/shader-rules.md): patched shaders
+    // whose key (high 32 bits of the hash) is in [hunt_lo, hunt_hi] get
+    // hunt_mode 1 hide | 2 noshift | 3 hud; 0 = off. Live mode only.
+    uint32_t hunt_lo, hunt_hi, hunt_mode;
 };
 
 static inline const char* vrdual_anchor_name(int a) {

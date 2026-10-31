@@ -22,6 +22,12 @@
 // (z scaled with w keeps every vertex's depth z/w: no far-plane clipping,
 // depth order kept; same w == 1 skip). w == 1 vertices (HUD) get x' = v.x + h.w
 // instead: a constant disparity that puts the HUD at hud_depth.
+//
+// Shader rules (docs/tasks/shader-rules.md): `hud` gives every vertex the
+// w == 1 treatment, `hide` stores (0,0,0,0) (nothing drawn). Live mode also
+// reads a uvec4 (lo, hi, mode, 0) at addr+32 and, if lo <= key <= hi (key =
+// high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift | 3 hud
+// at runtime: the hunt for a shader's key.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -37,6 +43,8 @@ enum : uint32_t {
     OpFunction = 54, OpFunctionEnd = 56, OpVariable = 59, OpLoad = 61, OpStore = 62,
     OpAccessChain = 65, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeExtract = 81,
     OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133, OpFDiv = 136,
+    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalAnd = 167, OpIEqual = 170,
+    OpUGreaterThanEqual = 174, OpULessThanEqual = 178,
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253,
 };
 enum : uint32_t {
@@ -49,7 +57,19 @@ struct PatchOptions {
     float params[4] = {0, 0, 0, 0};  // baked params (used when addr == 0)
     uint64_t addr = 0;               // live: device address of a vec4 (16-byte aligned)
     bool skip_w1 = true;
+    bool hud = false;   // rule: every vertex like w == 1 (HUD at hud_depth)
+    bool w1_hud = true; // w == 1 vertices get the hud_depth shift (false: unshifted, hud_depth_scope = rules)
+    bool hide = false;  // rule: draw nothing
+    uint32_t key = 0;   // live hunt: high 32 bits of the shader hash
 };
+
+// Shader key: FNV-1a 64 over the SPIR-V bytes as the app passed them.
+inline uint64_t shader_hash(const uint32_t* code, size_t words) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    const unsigned char* b = (const unsigned char*)code;
+    for (size_t i = 0; i < words * 4; ++i) h = (h ^ b[i]) * 0x100000001b3ull;
+    return h;
+}
 
 struct PatchResult {
     bool patched = false;
@@ -104,7 +124,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     if (entry_fns.empty()) { r.why = "no vertex entry point"; return r; }
 
     // 2. Existing types, decorations, variables, module header state.
-    uint32_t t_float = 0, t_vec4 = 0, t_bool = 0, t_int = 0, t_uint = 0, t_uvec2 = 0, glsl = 0;
+    uint32_t t_float = 0, t_vec4 = 0, t_bool = 0, t_int = 0, t_uint = 0, t_uvec2 = 0, t_uvec4 = 0, glsl = 0;
     uint32_t pos_var = 0, pos_struct = 0, pos_member = 0, addressing = AddrLogical;
     bool has_psb_cap = false, has_psb_ext = false;
     std::vector<std::pair<uint32_t, uint32_t>> ptr_types;  // (ptr id, pointee) Output only
@@ -137,6 +157,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         if (I.op != OpTypeVector) continue;
         if (w(I, 2) == t_float && w(I, 3) == 4 && !t_vec4) t_vec4 = w(I, 1);
         if (t_uint && w(I, 2) == t_uint && w(I, 3) == 2 && !t_uvec2) t_uvec2 = w(I, 1);
+        if (t_uint && w(I, 2) == t_uint && w(I, 3) == 4 && !t_uvec4) t_uvec4 = w(I, 1);
     }
     if (!t_vec4) { r.why = "no vec4 type"; return r; }
     bool live = o.addr != 0;
@@ -181,7 +202,10 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     }
     if (live && !has_psb_cap) emit(head_cap, OpCapability, {CapPhysicalStorageBufferAddresses});
     if (live && !has_psb_ext) emit_v(head_ext, OpExtension, str_words("SPV_KHR_physical_storage_buffer"));
-    if (!t_bool && o.skip_w1) { t_bool = fresh(); emit(globals, OpTypeBool, {t_bool}); }
+    bool hudpath = o.skip_w1 || o.hud;
+    if (!t_bool && (hudpath || live)) { t_bool = fresh(); emit(globals, OpTypeBool, {t_bool}); }
+    uint32_t c_true = 0;
+    if (o.hud) { c_true = fresh(); emit(globals, OpConstantTrue, {t_bool, c_true}); }
     uint32_t p_vec4 = 0;
     for (auto& p : ptr_types) if (p.second == t_vec4) { p_vec4 = p.first; break; }
     if (!p_vec4) { p_vec4 = fresh(); emit(globals, OpTypePointer, {p_vec4, StorageOutput, t_vec4}); }
@@ -192,7 +216,8 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     }
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
-    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0;
+    uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {};
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -205,6 +230,14 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         emit(globals, OpConstant, {t_uint, hi2, uint32_t((o.addr + 16) >> 32)});
         c_addr2 = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_addr2, lo2, hi2});
         p_psb = fresh(); emit(globals, OpTypePointer, {p_psb, StoragePhysicalStorageBuffer, t_vec4});
+        if (!t_uvec4) { t_uvec4 = fresh(); emit(globals, OpTypeVector, {t_uvec4, t_uint, 4}); }
+        uint32_t lo3 = fresh(), hi3 = fresh();
+        emit(globals, OpConstant, {t_uint, lo3, uint32_t(o.addr + 32)});
+        emit(globals, OpConstant, {t_uint, hi3, uint32_t((o.addr + 32) >> 32)});
+        c_addr3 = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_addr3, lo3, hi3});
+        p_psb4 = fresh(); emit(globals, OpTypePointer, {p_psb4, StoragePhysicalStorageBuffer, t_uvec4});
+        c_key = fresh(); emit(globals, OpConstant, {t_uint, c_key, o.key});
+        for (uint32_t k = 1; k < 4; ++k) { c_m[k] = fresh(); emit(globals, OpConstant, {t_uint, c_m[k], k}); }
     } else {
         uint32_t c[4];
         for (int k = 0; k < 4; ++k) { c[k] = fresh(); emit(globals, OpConstant, {t_float, c[k], f2u(o.params[k])}); }
@@ -234,6 +267,12 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         if (in_entry && I.op == OpReturn) {
             uint32_t ptr = pos_var;
             if (pos_struct) { ptr = fresh(); emit(out, OpAccessChain, {p_vec4, ptr, pos_var, c_member}); }
+            if (o.hide) {
+                emit(out, OpStore, {ptr, c_zero4});
+                ++returns;
+                out.insert(out.end(), in.begin() + I.off, in.begin() + I.off + I.wc);
+                continue;
+            }
             uint32_t prm = c_params, hp = 0;
             if (live) {
                 uint32_t pp = fresh(), pp2 = fresh();
@@ -276,16 +315,17 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpFMul, {t_float, z2, z, zr});
                 x2 = x3;
             }
-            if (o.skip_w1) {
-                uint32_t is1 = fresh(), xs = fresh(), xh = x;
-                if (live) {  // HUD at hud_depth: constant shift h.w
-                    uint32_t hh = fresh();
-                    xh = fresh();
-                    emit(out, OpCompositeExtract, {t_float, hh, hp, 3});
-                    emit(out, OpFAdd, {t_float, xh, x, hh});
-                }
-                emit(out, OpFOrdEqual, {t_bool, is1, wv, c_one});
-                emit(out, OpSelect, {t_float, xs, is1, xh, x2});
+            uint32_t xh = x;  // x of the HUD treatment
+            if (live) {  // HUD at hud_depth: constant shift h.w
+                uint32_t hh = fresh();
+                xh = fresh();
+                emit(out, OpCompositeExtract, {t_float, hh, hp, 3});
+                emit(out, OpFAdd, {t_float, xh, x, hh});
+            }
+            if (hudpath) {
+                uint32_t is1 = c_true, xs = fresh();
+                if (!o.hud) { is1 = fresh(); emit(out, OpFOrdEqual, {t_bool, is1, wv, c_one}); }
+                emit(out, OpSelect, {t_float, xs, is1, o.w1_hud || o.hud ? xh : x, x2});
                 x2 = xs;
                 if (live) {
                     uint32_t ys = fresh(), ws = fresh(), zs = fresh();
@@ -304,6 +344,42 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpCompositeInsert, {t_vec4, v4, z2, v3, 2});
                 emit(out, OpCompositeInsert, {t_vec4, v5, w2, v4, 3});
                 v2 = v5;
+                // Hunt: res = in && mode 1 ? 0 : in && mode 2 ? v : in && mode 3 ? hud(v) : v2.
+                // Per-component selects: a vector OpSelect with a scalar
+                // condition needs SPIR-V 1.4.
+                uint32_t hq = fresh(), hv = fresh(), lo = fresh(), hi = fresh(), md = fresh(), ge = fresh(), le = fresh(), inr = fresh();
+                emit(out, OpBitcast, {p_psb4, hq, c_addr3});
+                emit(out, OpLoad, {t_uvec4, hv, hq, MemAccessAligned, 16});
+                emit(out, OpCompositeExtract, {t_uint, lo, hv, 0});
+                emit(out, OpCompositeExtract, {t_uint, hi, hv, 1});
+                emit(out, OpCompositeExtract, {t_uint, md, hv, 2});
+                emit(out, OpUGreaterThanEqual, {t_bool, ge, c_key, lo});
+                emit(out, OpULessThanEqual, {t_bool, le, c_key, hi});
+                emit(out, OpLogicalAnd, {t_bool, inr, ge, le});
+                uint32_t vh = fresh();
+                emit(out, OpCompositeInsert, {t_vec4, vh, xh, v, 0});
+                auto sel4 = [&](uint32_t cond, uint32_t a, uint32_t b) {
+                    uint32_t c[4];
+                    for (uint32_t k = 0; k < 4; ++k) {
+                        uint32_t ca = fresh(), cb = fresh();
+                        c[k] = fresh();
+                        emit(out, OpCompositeExtract, {t_float, ca, a, k});
+                        emit(out, OpCompositeExtract, {t_float, cb, b, k});
+                        emit(out, OpSelect, {t_float, c[k], cond, ca, cb});
+                    }
+                    uint32_t r4 = fresh();
+                    emit(out, OpCompositeConstruct, {t_vec4, r4, c[0], c[1], c[2], c[3]});
+                    return r4;
+                };
+                uint32_t res = v2;
+                const uint32_t alt[4] = {0, c_zero4, v, vh};
+                for (uint32_t k = 3; k >= 1; --k) {
+                    uint32_t is = fresh(), cnd = fresh();
+                    emit(out, OpIEqual, {t_bool, is, md, c_m[k]});
+                    emit(out, OpLogicalAnd, {t_bool, cnd, inr, is});
+                    res = sel4(cnd, alt[k], res);
+                }
+                v2 = res;
             }
             emit(out, OpStore, {ptr, v2});
             ++returns;

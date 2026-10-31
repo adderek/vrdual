@@ -42,6 +42,10 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     reversible; Steam file verification restores them). Data per game lives in
     the sponsor profiles (first: Overlord, `Video/Title_*.bik`); the command
     itself is public.
+17. [Shader rules](docs/tasks/shader-rules.md) (from witcher3-vr,
+    2026-10-31): per-shader `noshift | hud | hide` by SPIR-V hash in
+    `shader_rules`, live bisection `_ hunt` to find a shader. Step 1 done;
+    next: try it in a DXVK game (key stability), then HUD scale.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

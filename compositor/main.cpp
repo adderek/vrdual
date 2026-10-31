@@ -2,7 +2,7 @@
 // side by side (the PoC stand-in for an HMD output). Also the calibration UI:
 // keys edit the session's live control block, both eyes follow next frame.
 //
-//   vrdual-compositor [--session S] [--swap] [--scale F]
+//   vrdual-compositor [--session S] [--swap] [--scale F]   (default: fit into half the screen)
 //   vrdual-compositor --snapshot out.png [--at N] [--timeout SEC]   (no window)
 //   vrdual-compositor --record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]
 //                     SBS video through ffmpeg (no window); DIR: <app>_<time>_LR.mp4 in it,
@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
     int fps = 60;
     bool half = false;
     bool swap = false;
-    float scale = 1.0f;
+    float scale = 0;  // 0 = fit into half the screen (beside the game window)
     uint64_t at = 0;
     double timeout = 30;
     for (int i = 1; i < argc; ++i) {
@@ -270,8 +270,16 @@ int main(int argc, char** argv) {
         if (!(eye_map(L) && eye_map(R) && pair_newest(L, R, shown, &F))) { usleep(1000); continue; }
         shown = F + 1;
         ++nshown;
-        int W = int((L.w + R.w) * scale), H = int((L.h > R.h ? L.h : R.h) * scale);
+        float sc = scale > 0 ? scale : 1;
+        int W = int((L.w + R.w) * sc), H = int((L.h > R.h ? L.h : R.h) * sc);
         if (!win) {
+            if (scale <= 0) {
+                SDL_Rect r;
+                float s = 1;
+                if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &r) && W > 0 && H > 0)
+                    s = std::min(1.0f, std::min(0.5f * r.w / W, 0.5f * r.h / H));
+                W = int(W * s), H = int(H * s);
+            }
             SDL_CreateWindowAndRenderer("vrdual — side by side (S: swap eyes, Q: quit)", W, H, SDL_WINDOW_RESIZABLE, &win, &ren);
             SDL_SetRenderVSync(ren, 0);
             SDL_SetRenderLogicalPresentation(ren, int(L.w + R.w), int(L.h > R.h ? L.h : R.h), SDL_LOGICAL_PRESENTATION_LETTERBOX);

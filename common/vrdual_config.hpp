@@ -39,6 +39,8 @@ static const Key kKeys[] = {
     {"stereo", "1", "0 = layer passive in this app (launchers): no mirror, shader patch or export"},
     {"skip_w1", "1", "leave w == 1 vertices (HUD/post/ortho) unshifted"},
     {"sparse", "0", "1 = sparse binding/residency visible to the app (D3D12 feature level 12_0 needs it); mirror replays the binds"},
+    {"shader_rules", "", "per-shader treatment, comma list KEY:noshift|hud|hide (KEY = hex prefix of the shader hash, 8-16 digits; find it with `_ hunt`)"},
+    {"hud_depth_scope", "all", "which draws hud_depth moves: all (every w == 1 vertex) | rules (only shaders with a hud rule; post-process passes stay put)"},
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
     {"export", "1", "publish frames to /dev/shm for the compositor"},
