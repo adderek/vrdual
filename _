@@ -920,10 +920,13 @@ vrdual_selftest() {
     # at infinity although hud_depth = 1.5; posts unchanged.
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
-        VRDUAL_HUD_DEPTH=1.5 VRDUAL_HUD_DEPTH_SCOPE=rules "$B/vrdual-cube" --scene calib --title "selftest hud scope" >"$tmp/hs.log" 2>&1 &
+        VRDUAL_HUD_DEPTH=1.5 VRDUAL_HUD_DEPTH_SCOPE=rules VRDUAL_SHADER_DUMP="$tmp/dump" "$B/vrdual-cube" --scene calib --nopos-vs --title "selftest hud scope" >"$tmp/hs.log" 2>&1 &
     for i in $(seq 100); do grep -q 'exporting' "$tmp/hs.log" 2>/dev/null && break; sleep 0.1; done
     label="hud_depth_scope rules: HUD at infinity, ipd 64mm"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hs.png' && $M '$tmp/hs.png' --ipd 0.064 --anchor center || { cat '$tmp/hs.log'; false; }"
+    label="shader_dump: an unpatched vertex shader (no gl_Position, no vec4) written once as KEY.spv"
+    check bash -c "f=\$(ls '$tmp/dump'/*.spv) && [[ \$(wc -w <<<\"\$f\") == 1 ]] && spirv-val --target-env vulkan1.1 \$f &&
+        grep -q \"not patched: .*, dumped to \$f\\$\" '$tmp/hs.log' || { grep 'not patched' '$tmp/hs.log'; ls '$tmp/dump'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3c'''. Tessellation / geometry stages (HairWorks, DX11 terrain): only

@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cerrno>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -73,6 +74,7 @@ struct Config {
     struct Rule { std::string prefix; int mode; };  // mode: 1 hide, 2 noshift, 3 hud (as hunt_mode)
     std::vector<Rule> rules;   // shader_rules
     bool hud_rules_only = false;  // hud_depth_scope = rules
+    std::string shader_dump;      // directory for unpatched shaders (debugging)
     bool sparse = false;
     bool export_frames = true;
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
@@ -223,6 +225,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.log = st.i("log") != 0;
     c.skip_w1 = st.i("skip_w1") != 0;
     c.hud_rules_only = st.s("hud_depth_scope") == "rules";
+    c.shader_dump = st.s("shader_dump");
     c.rules.clear();
     {
         std::stringstream ss(st.s("shader_rules"));
@@ -1041,7 +1044,23 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     spv::PatchResult pr = spv::patch_vertex(code, o);
     if (!pr.patched) {
         ep.skipped++;
-        if (pr.why != spv::kNoEntry) logf("shader module not patched: %s", pr.why.c_str());
+        if (pr.why != spv::kNoEntry) {
+            std::string f;
+            if (!g_cfg.shader_dump.empty()) {  // O_EXCL: once per key
+                char name[32];
+                snprintf(name, sizeof name, "/%016llx.spv", (unsigned long long)h);
+                f = g_cfg.shader_dump + name;
+                mkdir(g_cfg.shader_dump.c_str(), 0755);  // EEXIST is fine
+                int fd = open(f.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+                if (fd >= 0) {
+                    if (write(fd, ci->pCode, ci->codeSize) != ssize_t(ci->codeSize)) f += " (short write)";
+                    close(fd);
+                } else {
+                    f += errno == EEXIST ? " (exists)" : " (cannot write)";
+                }
+            }
+            logf("shader module not patched: %s%s%s", pr.why.c_str(), f.empty() ? "" : ", dumped to ", f.c_str());
+        }
         return false;
     }
     ep.patched++;

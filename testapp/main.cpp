@@ -9,6 +9,7 @@
 //
 // --tess / --geom: draw through passthrough tessellation / geometry stages
 // (the layer must shift the last pre-raster stage only, once).
+// --nopos-vs: also create (never use) a vertex shader without gl_Position.
 // --late-verts N: vertices zero until frame N, then written into the same
 // mapping (the mirror must push writes long after the first sync).
 // --swapchain-format: a 10-bit or FP16 swapchain (as UE4 games pick), exit 3
@@ -72,6 +73,9 @@ static const uint32_t kTese[] =
 static const uint32_t kGeom[] =
 #include "cube.geom.inc"
     ;
+static const uint32_t kNoPos[] =
+#include "nopos.vert.inc"
+    ;
 
 #define CK(x) do { VkResult r_ = (x); if (r_ != VK_SUCCESS) { fprintf(stderr, "%s:%d %s -> %d\n", __FILE__, __LINE__, #x, r_); exit(1); } } while (0)
 
@@ -105,7 +109,7 @@ struct PC { M4 mvp; float color[4]; VkDeviceAddress verts; };
 int main(int argc, char** argv) {
     int frames = 0, W = 960, H = 720;
     std::string title = "vrdual-cube", scene = "cubes";
-    bool tess = false, geom = false;
+    bool tess = false, geom = false, nopos = false;
     bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
     int late_verts = 0;
@@ -119,6 +123,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--tess")) tess = true;
         else if (!strcmp(argv[i], "--geom")) geom = true;
+        else if (!strcmp(argv[i], "--nopos-vs")) nopos = true;
         else if (!strcmp(argv[i], "--extra-window")) extra = true;
         else if (!strcmp(argv[i], "--mem-export")) mem_export = true;
         else if (!strcmp(argv[i], "--mem-export-dev2")) mem_export = dev2_export = true;
@@ -345,6 +350,7 @@ int main(int argc, char** argv) {
         return m;
     };
     VkShaderModule vs = bda ? VK_NULL_HANDLE : mkmod(kVert, sizeof kVert), fs = mkmod(kFrag, sizeof kFrag);
+    if (nopos) vkDestroyShaderModule(dev, mkmod(kNoPos, sizeof kNoPos), nullptr);
     VkShaderModuleCreateInfo vsi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, sizeof kVertBda, kVertBda};
     VkPipelineRobustnessCreateInfo rob{VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO, &vsi};  // all DEVICE_DEFAULT
     VkPipelineShaderStageCreateInfo st[5]{};
