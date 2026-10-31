@@ -24,7 +24,9 @@ struct Eye {
     vrdual_shm_header* hdr = nullptr;
     size_t bytes = 0;
     uint32_t w = 0, h = 0, fmt = 0;
+    uint64_t slot = 0;        // slot_bytes when mapped (the header's can grow under us)
     std::vector<uint8_t> px;  // last paired frame
+    std::vector<uint8_t> tmp; // scratch for pair_newest (kept: no per-frame allocation)
     bool remapped = false;    // set when the size changed; the user clears it
     ino_t ino = 0;            // of the mapped file (a re-created dir/file = new inode)
     bool quiet = false;       // probe (another dir, every second): no mapping line
@@ -65,22 +67,28 @@ inline bool eye_map(Eye& e) {
     e.bytes = st.st_size;
     e.ino = st.st_ino;
     e.w = h->width; e.h = h->height; e.fmt = h->pixfmt;
+    e.slot = h->slot_bytes;
     e.remapped = true;
     if (!e.quiet) fprintf(stderr, "[compositor] %s eye: %ux%u on %s (pci %s)\n", e.eye ? "right" : "left", e.w, e.h, h->gpu_name, h->pci);
     return true;
 }
 
-// Copies frame F out of its slot; false if the slot no longer holds F or was torn.
+// Copies frame F out of its slot; false if the slot no longer holds F or was
+// torn. Offsets use the layout of the mapping (e.slot), not the live header:
+// a producer that re-inits with a bigger size grows the file past our mapping.
+// The seqlock catches torn pixels, the header re-check a re-init mid-copy.
 inline bool eye_read(Eye& e, uint64_t F, std::vector<uint8_t>& dst) {
-    const vrdual_slot& s = e.hdr->slots[F % VRDUAL_SLOTS];
+    const vrdual_shm_header* h = e.hdr;
+    const vrdual_slot& s = h->slots[F % VRDUAL_SLOTS];
     uint64_t s0 = s.seq;
     __sync_synchronize();
     if ((s0 & 1) || s.frame != F) return false;
-    size_t n = size_t(e.w) * e.h * 4;
+    size_t n = size_t(e.w) * e.h * 4, off = VRDUAL_HDR_BYTES + size_t(F % VRDUAL_SLOTS) * e.slot;
+    if (n > e.slot || off + n > e.bytes) return false;
     dst.resize(n);
-    memcpy(dst.data(), (const char*)e.hdr + VRDUAL_HDR_BYTES + (F % VRDUAL_SLOTS) * e.hdr->slot_bytes, n);
+    memcpy(dst.data(), (const char*)h + off, n);
     __sync_synchronize();
-    return s.seq == s0 && s.frame == F;
+    return s.seq == s0 && s.frame == F && h->magic == VRDUAL_MAGIC && h->slot_bytes == e.slot && h->width == e.w && h->height == e.h;
 }
 
 // Seconds since the eye's newest frame was published (inf if none). Producers
@@ -99,10 +107,9 @@ inline bool pair_newest(Eye& L, Eye& R, uint64_t after, uint64_t* out) {
     for (uint64_t k = 0; k < VRDUAL_SLOTS && top >= k; ++k) {
         uint64_t F = top - k;
         if (F + 1 <= after) return false;
-        std::vector<uint8_t> a, b;
-        if (eye_read(L, F, a) && eye_read(R, F, b)) {
-            L.px.swap(a);
-            R.px.swap(b);
+        if (eye_read(L, F, L.tmp) && eye_read(R, F, R.tmp)) {
+            L.px.swap(L.tmp);
+            R.px.swap(R.tmp);
             *out = F;
             return true;
         }

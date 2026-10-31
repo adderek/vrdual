@@ -22,6 +22,7 @@
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <fcntl.h>
+#include <glob.h>
 #include <link.h>
 #include <signal.h>
 #include <linux/fs.h>
@@ -323,12 +324,16 @@ struct CopyRes {
     } pend[2];
 };
 
-// Live eye params: vec4 in host-visible memory, address baked into shaders.
+// Live eye params: vec4s in host-visible memory, address baked into shaders.
+// push_params stages them in `cur`; the present's copy submit writes them on
+// the GPU (vkCmdUpdateBuffer, ordered after this frame's draws and before the
+// next frame's on that queue), or the CPU writes them when there is no copy.
 struct EyeBuf {
     int eye = -1;
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
-    float* params = nullptr;
+    float* params = nullptr;  // mapping
+    float cur[12] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
     float aspect = 0;  // of the exported swapchain when params were last pushed
@@ -383,7 +388,11 @@ static std::mutex& g_lock = *new std::mutex;
 static std::unordered_map<void*, InstanceData*>& g_instances = *new std::unordered_map<void*, InstanceData*>;
 static std::unordered_map<void*, DeviceData*>& g_devices = *new std::unordered_map<void*, DeviceData*>;
 
-static InstanceData* inst_of(void* k) { std::lock_guard<std::mutex> l(g_lock); return g_instances[k]; }
+static InstanceData* inst_of(void* k) {
+    std::lock_guard<std::mutex> l(g_lock);
+    auto it = g_instances.find(k);
+    return it == g_instances.end() ? nullptr : it->second;
+}
 // Per-thread cache of the last lookup, valid while g_dev_gen is unchanged:
 // every device create/destroy bumps it. Without that, a device created at a
 // destroyed one's dispatch key got the deleted DeviceData (AC Origins: two
@@ -409,6 +418,7 @@ struct Shm {
     int fd = -1;
     vrdual_shm_header* hdr = nullptr;
     size_t bytes = 0;
+    ino_t ino = 0;  // peer: of the mapped file (vrdual clean + a new peer = new inode)
 };
 static Shm g_out[2], g_peer;
 
@@ -518,14 +528,24 @@ static void lockstep_wait(uint64_t frame) {
     if (!g_cfg.lockstep) return;
     static bool warned = false;
     uint64_t deadline = now_ns() + uint64_t(g_cfg.lockstep_timeout_ms) * 1000000ull;
+    static uint64_t checked_ns = 0;
     for (;;) {
-        if (!g_peer.hdr) {
-            int fd = open(shm_path(1 - g_cfg.eye).c_str(), O_RDONLY | O_CLOEXEC);
+        uint64_t now = now_ns();
+        if (!g_peer.hdr || now - checked_ns > 1000000000ull) {  // (re)map: missing, or re-created under the same name
+            checked_ns = now;
+            struct stat st;
+            std::string path = shm_path(1 - g_cfg.eye);
+            bool same = g_peer.hdr && stat(path.c_str(), &st) == 0 && st.st_ino == g_peer.ino;
+            int fd = same ? -1 : open(path.c_str(), O_RDONLY | O_CLOEXEC);
             if (fd >= 0) {
-                struct stat st;
                 if (fstat(fd, &st) == 0 && st.st_size >= (off_t)VRDUAL_HDR_BYTES) {
                     void* p = mmap(nullptr, VRDUAL_HDR_BYTES, PROT_READ, MAP_SHARED, fd, 0);
-                    if (p != MAP_FAILED) { g_peer.hdr = (vrdual_shm_header*)p; g_peer.bytes = VRDUAL_HDR_BYTES; }
+                    if (p != MAP_FAILED) {
+                        if (g_peer.hdr) munmap(g_peer.hdr, g_peer.bytes);
+                        g_peer.hdr = (vrdual_shm_header*)p;
+                        g_peer.bytes = VRDUAL_HDR_BYTES;
+                        g_peer.ino = st.st_ino;
+                    }
                 }
                 close(fd);
             }
@@ -566,6 +586,51 @@ static bool gpu_matches(const std::string& want, uint32_t index, const char* nam
     return !want.empty() && strstr(name, want.c_str()) != nullptr;
 }
 
+// A monitor connected to the GPU at `pci` (DRM connector status in sysfs,
+// readable inside Flatpak too).
+static bool pci_has_display(const std::string& pci) {
+    glob_t g;
+    if (glob(("/sys/bus/pci/devices/" + pci + "/drm/card*/card*-*/status").c_str(), 0, nullptr, &g) != 0) return false;
+    bool on = false;
+    for (size_t i = 0; i < g.gl_pathc && !on; ++i)
+        if (FILE* f = fopen(g.gl_pathv[i], "r")) {
+            char b[16] = {};
+            on = fgets(b, sizeof b, f) && !strncmp(b, "connected", 9);
+            fclose(f);
+        }
+    globfree(&g);
+    return on;
+}
+
+// gpu = auto: the first two discrete GPUs (none: integrated) by PCI address;
+// one driving a display is the left eye (the app's GPU in mirror mode), the
+// other the right eye. One GPU: both. With `exclude` (the app's GPU, mirror
+// twin): the first headless other GPU, else the first other. "pci:..." or "".
+static std::string auto_gpu(int role, const std::vector<VkPhysicalDevice>& pds, PFN_vkGetPhysicalDeviceProperties gpp,
+                            PFN_vkGetPhysicalDeviceProperties2 gpp2, const std::string& exclude = "") {
+    std::vector<std::string> c[2];  // discrete, integrated
+    for (auto pd : pds) {
+        VkPhysicalDeviceProperties p;
+        gpp(pd, &p);
+        std::string pci = pci_string(gpp2, pd);
+        if (pci.empty() || pci == exclude) continue;
+        if (p.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) c[0].push_back(pci);
+        else if (p.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) c[1].push_back(pci);
+    }
+    auto& v = c[0].empty() ? c[1] : c[0];
+    if (v.empty()) return "";
+    std::sort(v.begin(), v.end());
+    std::string r;
+    if (!exclude.empty()) {
+        r = v[0];
+        for (auto& x : v) if (!pci_has_display(x)) { r = x; break; }
+    } else {
+        bool swap = v.size() > 1 && !pci_has_display(v[0]) && pci_has_display(v[1]);
+        r = v.size() == 1 ? v[0] : v[(role == 1) != swap ? 1 : 0];
+    }
+    return "pci:" + r;
+}
+
 // Picks the one physical device the application will be allowed to see.
 static void resolve_gpu(InstanceData* id) {
     if (id->chosen_resolved) return;
@@ -575,11 +640,16 @@ static void resolve_gpu(InstanceData* id) {
     id->EnumeratePhysicalDevices(id->instance, &n, nullptr);
     std::vector<VkPhysicalDevice> all(n);
     id->EnumeratePhysicalDevices(id->instance, &n, all.data());
+    std::string want = g_cfg.gpu;
+    if (want == "auto") {
+        want = auto_gpu(g_cfg.eye == 1 ? 1 : 0, all, id->GetPhysicalDeviceProperties, id->GetPhysicalDeviceProperties2);
+        logf("gpu auto (%s eye): %s", g_cfg.eye == 1 ? "right" : "left", want.empty() ? "no GPU" : want.c_str());
+    }
     for (uint32_t i = 0; i < n; ++i) {
         VkPhysicalDeviceProperties p;
         id->GetPhysicalDeviceProperties(all[i], &p);
         std::string pci = pci_string(id, all[i]);
-        bool match = gpu_matches(g_cfg.gpu, i, p.deviceName, pci);
+        bool match = gpu_matches(want, i, p.deviceName, pci);
         logf("  physdev[%u] %s pci=%s%s", i, p.deviceName, pci.c_str(), match && !id->chosen ? "  <- selected" : "");
         if (match && !id->chosen) id->chosen = all[i];
     }
@@ -838,7 +908,8 @@ static BdaPlan plan_bda(InstanceData* id, VkPhysicalDevice pd, const VkDeviceCre
     return p;
 }
 
-// Writes this eye's params from the control block into the GPU-visible vec4.
+// Stages this eye's params from the control block in ep.cur (written to the
+// GPU by write_params_cpu or the copy submit, copy_to_readback).
 static float g_aspect = 16.0f / 9;  // exported swapchain (head offset y needs P11)
 
 static void push_params(EyeBuf& ep) {
@@ -849,9 +920,10 @@ static void push_params(EyeBuf& ep) {
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
-    memcpy(ep.params, e.v, sizeof e.v);
+    static_assert(sizeof e.v == 8 * sizeof(float), "EyeParams: 2 vec4");
+    memcpy(ep.cur, e.v, sizeof e.v);
     uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
-    memcpy(ep.params + 8, hunt, sizeof hunt);
+    memcpy(ep.cur + 8, hunt, sizeof hunt);
     if (ep.ctl_seq != ~0ull && (c.hunt_mode != ep.hunt[2] || c.hunt_lo != ep.hunt[0] || c.hunt_hi != ep.hunt[1]))
         logf("hunt[%s]: mode %u keys %08x..%08x", ep.eye ? "R" : "L", c.hunt_mode, c.hunt_lo, c.hunt_hi);
     memcpy(ep.hunt, hunt, sizeof ep.hunt);
@@ -862,6 +934,11 @@ static void push_params(EyeBuf& ep) {
         logf("live[%s]: anchor=%s ipd=%.1fmm ipd_near=%.1fmm hfov=%g scale=%g -> clip_dx far %+.5f near %+.5f", ep.eye ? "R" : "L",
              vrdual_anchor_name(c.anchor), c.ipd * 1e3, c.ipd_near * 1e3, c.hfov, c.world_scale, e.v[0], e.v[1]);
     ep.ctl_seq = seq;
+}
+
+// The CPU path: immediate, so draws still in flight may see it (mid-frame change).
+static void write_params_cpu(EyeBuf& ep) {
+    if (ep.params) memcpy(ep.params, ep.cur, sizeof ep.cur);
 }
 
 // First memory type allowed by `bits` having all of `want` (then `fallback`).
@@ -875,7 +952,7 @@ static int pick_memtype(const VkPhysicalDeviceMemoryProperties& mp, uint32_t bit
 static void create_param_buffer(const Dispatch& d, VkDevice dev, const VkPhysicalDeviceMemoryProperties& mp, EyeBuf& ep) {
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bci.size = 256;
-    bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     if (d.CreateBuffer(dev, &bci, nullptr, &ep.buf) != VK_SUCCESS) return;
     VkMemoryRequirements mr;
     d.GetBufferMemoryRequirements(dev, ep.buf, &mr);
@@ -895,6 +972,7 @@ static void create_param_buffer(const Dispatch& d, VkDevice dev, const VkPhysica
     ep.addr = d.GetBufferDeviceAddress(dev, &bai);
     ep.params = (float*)map;
     push_params(ep);
+    write_params_cpu(ep);
     logf("live params at device address 0x%llx (%s eye, memory type %d)", (unsigned long long)ep.addr, ep.eye ? "right" : "left", best);
 }
 
@@ -1101,31 +1179,65 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateShaderModule(VkDevice dev, const
     return create_patched_module(dd->ep, dd->d.CreateShaderModule, dev, ci, alloc, out);
 }
 
-// Inline modules (maintenance5: VkShaderModuleCreateInfo first in a stage's
-// pNext, no module) never pass vkCreateShaderModule. Returns cis with ep's
-// patch applied to them (storage in p), or cis itself if there are none.
+// Inline modules (maintenance5: VkShaderModuleCreateInfo in a stage's pNext,
+// no module) never pass vkCreateShaderModule. Returns cis with ep's patch
+// applied to them (storage in p), or cis itself if there are none. The module
+// info may sit anywhere in the chain (DXVK puts subgroup-size info first): the
+// nodes before it are copied so the copy can point at the patched one.
 struct InlinePatch {
     std::vector<VkGraphicsPipelineCreateInfo> cis;
     std::vector<std::vector<VkPipelineShaderStageCreateInfo>> stages;
     std::deque<std::vector<uint32_t>> codes;
     std::deque<VkShaderModuleCreateInfo> smcis;
+    std::deque<std::vector<uint64_t>> nodes;  // copied chain prefixes (8-byte aligned)
 };
+
+// Size of the structs a stage's pNext can carry ahead of the module info; 0 = unknown.
+static size_t stage_pnext_size(VkStructureType t) {
+    switch (t) {
+    case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO: return sizeof(VkPipelineShaderStageRequiredSubgroupSizeCreateInfo);
+    case VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO: return sizeof(VkPipelineRobustnessCreateInfo);
+    case VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT: return sizeof(VkDebugUtilsObjectNameInfoEXT);
+    case VK_STRUCTURE_TYPE_SHADER_MODULE_VALIDATION_CACHE_CREATE_INFO_EXT: return sizeof(VkShaderModuleValidationCacheCreateInfoEXT);
+    default: return 0;
+    }
+}
 
 static const VkGraphicsPipelineCreateInfo* patch_inline(EyeBuf& ep, uint32_t n, const VkGraphicsPipelineCreateInfo* cis, InlinePatch& p) {
     for (uint32_t i = 0; i < n; ++i)
         for (uint32_t s = 0; s < cis[i].stageCount && cis[i].pStages; ++s) {
-            auto* sm = (const VkShaderModuleCreateInfo*)cis[i].pStages[s].pNext;
-            if (cis[i].pStages[s].module || !sm || sm->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO) continue;
+            const VkPipelineShaderStageCreateInfo& st = cis[i].pStages[s];
+            if (st.module || st.stage != VK_SHADER_STAGE_VERTEX_BIT) continue;
+            const VkBaseInStructure* sm = (const VkBaseInStructure*)st.pNext;
+            std::vector<const VkBaseInStructure*> before;
+            for (; sm && sm->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO; sm = sm->pNext) before.push_back(sm);
+            if (!sm) continue;
+            bool known = true;
+            for (auto* b : before) known &= stage_pnext_size(b->sType) != 0;
+            if (!known) {
+                static bool told = false;
+                if (!told) logf("inline shader not patched: unknown struct ahead of VkShaderModuleCreateInfo in the stage's pNext");
+                told = true;
+                continue;
+            }
             std::vector<uint32_t> code;
-            if (!spv_patch_for(ep, sm, code)) continue;
+            if (!spv_patch_for(ep, (const VkShaderModuleCreateInfo*)sm, code)) continue;
             if (p.cis.empty()) { p.cis.assign(cis, cis + n); p.stages.resize(n); }
             if (p.stages[i].empty()) p.stages[i].assign(cis[i].pStages, cis[i].pStages + cis[i].stageCount);
             p.codes.push_back(std::move(code));
-            VkShaderModuleCreateInfo m = *sm;
+            VkShaderModuleCreateInfo m = *(const VkShaderModuleCreateInfo*)sm;
             m.codeSize = p.codes.back().size() * 4;
             m.pCode = p.codes.back().data();
             p.smcis.push_back(m);
-            p.stages[i][s].pNext = &p.smcis.back();
+            const void* next = &p.smcis.back();
+            for (size_t k = before.size(); k-- > 0;) {  // copy the prefix back to front
+                size_t sz = stage_pnext_size(before[k]->sType);
+                p.nodes.emplace_back((sz + 7) / 8);
+                memcpy(p.nodes.back().data(), before[k], sz);
+                ((VkBaseOutStructure*)p.nodes.back().data())->pNext = (VkBaseOutStructure*)next;
+                next = p.nodes.back().data();
+            }
+            p.stages[i][s].pNext = next;
             p.cis[i].pStages = p.stages[i].data();
         }
     return p.cis.empty() ? cis : p.cis.data();
@@ -1267,7 +1379,12 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroySwapchainKHR(VkDevice dev, VkSwapch
 
 static bool ensure_copy_res(const Dispatch& d, VkDevice dev, PFN_vkSetDeviceLoaderData sld, uint32_t family, CopyRes& cr) {
     if (cr.pool && cr.family == family) return true;
-    if (cr.pool) return false;  // PoC: one presenting queue family
+    if (cr.pool) {  // PoC: one presenting queue family
+        static bool told = false;
+        if (!told) logf("present on queue family %u, copies set up for %u: those presents are not exported", family, cr.family);
+        told = true;
+        return false;
+    }
     VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     pci.queueFamilyIndex = family;
@@ -1315,9 +1432,11 @@ static void drop_pending(const Dispatch& d, VkDevice dev, CopyRes& cr, const Rea
 
 // Copies a presentable image into rb with slot k, waiting on `waits` first;
 // optionally signals cr.sem[k] for the real present. wait: returns after the
-// copy (else after the submit; finish_readback waits).
+// copy (else after the submit; finish_readback waits). ep: also writes its
+// staged params, after everything submitted to this queue before (this
+// frame's draws) and visible to everything submitted after (the next frame's).
 static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, CopyRes& cr, int k, VkImage img, VkExtent2D ext, Readback& rb,
-                             uint32_t nwait, const VkSemaphore* waits, bool signal, bool wait) {
+                             uint32_t nwait, const VkSemaphore* waits, bool signal, bool wait, const EyeBuf* ep = nullptr) {
     VkCommandBuffer cb = cr.cmd[k];
     d.ResetCommandBuffer(cb, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -1332,6 +1451,11 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     b.image = img;
     b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    if (ep && ep->buf) {  // the barrier above orders it after all earlier work (no write under a draw's read)
+        d.CmdUpdateBuffer(cb, ep->buf, 0, sizeof ep->cur, ep->cur);
+        VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_MEMORY_READ_BIT};
+        d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+    }
     VkBufferImageCopy reg{};
     reg.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     reg.imageExtent = {ext.width, ext.height, 1};
@@ -1386,7 +1510,7 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
 
 static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     DeviceData* dd = dev_of(key(queue));
-    push_params(dd->ep);  // live IPD: picked up by the next frame's draws
+    push_params(dd->ep);  // live IPD: staged for the next frame's draws
     SwapchainData* s = nullptr;
     uint32_t family;
     {
@@ -1418,19 +1542,27 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     }
     if (dd->md) mirror::present_twin(dd, queue, family, pi, s, frame, own);
     if (!own || !ensure_copy_res(dd->d, dd->device, dd->set_loader_data, family, dd->cr)) {
+        write_params_cpu(dd->ep);
         el.unlock();
         return dd->d.QueuePresentKHR(queue, pi);
     }
 
     // The copy consumes the app's "render finished" semaphores; present then
     // waits on ours instead. Two slots: this frame's copy runs while the
-    // previous frame (copied meanwhile) is published. Alternate-eye rendering
-    // waits for its copy instead: the eye params flip only after the frame.
-    int k = int(frame & 1);
+    // previous frame (copied meanwhile) is published. The copy submit also
+    // writes the params for the next frame (alternate-eye rendering: the other
+    // eye's), so they never change under this frame's draws.
+    int k = int(frame & 1), eye = dd->ep.eye;
     size_t bytes = size_t(s->extent.width) * s->extent.height * 4;
+    if (dd->aer) {
+        dd->ep.eye = int((frame + 1) & 1);
+        push_params(dd->ep);
+    }
     finish_readback(dd->d, dd->device, dd->cr, k);  // slot free (normally done a frame ago)
     if (!copy_to_readback(dd->d, dd->device, queue, dd->cr, k, s->images[pi->pImageIndices[0]], s->extent, s->rb[k],
-                          pi->waitSemaphoreCount, pi->pWaitSemaphores, true, dd->aer)) {
+                          pi->waitSemaphoreCount, pi->pWaitSemaphores, true, false, &dd->ep)) {
+        if (dd->aer) { dd->ep.eye = eye; push_params(dd->ep); }
+        write_params_cpu(dd->ep);
         el.unlock();
         return dd->d.QueuePresentKHR(queue, pi);
     }
@@ -1439,19 +1571,11 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         vrdual_shm_header* h[2] = {g_out[0].hdr, g_out[1].hdr};
         cursor::update(s->xwin, s->extent, h, 2);
     }
-    if (dd->aer) {
-        // Pair F = frames 2F (left) and 2F+1 (right). The copy waited for this
-        // frame's rendering, so the next frame's draws read the other eye's params.
-        shm_publish(dd->ep.eye, frame / 2, s->rb[k].map, bytes);
-        dd->ep.eye = int(dd->frame & 1);
-        push_params(dd->ep);
-        el.unlock();
-    } else {
-        dd->cr.pend[k] = {true, frame, sc_id(pi->pSwapchains[0]), g_cfg.eye, &s->rb[k], bytes};
-        finish_readback(dd->d, dd->device, dd->cr, k ^ 1);  // frame - 1
-        el.unlock();
-        if (frame) lockstep_wait(frame - 1);
-    }
+    // Alternate-eye rendering: pair F = frames 2F (left) and 2F+1 (right).
+    dd->cr.pend[k] = {true, dd->aer ? frame / 2 : frame, sc_id(pi->pSwapchains[0]), dd->aer ? eye : g_cfg.eye, &s->rb[k], bytes};
+    finish_readback(dd->d, dd->device, dd->cr, k ^ 1);  // frame - 1
+    el.unlock();
+    if (frame && !dd->aer) lockstep_wait(frame - 1);
 
     VkPresentInfoKHR pi2 = *pi;
     pi2.waitSemaphoreCount = 1;

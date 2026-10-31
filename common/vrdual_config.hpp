@@ -51,9 +51,9 @@ static const Key kKeys[] = {
     {"edge_mask", "outer", "vrdual-xr: mask the strip at each eye's edge its shifted view gets wrong: outer | both | off"},
     {"edge_mask_dist", "1", "edge_mask: strip width = the eye shift of things this near, meters"},
     {"cached_wp", "0", "mirror: write tracking for cached memory (fast; breaks games that read files straight into it)"},
-    {"left_gpu", "pci:0000:06:00.0", "GPU for the left eye (pci:..., index or name)"},
-    {"right_gpu", "pci:0000:0b:00.0", "GPU for the right eye"},
-    {"wivrn_gpu", "pci:0000:0b:00.0", "GPU for wivrn-server (`vrdual wivrn`; vrdual-xr follows): pci:... | default (Vulkan's choice)"},
+    {"left_gpu", "auto", "GPU for the left eye (auto | pci:... | index | name; auto: of the first two discrete GPUs by PCI address, the one with a monitor)"},
+    {"right_gpu", "auto", "GPU for the right eye (auto: the other one, the headless one if just one has a monitor)"},
+    {"wivrn_gpu", "auto", "GPU for wivrn-server (`vrdual wivrn`; vrdual-xr follows): auto (a GPU without a monitor, if there are two) | pci:... | default (Vulkan's choice)"},
     {"log", "1", "layer logging to stderr"},
     // input (vrdual-xr): VR controllers -> virtual pad / mouse / keys; map_<button> = KEY_*|BTN_*
     {"input", "gamepad", "controllers as: gamepad | mouse | tune (sticks: world_scale/hud_depth/hfov; grips: move/scale the screen) | map (edit button maps in the headset) | off. Last used per game wins over [global]; [app:NAME] wins over that"},

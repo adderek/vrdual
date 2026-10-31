@@ -14,7 +14,7 @@ LAYERFLAGS := -shared -fPIC -fvisibility=hidden -static-libstdc++ -static-libgcc
 BUILDINFO = -DVRDUAL_BUILD_INFO="\"$$(tools/build_info.sh)\""
 LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
 
-all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/vrdual-ctl $(B)/vrdual-input-test
+all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test
 
 # 32-bit layer for 32-bit games (Zen Bound 2, most older Steam titles).
 lib32: $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json $(B)/lib32/vrdual-gltest
@@ -63,6 +63,13 @@ $(B)/vrdual-input-test: tools/input_test.cpp common/vrdual_input.hpp common/vrdu
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -o $@ $<
 
 $(B)/spvpatch: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
+	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<
+
+# selftest's fuzz run: the patcher under AddressSanitizer
+$(B)/spvpatch-asan: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
+	$(CXX) $(CXXFLAGS) -O1 -fsanitize=address,undefined -fno-sanitize-recover=all $(BUILDINFO) -o $@ $<
+
+$(B)/vrdual-frames-test: tools/frames_test.cpp common/vrdual_frames.hpp common/vrdual_shm.h | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<
 
 $(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_config.hpp common/vrdual_ctl.hpp common/vrdual_shm.h common/vrdual_input.hpp $(B)/input_names.hpp | $(B)

@@ -19,6 +19,7 @@
 // writing host-visible memory — no pipeline rebuild, app stays unaware. It also
 // reads a second vec4 h at addr+16 (head offset, vrdual_ctl.hpp EyeParams):
 //     x' += h.x, y' = v.y + h.y, w' = v.w + h.z, z' = v.z * w' / v.w
+// (z' = v.z if v.w == 0 or h.z == 0)
 // (z scaled with w keeps every vertex's depth z/w: no far-plane clipping,
 // depth order kept; same w == 1 skip). w == 1 vertices (HUD) get x' = v.x + h.w
 // instead: a constant disparity that puts the HUD at hud_depth.
@@ -43,7 +44,7 @@ enum : uint32_t {
     OpFunction = 54, OpFunctionEnd = 56, OpVariable = 59, OpLoad = 61, OpStore = 62,
     OpAccessChain = 65, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeExtract = 81,
     OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133, OpFDiv = 136,
-    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalAnd = 167, OpIEqual = 170,
+    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalOr = 166, OpLogicalAnd = 167, OpIEqual = 170,
     OpUGreaterThanEqual = 174, OpULessThanEqual = 178,
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253,
 };
@@ -95,6 +96,18 @@ inline std::string word_str(const uint32_t* w, size_t max_words) {
     return s;
 }
 
+// Fewest words an instruction the patcher reads must have (its fixed operands),
+// so a malformed module never reads past an instruction or the buffer.
+inline uint32_t min_wc(uint32_t op) {
+    switch (op) {
+    case OpCapability: case OpExtension: case OpTypeBool: return 2;
+    case OpExtInstImport: case OpMemoryModel: case OpTypeFloat: case OpDecorate: return 3;
+    case OpEntryPoint: case OpTypeInt: case OpTypePointer: case OpVariable: case OpMemberDecorate: case OpTypeVector: return 4;
+    case OpFunction: return 5;
+    default: return 1;
+    }
+}
+
 inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o) {
     PatchResult r;
     if (in.size() < 5 || in[0] != 0x07230203u) { r.why = "not SPIR-V (or wrong endianness)"; return r; }
@@ -103,7 +116,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     std::vector<Inst> insts;
     for (size_t i = 5; i < in.size();) {
         uint32_t wc = in[i] >> 16, op = in[i] & 0xffff;
-        if (wc == 0 || i + wc > in.size()) { r.why = "malformed instruction stream"; return r; }
+        if (wc == 0 || i + wc > in.size() || wc < min_wc(op)) { r.why = "malformed instruction stream"; return r; }
         insts.push_back({i, op, wc});
         i += wc;
     }
@@ -311,8 +324,16 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpFAdd, {t_float, x3, x2, hx});
                 emit(out, OpFAdd, {t_float, y2, y, hy});
                 emit(out, OpFAdd, {t_float, w2, wv, hw});
+                // w == 0 (a triangle crossing the camera plane) would give
+                // 0/0; no head z offset keeps z bit-exact (depth prepass
+                // shaders without the patch, rule noshift, must still match).
+                uint32_t zm = fresh(), w0 = fresh(), h0 = fresh(), keep = fresh();
                 emit(out, OpFDiv, {t_float, zr, w2, wv});
-                emit(out, OpFMul, {t_float, z2, z, zr});
+                emit(out, OpFMul, {t_float, zm, z, zr});
+                emit(out, OpFOrdEqual, {t_bool, w0, wv, c_zero});
+                emit(out, OpFOrdEqual, {t_bool, h0, hw, c_zero});
+                emit(out, OpLogicalOr, {t_bool, keep, w0, h0});
+                emit(out, OpSelect, {t_float, z2, keep, z, zm});
                 x2 = x3;
             }
             uint32_t xh = x;  // x of the HUD treatment

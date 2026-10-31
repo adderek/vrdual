@@ -37,6 +37,18 @@ vrdual_gpus() {
     done
 }
 
+# With two or more display-class PCI devices: "pci:ADDR" of the first one with
+# no connected monitor (DRM connector status), else "default".
+headless_gpu() {
+    local d n=0 pick=""
+    for d in /sys/bus/pci/devices/*; do
+        [[ $(cat "$d/class" 2>/dev/null) == 0x03* ]] || continue
+        n=$((n + 1))
+        [[ -z $pick ]] && ! grep -qx connected "$d"/drm/card*/card*-*/status 2>/dev/null && pick=${d##*/}
+    done
+    if ((n >= 2)) && [[ -n $pick ]]; then echo "pci:$pick"; else echo default; fi
+}
+
 vrdual_clean() { rm -f /dev/shm/vrdual-* "$FLATPAK_SHM"/vrdual-* "$HEROIC_SHM"/vrdual-* 2>/dev/null; say "removed vrdual-* from /dev/shm (and Flatpak Steam's, Heroic's)"; }
 
 # vrdual_run [--left-gpu G] [--right-gpu G] [--session S] [--snapshot PNG --at N] -- APP ARGS...
@@ -433,7 +445,8 @@ vrdual_wivrn() {
     # layer puts this GPU first; vrdual-xr follows (xrGetVulkanGraphicsDevice2KHR).
     local gpu tag env=()
     gpu=$("$B/vrdual-ctl" show 2>/dev/null | awk '$1 == "wivrn_gpu" {print $2}')
-    case ${gpu:=pci:0000:0b:00.0} in
+    [[ ${gpu:=auto} == auto ]] && gpu=$(headless_gpu)
+    case $gpu in
     pci:*) tag=${gpu#pci:}; env=(--env=DRI_PRIME=pci-${tag//[:.]/_}); say "wivrn-server on GPU $gpu (config key wivrn_gpu)" ;;
     default) ;;
     *) say "wivrn_gpu = $gpu: not pci:... or default, ignored" ;;
@@ -645,6 +658,14 @@ vrdual_selftest() {
         done
     done
     label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+    # uvec2 -> PhysicalStorageBuffer pointer bitcast: core only since SPIR-V 1.5,
+    # legal earlier through SPV_KHR_physical_storage_buffer (which the patch adds)
+    label="spirv live output validates as SPIR-V 1.0 (glslc's default)"
+    check bash -c "'$B/spvpatch' '$tmp/glsl.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env spv1.0 '$tmp/p.spv'"
+    label="spirv fuzz: 2x50000 mutated modules through every patch mode under ASan"
+    check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv"
+    label="frame reader: producer re-init to a bigger size is refused until remap; no per-frame allocation"
+    mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
     label="built-in game profile: Psychonauts gets skip_w1 = 0"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# built-in'"
     label="build info: vrdual version lists tools and layers; SOURCE_DATE_EPOCH fixes the time"
@@ -685,7 +706,9 @@ vrdual_selftest() {
             "$B/vrdual-cube" --scene calib --title "selftest $e" >"$tmp/$e.log" 2>&1 &
     done
     for i in $(seq 100); do grep -q exporting "$tmp/left.log" && grep -q exporting "$tmp/right.log" && break; sleep 0.1; done
-    label="two GPUs selected";   check bash -c "grep -q 'pci 0000:06:00.0' '$tmp/left.log' && grep -q 'pci 0000:0b:00.0' '$tmp/right.log'"
+    label="two GPUs selected (gpu = auto: the one with the monitor left)"
+    check bash -c "grep -q 'pci 0000:06:00.0' '$tmp/left.log' && grep -q 'pci 0000:0b:00.0' '$tmp/right.log' &&
+        grep -q 'gpu auto (left eye): pci:0000:06:00.0' '$tmp/left.log' && grep -q 'gpu auto (right eye): pci:0000:0b:00.0' '$tmp/right.log'"
     label="live params enabled"; check grep -q 'live params at device address' "$tmp/left.log" "$tmp/right.log"
     label="default ipd 64mm";    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/a.png' && $M '$tmp/a.png' --ipd 0.064 --anchor center"
     set_live ipd=0.2
@@ -1001,7 +1024,7 @@ PA
     check bash -c "export PATH='$tmp/fakew':\$PATH XDG_RUNTIME_DIR='$tmp/fakew'; '$VRDUAL_ROOT/vrdual' wivrn >/dev/null 2>&1 & sleep 0.5
         out=\$('$VRDUAL_ROOT/vrdual' wivrn-restart 2>&1); rc=\$?; wait
         [[ \$rc == 0 ]] && grep -q stopping <<<\"\$out\" && grep -q 'starting wivrn-server' <<<\"\$out\" && grep -qx -- '-x wivrn-server' '$tmp/fakew/killed' || { echo \"rc=\$rc \$out\"; false; }"
-    label="vrdual wivrn: server on 0b by default (DRI_PRIME), wivrn_gpu from the conf, default leaves it to Vulkan"
+    label="vrdual wivrn: server on the headless GPU (0b here) by default (DRI_PRIME), wivrn_gpu from the conf, default leaves it to Vulkan"
     mkdir -p "$tmp/fakeg" && printf '#!/bin/sh\nexit 1\n' >"$tmp/fakeg/pgrep" && printf '#!/bin/sh\necho "$*" >>%s/fakeg/args\n' "$tmp" >"$tmp/fakeg/flatpak" && chmod +x "$tmp/fakeg/"*
     printf '[global]\nwivrn_gpu = pci:0000:06:00.0\n' >"$tmp/fakeg/w.conf"
     check bash -c "export PATH='$tmp/fakeg':\$PATH XDG_RUNTIME_DIR='$tmp/fakeg'; rm -f '$tmp/fakeg/args'

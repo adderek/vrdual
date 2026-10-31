@@ -1806,12 +1806,13 @@ static void present_twin(DeviceData* dd, VkQueue queue, uint32_t family, const V
         int k = int(frame & 1);
         finish_readback(md->b, md->bdev, md->bcr, k);
         done = copy_to_readback(md->b, md->bdev, bq, md->bcr, k, s->b_images[pi->pImageIndices[0]], s->extent, s->b_rb[k],
-                                uint32_t(waits.size()), waits.data(), false, false);
+                                uint32_t(waits.size()), waits.data(), false, false, &md->bep);
         if (done) {
             md->bcr.pend[k] = {true, frame, sc_id(pi->pSwapchains[0]), 1, &s->b_rb[k], size_t(s->extent.width) * s->extent.height * 4};
             finish_readback(md->b, md->bdev, md->bcr, k ^ 1);
         }
     }
+    if (!done) write_params_cpu(md->bep);
     if (!done && !waits.empty()) {
         std::vector<VkPipelineStageFlags> st(waits.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -1915,12 +1916,13 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
         enum_pd(inst, &n, pds.data());
         // Another GPU matching right_gpu. The app's own GPU never gets a twin:
         // a second device there cannot replay A's device addresses (same VA).
+        std::string want = g_cfg.mirror_gpu == "auto" ? auto_gpu(1, pds, gpp, gpp2, apci) : g_cfg.mirror_gpu;
         for (uint32_t i = 0; i < n && !md->bphys; ++i) {
             VkPhysicalDeviceProperties p;
             gpp(pds[i], &p);
             std::string pci = pci_string(gpp2, pds[i]);
             if (pci == apci) continue;
-            if (gpu_matches(g_cfg.mirror_gpu, i, p.deviceName, pci)) {
+            if (gpu_matches(want, i, p.deviceName, pci)) {
                 md->bphys = pds[i];
                 md->bname = p.deviceName;
                 md->bpci = pci;

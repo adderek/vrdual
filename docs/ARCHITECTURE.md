@@ -129,8 +129,9 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   must match), so sizes, offsets and memory type indices carry over.
   **Single GPU:** when no other GPU matches `right_gpu` (one card, or
   `right_gpu` names the app's GPU) there is no twin: alternate-eye rendering
-  on A. Frame 2F renders the left eye, 2F+1 the right (live params flipped
-  after each present's readback, which already waited for that frame); both
+  on A. Frame 2F renders the left eye, 2F+1 the right (the present's copy
+  submit writes the other eye's live params with vkCmdUpdateBuffer, after
+  that frame's draws on the queue: no CPU wait); both
   are published as pair F, so consumers pair them unchanged. Half the frame
   rate per eye, one frame of time between the eyes. Needs live params (baked
   → left eye only). A twin device on the same GPU cannot replay A's device

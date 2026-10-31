@@ -33,7 +33,8 @@
 //
 // --bda: Vulkan 1.4 paths DXVK 3 relies on: vertices read through a buffer
 // device address (no vertex input), memory mapped with vkMapMemory2, vertex
-// shader passed inline in the pipeline (maintenance5, no VkShaderModule).
+// shader passed inline in the pipeline (maintenance5, no VkShaderModule),
+// behind another struct in the stage's pNext (DXVK chains subgroup-size info first).
 //
 // --scene calib: static posts at 0.5, 1, 2, 5 and 20 m (eye height), for IPD
 // calibration: look at one post, adjust until it sits at a believable distance
@@ -177,6 +178,7 @@ int main(int argc, char** argv) {
     f12.bufferDeviceAddress = VK_TRUE;
     VkPhysicalDeviceVulkan14Features f14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
     f14.maintenance5 = VK_TRUE;
+    f14.pipelineRobustness = VK_TRUE;
     f12.pNext = &f14;
     if (bda) {
         if (props.apiVersion < VK_API_VERSION_1_4) { fprintf(stderr, "--bda needs a Vulkan 1.4 device\n"); return 1; }
@@ -326,8 +328,9 @@ int main(int argc, char** argv) {
     };
     VkShaderModule vs = bda ? VK_NULL_HANDLE : mkmod(kVert, sizeof kVert), fs = mkmod(kFrag, sizeof kFrag);
     VkShaderModuleCreateInfo vsi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, sizeof kVertBda, kVertBda};
+    VkPipelineRobustnessCreateInfo rob{VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO, &vsi};  // all DEVICE_DEFAULT
     VkPipelineShaderStageCreateInfo st[2]{};
-    st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, bda ? &vsi : nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
+    st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, bda ? &rob : nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
     st[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main"};
     VkVertexInputBindingDescription vb{0, 24, VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription va[2] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12}};
