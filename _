@@ -828,6 +828,17 @@ vrdual_selftest() {
     check bash -c "export VRDUAL_CONFIG='$tmp/save.conf'; c='$B/vrdual-ctl --session $sess'; \$c save >/dev/null 2>&1 && \$c save --global >/dev/null 2>&1 &&
         awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | sort -u | grep -qx '\[global\]' &&
         ! awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | grep -q app: && grep -q '^\[app:' '$tmp/save.conf'"
+    # Compositor keys pressed in its window (injected SDL events, software
+    # renderer: no load on the display GPU); W saves, Q quits.
+    set_live ipd=0.064 anchor=center hfov=90 near_dist=1
+    label="compositor keys: IPD steps (Shift = fine), anchor, hfov, near dist, W saves the profile, Q quits"
+    check bash -c "export VRDUAL_CONFIG='$tmp/keys.conf'; : >\$VRDUAL_CONFIG
+        SDL_RENDER_DRIVER=software timeout 20 '$B/vrdual-compositor' --session $sess --scale 0.25 --keys 'Up Up Shift+Up Down A = ] W Q' &&
+        '$B/vrdual-ctl' --session $sess live | awk '\$1==\"ipd\"{i=\$2} \$1==\"anchor\"{a=\$2} \$1==\"hfov\"{h=\$2} \$1==\"near_dist\"{n=\$2}
+            END{exit !(i>0.06459 && i<0.06461 && a==\"left\" && h==91 && n>1.09 && n<1.11)}' &&
+        grep -qx '\[app:vrdual-cube\]' \$VRDUAL_CONFIG && grep -qx 'anchor = left' \$VRDUAL_CONFIG && grep -qx 'hfov = 91' \$VRDUAL_CONFIG ||
+        { '$B/vrdual-ctl' --session $sess live; cat \$VRDUAL_CONFIG; false; }"
+    set_live ipd=0.064 anchor=center hfov=90
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 
     # Lockstep after a stall past lockstep_timeout_ms: the right eye renders

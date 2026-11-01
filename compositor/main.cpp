@@ -7,6 +7,8 @@
 //   vrdual-compositor --record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]
 //                     SBS video through ffmpeg (no window); DIR: <app>_<time>_LR.mp4 in it,
 //                     the path is printed on stdout
+//   --keys "Up Up Shift+Up W Q"   key presses injected once the window shows a
+//                     frame and the control block is open (selftest; SDL key names)
 #include <SDL3/SDL.h>
 
 #include <fcntl.h>
@@ -88,6 +90,28 @@ static std::string handle_key(vrdual_ctl* c, SDL_Keycode k, SDL_Keymod mod) {
     default: return "";
     }
     return v.live ? "" : "baked mode: restart the app to apply";
+}
+
+// "Up Shift+Down W" -> SDL key-down events; false on an unknown name.
+static bool parse_keys(const std::string& spec, std::vector<SDL_Event>& out) {
+    size_t i = 0;
+    while (i < spec.size()) {
+        if (spec[i] == ' ') { ++i; continue; }
+        size_t j = spec.find(' ', i);
+        std::string tok = spec.substr(i, j == std::string::npos ? std::string::npos : j - i);
+        i = j == std::string::npos ? spec.size() : j;
+        SDL_Keymod mod = SDL_KMOD_NONE;
+        if (tok.rfind("Shift+", 0) == 0) mod = SDL_KMOD_LSHIFT, tok = tok.substr(6);
+        SDL_Keycode k = SDL_GetKeyFromName(tok.c_str());
+        if (k == SDLK_UNKNOWN) { fprintf(stderr, "[compositor] unknown key name: %s\n", tok.c_str()); return false; }
+        SDL_Event e{};
+        e.type = SDL_EVENT_KEY_DOWN;
+        e.key.key = k;
+        e.key.mod = mod;
+        e.key.down = true;
+        out.push_back(e);
+    }
+    return true;
 }
 
 static void draw_overlay(SDL_Renderer* ren, vrdual_ctl* c, float half_w, const std::string& status) {
@@ -194,7 +218,7 @@ static int record(Eye& L, Eye& R, bool swap, std::string out, double seconds, in
 }
 
 int main(int argc, char** argv) {
-    std::string session = "default", snapshot, rec, audio;
+    std::string session = "default", snapshot, rec, audio, keys;
     double seconds = 5;
     int fps = 60;
     bool half = false;
@@ -215,9 +239,12 @@ int main(int argc, char** argv) {
         else if (a == "--fps" && i + 1 < argc) fps = atoi(argv[++i]);
         else if (a == "--half") half = true;
         else if (a == "--audio" && i + 1 < argc) audio = argv[++i];
+        else if (a == "--keys" && i + 1 < argc) keys = argv[++i];
         else if (a == "--version") { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
-        else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--at N] [--timeout SEC]] [--record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]]\n", argv[0]); return 2; }
+        else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--at N] [--timeout SEC]] [--record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]] [--keys \"K1 K2 ...\"]\n", argv[0]); return 2; }
     }
+    std::vector<SDL_Event> inject;
+    if (!parse_keys(keys, inject)) return 2;
     std::string base = vrdual::shm_dir() + "/vrdual-" + session + "-";
     Eye L{0, base + "0"}, R{1, base + "1"};
     double t0 = now_s();
@@ -249,6 +276,10 @@ int main(int argc, char** argv) {
     std::string status;
     fprintf(stderr, "[compositor] waiting for %s and %s\n", L.name.c_str(), R.name.c_str());
     while (running) {
+        if (!inject.empty() && win && ctl) {  // processed in order by the poll below
+            for (SDL_Event& k : inject) SDL_PushEvent(&k);
+            inject.clear();
+        }
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_Q))) running = false;

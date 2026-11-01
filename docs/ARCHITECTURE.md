@@ -568,8 +568,6 @@ why `vrdual gpus` walks the bridge chain. Why it matters for VR:
   binaries bypass it. Only Vulkan (DXVK/VKD3D-Proton games are Vulkan, in principle).
 - A live IPD change lands mid-frame: draws already queued use the old value for
   one frame.
-- Compositor keys were exercised through the same code path as `vrdual-ctl set`,
-  but not by pressing keys in a window (no display automation here).
 - Readback at present is double-buffered: frame N's copy runs on the GPU while
   frame N-1 is published (one frame later in the frame files; the game no
   longer waits for its copy). testapp 1920x1080 mirror: 6.6 -> 4.0 ms per

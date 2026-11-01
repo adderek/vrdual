@@ -4,8 +4,6 @@
   after this frame's draws on the present queue. Draws on other queues (async
   compute, a second graphics queue) are not ordered against it (would need a
   semaphore); without export (no copy submit) the CPU writes them immediately.
-- Compositor keys are only tested through `vrdual-ctl`; add an SDL event
-  injection path (e.g. `--keys "Up Up W"`) so selftest can cover them.
 - Readback: the CPU copy into /dev/shm costs per eye on the game's present
   thread 1.14 ms at 1080p, 4.67 ms at 4K (2026-11-01, after non-temporal
   stores; before 1.58 / 6.6 ms). The GPU cannot write into the frame file:
