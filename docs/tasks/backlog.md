@@ -51,6 +51,12 @@
   done 2026-11-01 (`site/img/promo.webp`, generated, no third-party game
   characters); the top-view eye diagram was removed (too technical for most visitors). Side-by-side PNGs are not in git (2-10 MB): compressed JPEGs could
   go on the per-game pages.
+- Site translations (landing page in 9 languages done 2026-11-01, machine
+  translated): games.html / game.html UI is English only (strings in
+  games.js / game.html, not `data-i18n` yet); a native-speaker review of
+  `site/i18n.json`, Polish first (owner). New landing pictures: the owner
+  generates them with an image model (no recognizable third-party game
+  characters, only titles we tested, no vendor-coloured GPUs).
 - LEGO games: per-eye shading errors visible in the LEGO Marvel GIFs (a
   screen-space effect computed for one eye); find and fix the shader.
 - Witcher 3 and Cyberpunk 2077: well-known titles, worth fixing shader
