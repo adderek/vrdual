@@ -687,7 +687,7 @@ _selftest_nogpu() {
     check bash -c "'$B/spvpatch' '$tmp/glsl.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env spv1.0 '$tmp/p.spv'"
     label="spirv fuzz: 3x50000 mutated modules through every patch mode under ASan"
     check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv" "$tmp/geom.spv"
-    label="frame reader: producer re-init to a bigger size is refused until remap; no per-frame allocation"
+    label="frame reader: producer re-init to a bigger size is refused until remap; no per-frame allocation; pairs straight into caller buffers"
     mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
     label="built-in game profile: Psychonauts gets skip_w1 = 0"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# built-in'"

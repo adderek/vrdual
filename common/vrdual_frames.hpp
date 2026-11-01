@@ -77,7 +77,9 @@ inline bool eye_map(Eye& e) {
 // torn. Offsets use the layout of the mapping (e.slot), not the live header:
 // a producer that re-inits with a bigger size grows the file past our mapping.
 // The seqlock catches torn pixels, the header re-check a re-init mid-copy.
-inline bool eye_read(Eye& e, uint64_t F, std::vector<uint8_t>& dst) {
+// Same into dst, which holds w * h * 4 bytes of this eye; on false dst may
+// hold part of a frame.
+inline bool eye_read_to(const Eye& e, uint64_t F, uint8_t* dst) {
     const vrdual_shm_header* h = e.hdr;
     const vrdual_slot& s = h->slots[F % VRDUAL_SLOTS];
     uint64_t s0 = s.seq;
@@ -85,10 +87,13 @@ inline bool eye_read(Eye& e, uint64_t F, std::vector<uint8_t>& dst) {
     if ((s0 & 1) || s.frame != F) return false;
     size_t n = size_t(e.w) * e.h * 4, off = VRDUAL_HDR_BYTES + size_t(F % VRDUAL_SLOTS) * e.slot;
     if (n > e.slot || off + n > e.bytes) return false;
-    dst.resize(n);
-    memcpy(dst.data(), (const char*)h + off, n);
+    memcpy(dst, (const char*)h + off, n);
     __sync_synchronize();
     return s.seq == s0 && s.frame == F && h->magic == VRDUAL_MAGIC && h->slot_bytes == e.slot && h->width == e.w && h->height == e.h;
+}
+inline bool eye_read(Eye& e, uint64_t F, std::vector<uint8_t>& dst) {
+    dst.resize(size_t(e.w) * e.h * 4);
+    return eye_read_to(e, F, dst.data());
 }
 
 // Seconds since the eye's newest frame was published (inf if none). Producers
@@ -110,6 +115,24 @@ inline bool pair_newest(Eye& L, Eye& R, uint64_t after, uint64_t* out) {
         if (eye_read(L, F, L.tmp) && eye_read(R, F, R.tmp)) {
             L.px.swap(L.tmp);
             R.px.swap(R.tmp);
+            *out = F;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Same, copied straight into dl / dr (w * h * 4 bytes of each eye, e.g. the
+// headset's staging buffers): one copy per eye fewer than via px. On false
+// they may hold part of a frame.
+inline bool pair_newest_to(const Eye& L, const Eye& R, uint64_t after, uint8_t* dl, uint8_t* dr, uint64_t* out) {
+    uint64_t ll = L.hdr->last_frame, rl = R.hdr->last_frame;
+    if (!ll || !rl) return false;
+    uint64_t top = (ll < rl ? ll : rl) - 1;
+    for (uint64_t k = 0; k < VRDUAL_SLOTS && top >= k; ++k) {
+        uint64_t F = top - k;
+        if (F + 1 <= after) return false;
+        if (eye_read_to(L, F, dl) && eye_read_to(R, F, dr)) {
             *out = F;
             return true;
         }

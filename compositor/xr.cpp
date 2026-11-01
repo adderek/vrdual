@@ -384,11 +384,13 @@ static void tune_save(const char* app, const vrdual::Tuner& t) {
     std::string sec = app[0] ? std::string("app:") + app : "global", path = vrdual::config_path();
     const char* keys[vrdual::Tuner::N] = {"world_scale", "hud_depth", "hfov", "screen_fov"};
     const float* v = t.v;
+    std::vector<std::pair<std::string, std::string>> kvs;
     for (int i = 0; i < (t.screen ? 4 : 3); ++i) {
         char b[32];
         snprintf(b, sizeof b, "%g", v[i]);
-        if (!vrdual::save_key(path, sec, keys[i], b)) { fprintf(stderr, "[xr] tune: cannot write %s\n", path.c_str()); return; }
+        kvs.push_back({keys[i], b});
     }
+    if (!vrdual::save_keys(path, sec, kvs)) { fprintf(stderr, "[xr] tune: cannot write %s\n", path.c_str()); return; }
     fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g%s into [%s] of %s\n", v[0], v[1], v[2],
             t.screen ? (" screen_fov " + std::to_string(int(lroundf(v[3])))).c_str() : "", sec.c_str(), path.c_str());
     const char* h = getenv("HOME");
@@ -1232,26 +1234,9 @@ static int run(int argc, char** argv) {
                 fprintf(stderr, "[xr] new frame sequence (game restarted or resized)\n");
                 shown = 0;
             }
-            bool got = fresh && vrdual::pair_newest(L, R, shown, &F);
-            mark(2);
-            if (blank) {
-                for (EyeOut& o : out) memset(o.map, 0, size_t(o.w) * o.h * 4);
-                blanked = true;
-                fprintf(stderr, "[xr] blank frame submitted\n");
-            }
-            new_pair = got;
-            if (got) {
-                shown = F + 1;
-                blanked = false;
-                const vrdual_slot &sl = L.hdr->slots[F % VRDUAL_SLOTS], &sr = R.hdr->slots[F % VRDUAL_SLOTS];
-                if (sl.frame == F && sr.frame == F && sl.present_ns && sr.present_ns) {
-                    double age = vrdual::now_s() - double(sl.present_ns) * 1e-9;
-                    age_sum += age;
-                    age_max = std::max(age_max, age);
-                    skew_sum += fabs(double(sl.present_ns) - double(sr.present_ns)) * 1e-9;
-                    ++aged;
-                }
-                vrdual::Eye* src[2] = {swap ? &R : &L, swap ? &L : &R};
+            vrdual::Eye* src[2] = {swap ? &R : &L, swap ? &L : &R};
+            bool got = false;
+            if (fresh) {  // swapchains + staging sized for the frames, then the pair is copied straight into the staging buffers
                 for (int e = 0; e < 2; ++e) {
                     EyeOut& o = out[e];
                     if (o.sc && (o.w != src[e]->w || o.h != src[e]->h || o.fmt != src[e]->fmt)) {  // game resized or other format (next game): new swapchain
@@ -1290,15 +1275,58 @@ static int run(int argc, char** argv) {
                                 o.swizzle ? " (R/B swizzle)" : "",
                                 o.cached ? "cached" : "uncached");
                     }
+                }
+                got = vrdual::pair_newest_to(L, R, shown, out[swap ? 1 : 0].map, out[swap ? 0 : 1].map, &F);
+            }
+            mark(2);
+            if (blank) {
+                for (EyeOut& o : out) memset(o.map, 0, size_t(o.w) * o.h * 4);
+                blanked = true;
+                fprintf(stderr, "[xr] blank frame submitted\n");
+            }
+            new_pair = got;
+            if (got) {
+                shown = F + 1;
+                blanked = false;
+                const vrdual_slot &sl = L.hdr->slots[F % VRDUAL_SLOTS], &sr = R.hdr->slots[F % VRDUAL_SLOTS];
+                if (sl.frame == F && sr.frame == F && sl.present_ns && sr.present_ns) {
+                    double age = vrdual::now_s() - double(sl.present_ns) * 1e-9;
+                    age_sum += age;
+                    age_max = std::max(age_max, age);
+                    skew_sum += fabs(double(sl.present_ns) - double(sr.present_ns)) * 1e-9;
+                    ++aged;
+                }
+                for (int e = 0; e < 2; ++e) {
+                    EyeOut& o = out[e];
+                    if (!o.swizzle) continue;  // runtime without the frames' channel order: swap R/B in place
                     size_t n = size_t(o.w) * o.h * 4;
-                    if (!o.swizzle) {
-                        memcpy(o.map, src[e]->px.data(), n);
-                    } else {
-                        const uint8_t* p = src[e]->px.data();
-                        for (size_t i = 0; i < n; i += 4) { o.map[i] = p[i + 2]; o.map[i + 1] = p[i + 1]; o.map[i + 2] = p[i]; o.map[i + 3] = p[i + 3]; }
-                    }
+                    for (size_t i = 0; i < n; i += 4) std::swap(o.map[i], o.map[i + 2]);
                 }
                 mark(3);
+                // the game's X11 cursor (not in its swapchain). cursor_depth auto: at the
+                // depth of the scene under it (disparity of the two eye images there,
+                // smoothed; kept while the patch has no texture); hud: at hud_depth
+                bool have_cur = vrdual::cursor_read(*src[0], cur);
+                vrdual_ctl k{};
+                uint32_t w = out[0].w, h = out[0].h;
+                float aspect = float(w) / float(h), kd[2] = {0, 0};
+                bool scene = false;
+                if (have_cur) {
+                    if (cur.serial != cur_logged) fprintf(stderr, "[xr] cursor %ux%u from the game\n", cur.w, cur.h);
+                    cur_logged = cur.serial;
+                    if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
+                    if (ctl) k = vrdual::ctl_read(ctl);
+                    float fl = ctl ? vrdual::eye_params(k, 0, aspect).v[0] : 0, fr = ctl ? vrdual::eye_params(k, 1, aspect).v[0] : 0;
+                    scene = cur_auto && fabsf(fl - fr) > 1e-9f;
+                    kd[0] = scene ? fl / (fl - fr) : 0;
+                    kd[1] = scene ? fr / (fl - fr) : 0;
+                    int d;  // on the staging pixels before the edge mask (R/B order does not matter to it)
+                    if (scene && vrdual::scene_disparity(out[0].map, out[1].map, w, h, cur.x, cur.y, kd[0], kd[1], int(w / 8), &d)) {
+                        cur_d = cur_d_ok ? cur_d + 0.3f * (float(d) - cur_d) : float(d);
+                        cur_d_ok = true;
+                    }
+                }
+                mark(5);
                 // stereo window: mask the strip at each eye's edge that its shifted view gets wrong
                 if (edge_mode && !ctl) ctl = vrdual::ctl_open(session, nullptr);
                 if (edge_mode && ctl) {
@@ -1314,25 +1342,8 @@ static int run(int argc, char** argv) {
                         vrdual::edge_mask(out[e].map, out[e].w, out[e].h, band, edge_mode == 2);
                     }
                 }
-                // the game's X11 cursor (not in its swapchain). cursor_depth auto: at the
-                // depth of the scene under it (disparity of the two eye images there,
-                // smoothed; kept while the patch has no texture); hud: at hud_depth
                 mark(4);
-                if (vrdual::cursor_read(*src[0], cur)) {
-                    if (cur.serial != cur_logged) fprintf(stderr, "[xr] cursor %ux%u from the game\n", cur.w, cur.h);
-                    cur_logged = cur.serial;
-                    vrdual_ctl k{};
-                    if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
-                    if (ctl) k = vrdual::ctl_read(ctl);
-                    uint32_t w = out[0].w, h = out[0].h;
-                    float aspect = float(w) / float(h), fl = ctl ? vrdual::eye_params(k, 0, aspect).v[0] : 0, fr = ctl ? vrdual::eye_params(k, 1, aspect).v[0] : 0;
-                    bool scene = cur_auto && fabsf(fl - fr) > 1e-9f;
-                    float kd[2] = {scene ? fl / (fl - fr) : 0, scene ? fr / (fl - fr) : 0};
-                    int d;
-                    if (scene && vrdual::scene_disparity(src[0]->px.data(), src[1]->px.data(), w, h, cur.x, cur.y, kd[0], kd[1], int(w / 8), &d)) {
-                        cur_d = cur_d_ok ? cur_d + 0.3f * (float(d) - cur_d) : float(d);
-                        cur_d_ok = true;
-                    }
+                if (have_cur) {
                     for (int e = 0; e < 2; ++e) {
                         EyeOut& o = out[e];
                         float hud = ctl ? vrdual::eye_params(k, e, aspect).v[7] * float(o.w) / 2 : 0;

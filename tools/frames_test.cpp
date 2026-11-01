@@ -1,8 +1,8 @@
 // vrdual-frames-test DIR: frame file reader (common/vrdual_frames.hpp) against
 // a fake producer. Checks that a producer re-init with a bigger size between
 // eye_map and eye_read is refused (no read past the mapping), the remap then
-// reads the new size, and pair_newest reuses its buffers (no per-frame
-// allocation). Exit 0 = pass.
+// reads the new size, pair_newest reuses its buffers (no per-frame
+// allocation) and pair_newest_to fills the caller's. Exit 0 = pass.
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -72,6 +72,19 @@ int main(int argc, char** argv) {
     }
     expect(all, "pairs frames 0..9");
     expect(bufs.size() <= 2, "pair_newest reuses two buffers per eye (no allocation per frame)");
+
+    // pair_newest_to: straight into the caller's buffers (vrdual-xr staging);
+    // a slot being written (odd seq) is skipped for the older complete pair.
+    std::vector<uint8_t> dl(64 * 32 * 4), dr(64 * 32 * 4);
+    pl.publish(10); pr.publish(10);
+    pl.publish(11); pr.publish(11);
+    pr.h->slots[11 % VRDUAL_SLOTS].seq++;  // right eye mid-write of 11
+    bool to = vrdual::pair_newest_to(L, R, shown, dl.data(), dr.data(), &F) && F == 10 && dl.front() == 10 && dl.back() == 10 &&
+              dr.front() == 10 && dr.back() == 10;
+    pr.h->slots[11 % VRDUAL_SLOTS].seq++;
+    to &= vrdual::pair_newest_to(L, R, F + 1, dl.data(), dr.data(), &F) && F == 11 && dr.back() == 11;
+    to &= !vrdual::pair_newest_to(L, R, F + 1, dl.data(), dr.data(), &F);  // nothing newer
+    expect(to, "pair_newest_to copies into caller buffers, skips a torn slot, nothing newer = false");
 
     // Re-init bigger behind the reader's back: slot 1 of the new layout lies
     // far past the old mapping.
