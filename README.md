@@ -17,8 +17,6 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ![Hospital tycoon](screenshots/HospitalTycoon-3.gif)
 ![Assassin's Creed Origins](screenshots/AssasinsCreedOrigins.gif)
 ![Hospital tycoon](screenshots/HospitalTycoon-4.gif)
-![Hospital tycoon](screenshots/HospitalTycoon-1.gif)
-![Hospital tycoon](screenshots/HospitalTycoon-2.gif)
 ![Lego Harry Potter 1-4](screenshots/LegoHarry.gif)
 ![Mafia I](screenshots/Mafia.gif)
 ![Hogwarts Legacy](screenshots/HogwartsLegacy_2.gif)
