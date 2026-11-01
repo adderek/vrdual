@@ -68,8 +68,15 @@
     entries, now 30). Still left there: objects freed implicitly (descriptor
     sets by a pool reset or destroy, command buffers by a pool destroy) keep
     their entries until the address is reused.
-  - Not reviewed yet: the mirror stop path, the struct translators in
-    `tools/gen_mirror.py`, `_`, `common/vrdual_input.hpp`, `site/`.
+  - Also reviewed 2026-11-01: the mirror stop path (selftest covers it),
+    `_` (run, install, config copies, xr / audio / WiVRn), and
+    `common/vrdual_input.hpp`. Fixed: the config copies games read
+    (`vrdual install`, `config_sync`) were plain `cp` (a game starting
+    meanwhile could read half a file), now cp + mv. Minor, left: a new
+    uinput device may miss its first events before userspace opens it.
+  - Not reviewed yet: the struct translators in `tools/gen_mirror.py`
+    (unknown pNext structs pass to B untranslated: any A handle inside
+    reaches B; logged once per sType), `site/`.
 - Done 2026-11-01: Witcher 3 DX12 unpatched modules (219 log lines, 12
   distinct, `shader_dump` on sharkoon) are all harmless: empty VS (no
   outputs), VS that only pass vertex IDs or tessellation control data, the

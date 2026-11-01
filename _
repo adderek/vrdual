@@ -101,6 +101,9 @@ vrdual_live() { pick_shm "$@"; "$B/vrdual-ctl" live "$@"; }
 vrdual_set() { pick_shm "$@"; "$B/vrdual-ctl" set "$@"; }
 vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@" && config_sync; }
 
+# cp + mv: a game starting meanwhile reads the old or the new file, never half of it.
+copy_atomic() { cp "$1" "$2.tmp.$$" && mv -f "$2.tmp.$$" "$2"; }
+
 # Games in Flatpak Steam / Heroic read the copy `vrdual install` made, not the
 # host config: refresh the copies after a write (they apply at the next start).
 config_sync() {
@@ -110,7 +113,7 @@ config_sync() {
     for d in "$STEAM_FLATPAK/vrdual" "$HOME/.local/share/vrdual"; do
         [[ -f $d/run ]] || continue
         cmp -s "$c" "$d/vrdual.conf" && continue
-        cp "$c" "$d/vrdual.conf" && say "copied $c -> $d/vrdual.conf (the game reads that one)"
+        copy_atomic "$c" "$d/vrdual.conf" && say "copied $c -> $d/vrdual.conf (the game reads that one)"
     done
     return 0
 }
@@ -275,7 +278,7 @@ WRAP
     chmod +x "$host/run"
     umu_shim_patch
     if [[ -f $(vrdual-config-path) ]]; then
-        cmp -s "$(vrdual-config-path)" "$host/vrdual.conf" || { cp "$(vrdual-config-path)" "$host/vrdual.conf"; say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"; }
+        cmp -s "$(vrdual-config-path)" "$host/vrdual.conf" || { copy_atomic "$(vrdual-config-path)" "$host/vrdual.conf"; say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"; }
     else
         rm -f "$host/vrdual.conf"
     fi
