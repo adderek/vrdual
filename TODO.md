@@ -48,6 +48,30 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     Owner enables Pages (Settings → Pages → GitHub Actions). Step 1 done
     2026-11-01: `site/games.json` + generator + ci check, viewer in `site/`,
     workflow `pages.yml`. Next: write up the pending configurations, `_ site`.
+19. Per-game performance records (owner's request 2026-11-01): FPS per eye
+    for a game in a given configuration, plus the list of mods if any are
+    enabled. Collected by an agent with the owner, not by hand:
+    - Agent: find the game's own config (often a guess: the Proton prefix
+      `steamapps/compatdata/<appid>/pfx/drive_c/users/steamuser/` →
+      `Documents/My Games`, `AppData/Local|Roaming`, `Saved/Config/` for
+      UE, `*.ini` / `*.cfg` / `*.xml` next to the exe; native: `~/.config`,
+      `~/.local/share`), read resolution, quality preset and the settings
+      that cost GPU time (AA, shadows, upscaler / frame generation, vsync,
+      fps cap); list mods (mod folders, mod managers, replaced files); note
+      the vrdual side: mode (mirror / per-eye / single GPU), GPUs, the
+      game's `[app:]` profile, Proton / DXVK / vkd3d version.
+    - Owner: plays a representative scene and says which (level, area,
+      in-game options changed). FPS depends on settings, level and the
+      rendered scene, so one number without that context means little.
+    - FPS from the logs, not by eye: `vrdual-xr`'s stats line (game fps,
+      headset Hz, frame age, L-R skew), the layer's `export: ... ms/frame`
+      line, the mirror's memory sync line; average over the scene, plus the
+      same scene without vrdual (or `stereo = 0`) as the baseline.
+    - Where: a `perf` list per game in `site/games.json` (date, scene,
+      settings, mods, mode, fps per eye, baseline), rendered on the game's
+      page; private / unpublished configurations stay local (item 18).
+      First step: a `_ perf GAME` helper that gathers the config and log
+      parts and leaves the scene / FPS context to the owner.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

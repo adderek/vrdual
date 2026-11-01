@@ -53,8 +53,18 @@
     ~4 us per frame (pointer + geometry 12.7 us, + 48x48 image 16.5 us), not
     worth an XFixes event path. The layer now logs `export: ... ms/frame`
     every 600 frames for checks in games.
-  - Not reviewed yet: most of `vrdual_mirror.hpp` (replay, sync, WSI twins),
-    `_`, `common/vrdual_input.hpp`, `testapp/`, `site/`.
+  - Mirror reviewed 2026-11-01: memory (map / shadow / push / write-back),
+    fence and semaphore sync, submits, present_twin. Fixed: a re-map with
+    another range got a zeroed shadow (the app read zeros, zero writes never
+    reached A or B; shadows now cover the whole allocation), WAIT_ANY waited
+    up to 1 s for the other semaphore's write-back. Open, not reproduced:
+    two app threads submitting to different queues with a binary semaphore
+    between them reach B in A's order only by luck (A and B submits are not
+    one atomic step); whole-allocation shadows cost more address space for
+    32-bit apps that map small windows of big allocations.
+  - Not reviewed yet: the generated replay wrappers (`tools/gen_mirror.py`),
+    twin device / WSI creation, the mirror stop path, `_`,
+    `common/vrdual_input.hpp`, `site/`.
 - Done 2026-11-01: Witcher 3 DX12 unpatched modules (219 log lines, 12
   distinct, `shader_dump` on sharkoon) are all harmless: empty VS (no
   outputs), VS that only pass vertex IDs or tessellation control data, the
