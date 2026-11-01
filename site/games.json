@@ -524,7 +524,7 @@
   "store": "Steam: positive",
   "path": "native GL → Zink",
   "status": "runs",
-  "settings": "gamescope 1920x1080 (`gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%`); quit from the game menu, not Alt+F4",
+  "settings": "gamescope 1920x1080 (`gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/<user>/vrdual/run /home/<user>/bin/gamescope-pv-display %command%`); quit from the game menu, not Alt+F4",
   "notes": "menu, level load and stereo stream in the HMD work (the earlier crash on level load, NULL GL buffer map, no longer seen). **After a level loads the HMD stays black until you move in the game** (mouse): the game sends no Vulkan submits or presents until then, the monitor keeps the last frame; maybe Source pausing without focus, `-nopause` / `engine_no_focus_sleep 0` not tried. Alt+F4 closes gamescope, not the game: Portal loses X and hangs in its own exit (`server.so` / `libtier0` waiting for a lock; Steam \"Stop\" does not end it, kill the PID); 2026-10-29",
   "single": "",
   "alt": "",

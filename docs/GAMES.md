@@ -1,7 +1,7 @@
 # Games
 
-Status per game, dual GPU (2x RX 7900 XTX, host "fractal") unless noted.
-Launch option for all: `/home/adderek/vrdual/run %command%` (from
+Status per game, dual GPU (2x RX 7900 XTX, the maintainer's machine) unless noted.
+Launch option for all: `/home/<user>/vrdual/run %command%` (from
 `vrdual install`); `vrdual xr` runs once for all games. Last update
 2026-10-30. Most games here are Steam; Epic/GOG ones go through Heroic
 (setup below), Assassin's Creed Origins through Heroic + Ubisoft Connect.
@@ -65,7 +65,7 @@ data of the web page, `site/`).
 | OpenTTD | GOG (Heroic): negative (2D game) | Proton (umu, Proton-CachyOS), `openttd.exe` | no effect |  | 2D game, no stereo to gain; 2026-10-28 |
 | Overlord (11450) | Steam: positive | native GL → Zink | runs | `hud_depth` ~2 (subtitles); Mesa ≤ 26.2: `ZINK_DEBUG=noreorder` | Zink bugs, also without vrdual: flashing squares on the loading screen (fixed in Mesa 26.2.5), green glow after the new-game video (gone in Mesa main since MR 45178, 0786a9511, which only flushes less often: with the old flush interval main still glows, only at some camera angles); subtitles sit at infinity with `hud_depth = 0`, doubled against the near scene; default 800x600 window, camera odd with the mouse; crash on exit with every driver (game bug), 2026-10-23 |
 | Planet Zoo (703080) | Steam: positive | Proton, D3D11 (DXVK) | works | no gamescope; in-game window 1920x1080 (fullscreen picks the portrait 2880x5120) | without gamescope: menus and a zoo, no crash, confirmed 2026-10-22. With gamescope: once glibc "double free or corruption (!prev)" ~10 s in on DXVK's `dxvk-queue` thread (not seen with `VRDUAL_CACHED_SHADOW=0`; write-back copied 0 MB, so the readback shadow is the suspect), once gamescope itself died entering a zoo; gamescope without vrdual fine. Keep `VRDUAL_BACKTRACE=1` set: an abort then logs its native frames |
-| Portal (400) | Steam: positive | native GL → Zink | runs | gamescope 1920x1080 (`gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%`); quit from the game menu, not Alt+F4 | menu, level load and stereo stream in the HMD work (the earlier crash on level load, NULL GL buffer map, no longer seen). **After a level loads the HMD stays black until you move in the game** (mouse): the game sends no Vulkan submits or presents until then, the monitor keeps the last frame; maybe Source pausing without focus, `-nopause` / `engine_no_focus_sleep 0` not tried. Alt+F4 closes gamescope, not the game: Portal loses X and hangs in its own exit (`server.so` / `libtier0` waiting for a lock; Steam "Stop" does not end it, kill the PID); 2026-10-29 |
+| Portal (400) | Steam: positive | native GL → Zink | runs | gamescope 1920x1080 (`gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/<user>/vrdual/run /home/<user>/bin/gamescope-pv-display %command%`); quit from the game menu, not Alt+F4 | menu, level load and stereo stream in the HMD work (the earlier crash on level load, NULL GL buffer map, no longer seen). **After a level loads the HMD stays black until you move in the game** (mouse): the game sends no Vulkan submits or presents until then, the monitor keeps the last frame; maybe Source pausing without focus, `-nopause` / `engine_no_focus_sleep 0` not tried. Alt+F4 closes gamescope, not the game: Portal loses X and hangs in its own exit (`server.so` / `libtier0` waiting for a lock; Steam "Stop" does not end it, kill the PID); 2026-10-29 |
 | Portal 2 (620) | Steam: positive | native GL → Zink | works | `-windowed -w 1920 -h 1080` | fullscreen picks the portrait 2880x5120 |
 | Portal: Revolution (601360) | Steam: positive | Proton Experimental, Windows-only Source mod build (`bin/win64/revolution.exe`) | works | Properties → Compatibility → force Proton (Experimental); gamescope 1920x1080 (below); pad: ready-made configuration for sponsors (or tune it yourself) | without forced Proton Steam starts the `.exe` natively in the Steam Linux Runtime and it exits after ~2 s (looks like a crash at start, the layer never loads); runs with Proton Experimental, 2026-10-30 |
 | Portal with RTX (2012840) | Steam: negative | Proton, RTX Remix (DXVK-Remix, path tracing) | broken |  | not an AMD problem: Remix logs `Required Vulkan extension VK_KHR_ray_query / VK_KHR_ray_tracing_pipeline not supported` because the layer hides ray tracing (RADV has it). Unhiding is not enough: the image is path traced from the camera in raygen shaders, there is no rasterized vertex output to shift, and the mirror would have to replay acceleration structures on B. Stereo needs a per-eye camera in Remix's ray generation: big work, not planned. 2026-10-25 |
@@ -101,7 +101,7 @@ and DoF look fine, judged by eye in `vrdual view`).
 | other temporal effects (temporal SSR/AO/volumetrics; same mechanism, not seen yet: Witcher 3's SSAO/GTAO look fine) | reuse history from the previous frame | weaker ghosting in those effects | single GPU |
 | tessellated hair/fur (NVIDIA HairWorks) | positions come out of tessellation/geometry shaders, the layer shifted only vertex shaders | hair at screen depth, detached from the head (Witcher 3, 2026-10-31) | both; fixed the same day (TES/GS patched), fine in Witcher 3 by eye (single GPU) |
 | depth of field and other blur post effects | blur an image whose depth no longer matches the shifted geometry | a "ghost" around objects (LEGO Harry Potter; Witcher 3's DoF, blur and bloom look fine) | both |
-| fullscreen on the portrait desktop | the game picks the desktop's 2880x5120 | tall picture in the HMD, cut menus | both (host "fractal") |
+| fullscreen on the portrait desktop | the game picks the desktop's 2880x5120 | tall picture in the HMD, cut menus | both (maintainer's portrait desktop) |
 
 
 Gamescope keeps a game at 1920x1080 whatever the (portrait) desktop is, e.g.
@@ -111,11 +111,11 @@ Steam's container start resets `DISPLAY` to the desktop's, the helper puts
 gamescope's `DISPLAY` back inside the container.
 
 ```
-gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%
+gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/<user>/vrdual/run /home/<user>/bin/gamescope-pv-display %command%
 ```
 
 Heroic (Flatpak, Epic/GOG games): game settings → Advanced → Wrapper command
-`/home/adderek/.var/app/com.valvesoftware.Steam/vrdual/run` (no args; the
+`/home/<user>/.var/app/com.valvesoftware.Steam/vrdual/run` (no args; the
 Steam copy of the layer is visible to Heroic), Other → Gamescope 1920x1080.
 The same in Settings → Game Defaults (`defaultSettings` in
 `config/heroic/config.json`, edit only with Heroic closed) applies to every

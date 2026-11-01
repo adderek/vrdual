@@ -70,25 +70,6 @@ automatically.
 
 Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_EYE=left VRDUAL_SESSION=x APP`.
 
-## Machine facts (host "fractal") — load-bearing
-
-- Two RX 7900 XTX (RADV, Mesa 26). **Always address GPUs by PCI address**:
-  DRM cardN and ROCm indices are swapped relative to each other here.
-  - `0000:06:00.0`: behind the B550 chipset, **PCIe Gen3 x4**, no PCIe atomics,
-    hosts the GNOME desktop. Its gfx ring has hung the whole desktop under
-    Firefox before, so keep load on it modest.
-  - `0000:0b:00.0`: CPU-direct **Gen4 x16**, headless. It may be running the
-    user's production llama.cpp router. Check VRAM and processes before heavy
-    work; never kill it.
-- Spawning many short-lived GPU processes in a tight loop once wedged
-  `06:00.0` (runtime-PM resume failure); only a reboot recovers it. Don't
-  write such loops. selftest starts 2 processes, which is fine.
-- No sudo. Not installed: `vulkan-headers` (vendored in `third_party/`),
-  `vulkan-tools`/`vkcube`, numpy (use plain python or `uv run --with`).
-  Installed: `glslc`, `glslangValidator`, `spirv-val`/`spirv-dis`, SDL3,
-  ImageMagick, ffmpeg.
-- Wayland session; the test app picks MAILBOX so occluded windows don't stall FIFO.
-
 ## Invariants / decisions (don't relitigate without new evidence)
 
 - The layer stays **passive**: no UI, network, threads or prompts inside the
@@ -165,6 +146,9 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   If the app uses `VK_EXT_buffer_device_address`, live mode is off (baked fallback).
 - The swapchain gets `TRANSFER_SRC` usage added for readback. Present waits on
   the layer's semaphore, which is signalled after the copy.
+- Address GPUs by PCI address, never by DRM cardN or ROCm index: the two
+  orders need not agree.
+- The test app picks MAILBOX so occluded windows don't stall FIFO (Wayland).
 - Measuring parallax: use `--scene calib` (static, known distances). The
   rotating cubes scene is only good for eyeballing.
 
@@ -173,24 +157,30 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - `_` = humans (menu); `vrdual` = machines (no prompts, stdout data). New
   operations become subcommands in `_`, not new top-level scripts.
 - Code comments and docs in English; match the existing terse comment style.
-  The user writes in Polish, is a senior engineer and prefers terse answers.
+  Keep explanations concise and technically precise.
 - Git repo since 2026-10-18 (`master`, remote `origin` = github.com:adderek/vrdual). Vulkan-Headers is a
   submodule (`git submodule update --init`). Releases (maintainer, all local, no
   CI): tag `v0.x.y`, push it, `tools/release.sh --publish v0.x.y` (tarball with
   the submodule, notes from CHANGELOG.md, 0.x = pre-release); `.gitattributes`
   keeps agent/task files out of archives and fills in `VERSION`. Commit only
   when the user asks.
-- Steam here is the **Flatpak** (`~/.var/app/com.valvesoftware.Steam`): its
+- Flatpak Steam (`~/.var/app/com.valvesoftware.Steam`, the tested setup): its
   `/dev/shm` is private, `$HOME` inside = that dir. Test games by hand with
   `flatpak run --command=bash com.valvesoftware.Steam -c '...'` (see ARCHITECTURE
   "Steam"); never `pkill -f` a pattern that matches your own shell command.
-- The desktop monitor here is portrait (X reports `DP-2 2880x5120`). Fullscreen
-  games pick 2880x5120: the HMD shows a tall screen, and Portal 2 (Source)
-  renders only part of it correctly. Use `-windowed -w 1920 -h 1080` or the
-  game's resolution setting.
+- Fullscreen games pick the desktop's resolution: on a portrait or very large
+  desktop the HMD shows a tall screen, and Portal 2 (Source) renders only part
+  of it correctly. Use `-windowed -w 1920 -h 1080` or the game's resolution
+  setting.
 - Steam games load a copy of the layer (`vrdual install`, old name
   `steam-install`; `vrdual xr` refreshes it at every start). After a layer
   change, re-run it or restart `vrdual xr`, or the game silently runs the old
   layer. A game already running keeps the layer it loaded.
 - Debug crashes inside the Flatpak: `coredumpctl dump` + gdb with a sysroot of
   symlinks to `/var/lib/flatpak/{app,runtime}/…/files`.
+
+## Local environment
+
+If `AGENTS.local.md` exists, read it for machine-specific development
+constraints and local test environment details. This file is intentionally not
+tracked by Git (`*.local.md`); everything above works without it.
