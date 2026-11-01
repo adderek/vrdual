@@ -9,7 +9,7 @@ The eyes are then rendered on alternate frames, so each eye gets half the
 game's frame rate. A second, identical GPU is optional: it renders the other
 eye in parallel, so each eye gets the full frame rate.
 
-Status: early, but games run in the headset (list below). Headset: Quest 3/3S
+Status: early, but games run in the headset ([game list](https://adderek.github.io/vrdual/)). Headset: Quest 3/3S
 via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should work.
 
 ## Pictures
@@ -93,7 +93,7 @@ Hardware:
 * 1x NVIDIA RTX 5070 Ti (single GPU)
 * 2x AMD RX 7900 XTX
 
-Games — per-game status, settings and tuning: [docs/GAMES.md](docs/GAMES.md).
+Games — per-game status: [adderek.github.io/vrdual](https://adderek.github.io/vrdual/) (search, filter); settings and tuning: [docs/GAMES.md](docs/GAMES.md).
 Works in the headset: Zen Bound 2, Alice: Madness Returns, Portal 2, LEGO
 Harry Potter 1-4, Tomb Raider III, Psychonauts, Mirror's Edge, Hospital
 Tycoon. Broken: Portal (Zink bug), Tomb Raider I (DOSBox, 2D).
