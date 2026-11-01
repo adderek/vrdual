@@ -767,7 +767,11 @@ static bool filtering() { return g_cfg.eye >= 0 && strcmp(env("VRDUAL_FILTER", "
 
 static bool ext_hidden(const char* e) {
     // debugging aid: VRDUAL_KEEP_EXT=VK_EXT_a,VK_KHR_b leaves those visible
-    if (const char* keep = getenv("VRDUAL_KEEP_EXT"); keep && strstr(keep, e)) return false;
+    if (const char* keep = getenv("VRDUAL_KEEP_EXT")) {  // whole names: present_id2 must not keep present_id
+        size_t n = strlen(e);
+        for (const char* p = keep; (p = strstr(p, e)); p += n)
+            if ((p == keep || p[-1] == ',') && (p[n] == ',' || !p[n])) return false;
+    }
     // maintenance5 inline shader modules: patched in vkCreateGraphicsPipelines
     // (and by the mirror on B); still hidden in one-process-per-eye mode.
     // maintenance6 (*2 command variants) is plain replay. DXVK 3 needs both.

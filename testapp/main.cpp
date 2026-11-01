@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
     bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
     int late_verts = 0;
-    bool cached = false, verts_file = false, readback = false;
+    bool cached = false, verts_file = false, readback = false, list_exts = false;
     std::string want_fmt;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -121,6 +121,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--title") && i + 1 < argc) title = argv[++i];
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) scene = argv[++i];
         else if (!strcmp(argv[i], "--bda")) bda = true;
+        else if (!strcmp(argv[i], "--list-exts")) list_exts = true;
         else if (!strcmp(argv[i], "--tess")) tess = true;
         else if (!strcmp(argv[i], "--geom")) geom = true;
         else if (!strcmp(argv[i], "--nopos-vs")) nopos = true;
@@ -173,6 +174,14 @@ int main(int argc, char** argv) {
         if ((qf[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) { fam = i; break; }
     }
     if (fam == UINT32_MAX) { fprintf(stderr, "no graphics+present queue\n"); return 1; }
+    if (list_exts) {  // the device extensions the app sees (layer filter checks), one per line, then exit
+        uint32_t ne = 0;
+        vkEnumerateDeviceExtensionProperties(pd, nullptr, &ne, nullptr);
+        std::vector<VkExtensionProperties> de(ne);
+        vkEnumerateDeviceExtensionProperties(pd, nullptr, &ne, de.data());
+        for (uint32_t k = 0; k < ne; ++k) printf("%s\n", de[k].extensionName);
+        return 0;
+    }
     float prio = 1;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     qci.queueFamilyIndex = fam;
