@@ -462,8 +462,9 @@ properly needs eye tracking.
 ## Configuration
 
 `~/.config/vrdual/vrdual.conf` (or `$VRDUAL_CONFIG`). Precedence:
-**defaults < `[global]` < `[app:NAME]` < `VRDUAL_<KEY>` env**. NAME matches the
+**defaults < `[global]` < game profile < `[app:NAME]` < `VRDUAL_<KEY>` env**. NAME matches the
 app's `VkApplicationInfo.pApplicationName` or its exe basename, case-insensitive.
+Game profiles are files in `profiles/` (format and lookup: CONFIG.md).
 
 ```ini
 [global]

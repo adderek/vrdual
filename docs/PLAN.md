@@ -131,7 +131,7 @@ decision and a separate channel, never mixed with donations.
 ## K. Stores and launchers
 
 The layer does not know where a game came from. Profiles are keyed by the
-executable name (`kAppProfiles`: `mirrorsedge.exe`); store ids (Steam appid,
+executable name (`profiles/*.conf`, `exe = mirrorsedge.exe`); store ids (Steam appid,
 GOG product id, Epic app name, umu `GAMEID`) are optional aliases only, so
 nothing locks profiles to Steam. GOG (DRM-free, legacy catalogue) is the
 reference store for legacy-game tweaks: tests reproduce without a Steam account.

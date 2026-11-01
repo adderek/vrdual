@@ -461,7 +461,7 @@ static std::string state_dir() {
 
 // Local play log for the user (`vrdual games`, `vrdual report`); never sent
 // anywhere. One line per game process: start (local time), seconds with
-// frames, app, GPU, profile (config / built-in / none). Tab separated.
+// frames, app, GPU, profile (config / profile / none). Tab separated.
 // File: $XDG_STATE_HOME/vrdual/games.tsv, else ~/.local/state/vrdual/games.tsv.
 struct GameLog {
     std::string app, gpu, profile;
@@ -1008,7 +1008,7 @@ static int run(int argc, char** argv) {
             vrdual::Settings st = vrdual::load_settings({input_app});
             std::string prof = !st.profile.empty() ? "config" : "none";
             for (auto& kv : st.src)
-                if (prof == "none" && kv.second.rfind("built-in", 0) == 0) prof = "built-in";
+                if (prof == "none" && kv.second.rfind("profile ", 0) == 0) prof = "profile";
             games.begin(input_app, L.hdr->gpu_name, prof);
             one_gpu = L.hdr->pci[0] && !strncmp(L.hdr->pci, R.hdr->pci, sizeof L.hdr->pci);
             if (one_gpu)

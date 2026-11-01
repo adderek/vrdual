@@ -4,6 +4,9 @@
 set -euo pipefail
 VRDUAL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 B="$VRDUAL_ROOT/build"
+# Game profiles (profiles/*.conf): tools started from here read the checkout's;
+# games read the copy `vrdual install` / `vrdual profiles sync` made.
+export VRDUAL_PROFILES="${VRDUAL_PROFILES:-$VRDUAL_ROOT/profiles}"
 
 say() { printf '%s\n' "$*" >&2; }
 
@@ -103,6 +106,36 @@ vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@" && config_sync; }
 
 # cp + mv: a game starting meanwhile reads the old or the new file, never half of it.
 copy_atomic() { cp "$1" "$2.tmp.$$" && mv -f "$2.tmp.$$" "$2"; }
+
+# Profiles DIR: the checkout's profiles/*.conf into DIR/profiles (each file
+# replaced whole, stale ones removed). Silent when nothing changed.
+profiles_copy() {
+    local dst=$1/profiles f n=0
+    mkdir -p "$dst"
+    for f in "$VRDUAL_ROOT"/profiles/*.conf; do
+        cmp -s "$f" "$dst/${f##*/}" || { copy_atomic "$f" "$dst/${f##*/}"; n=$((n + 1)); }
+    done
+    for f in "$dst"/*.conf; do
+        [[ -f $f && ! -f $VRDUAL_ROOT/profiles/${f##*/} ]] && { rm -f "$f"; n=$((n + 1)); }
+    done
+    ((n == 0)) || say "profiles: $n file(s) updated in $dst"
+}
+
+# `profiles [list]`: the checkout's profiles, checked (file, exe, steam id,
+# keys; exit 1 on an unknown key). `profiles sync`: copy them where games read
+# them (every vrdual install, plus the host default ~/.local/share/vrdual).
+vrdual_profiles() {
+    case ${1:-list} in
+        list) "$B/vrdual-ctl" profiles "$VRDUAL_ROOT/profiles" ;;
+        sync)
+            "$B/vrdual-ctl" profiles "$VRDUAL_ROOT/profiles" >/dev/null || return 1
+            local d
+            for d in "$STEAM_FLATPAK/vrdual" "${XDG_DATA_HOME:-$HOME/.local/share}/vrdual"; do
+                [[ -f $d/run || $d == "${XDG_DATA_HOME:-$HOME/.local/share}/vrdual" ]] && profiles_copy "$d"
+            done ;;
+        *) say "usage: vrdual profiles [list|sync]"; return 2 ;;
+    esac
+}
 
 # Games in Flatpak Steam / Heroic read the copy `vrdual install` made, not the
 # host config: refresh the copies after a write (they apply at the next start).
@@ -262,6 +295,8 @@ export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-zink}"
 export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-mesa}"
 # Host config copy (vrdual install); Proton games log to ~/.var/app/…Steam/steam-<appid>.log
 [ -f "$d/vrdual.conf" ] && export VRDUAL_CONFIG="${VRDUAL_CONFIG:-$d/vrdual.conf}"
+# Game profiles copied by vrdual install / vrdual profiles sync
+[ -d "$d/profiles" ] && export VRDUAL_PROFILES="${VRDUAL_PROFILES:-$d/profiles}"
 export PROTON_LOG="${PROTON_LOG:-1}"
 # Heroic + umu: Proton names its log steam-0-….log for every game; one dir per game
 if [ -n "$HEROIC_APP_NAME" ] && [ -n "$PROTON_LOG_DIR" ]; then
@@ -276,6 +311,7 @@ fi
 case "$*" in *proton*) exec "$@" ;; *) exec "$@" 2>"$d/game.log" ;; esac
 WRAP
     chmod +x "$host/run"
+    profiles_copy "$host"
     umu_shim_patch
     if [[ -f $(vrdual-config-path) ]]; then
         cmp -s "$(vrdual-config-path)" "$host/vrdual.conf" || { copy_atomic "$(vrdual-config-path)" "$host/vrdual.conf"; say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"; }
@@ -314,6 +350,7 @@ steam_layer_check() {
         [[ -f $d/layer/libVkLayer_vrdual64.so ]] || continue
         cmp -s "$d/layer/libVkLayer_vrdual64.so" "$B/libVkLayer_vrdual.so" || say "warning: $d/layer differs from build/ (run: vrdual install)"
         if [[ -f $c ]] && ! cmp -s "$c" "$d/vrdual.conf"; then say "warning: $d/vrdual.conf differs from $c (run: vrdual install)"; fi
+        diff -rq "$VRDUAL_ROOT/profiles" "$d/profiles" >/dev/null 2>&1 || say "warning: $d/profiles differs from profiles/ (run: vrdual profiles sync)"
     done
     return 0
 }
@@ -694,8 +731,15 @@ _selftest_nogpu() {
     mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
     label="guided IPD calibration: simulated viewers 50-80 mm converge within 0.5 mm, near IPD found or left off"
     check "$B/vrdual-calib-test"
-    label="built-in game profile: Psychonauts gets skip_w1 = 0"
-    check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# built-in'"
+    label="game profiles: all valid (exe, known keys); a bad one is refused"
+    check bash -c "'$B/vrdual-ctl' profiles '$VRDUAL_ROOT/profiles' >/dev/null && mkdir -p '$tmp/badprof' &&
+        printf '[game]\\nexe = x.exe\\n[settings]\\nworld_scal = 2\\n' >'$tmp/badprof/x.conf' &&
+        ! '$B/vrdual-ctl' profiles '$tmp/badprof' >/dev/null 2>&1"
+    label="game profile: Psychonauts gets skip_w1 = 0 by exe, Mirror's Edge by Steam app id; [app:NAME] wins over a profile, a profile over [global]"
+    check bash -c "export VRDUAL_PROFILES='$VRDUAL_ROOT/profiles'; VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# profile psychonauts' &&
+        SteamAppId=17410 VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Game.exe | grep -q '^world_scale *50 *# profile mirror-s-edge' &&
+        printf '[global]\\nworld_scale = 3\\nhud_depth = 7\\n[app:mirrorsedge.exe]\\nworld_scale = 40\\n' >'$tmp/prof.conf' &&
+        o=\$(VRDUAL_CONFIG='$tmp/prof.conf' '$B/vrdual-ctl' show mirrorsedge.exe) && grep -q '^world_scale *40 ' <<<\"\$o\" && grep -q '^hud_depth *1 *# profile' <<<\"\$o\""
     label="build info: vrdual version lists tools and layers; SOURCE_DATE_EPOCH fixes the time"
     check bash -c "v=\$('$VRDUAL_ROOT/vrdual' version) && grep -q \$'^tools\tvrdual .*, built .* on ' <<<\"\$v\" &&
         grep -q 'build/libVkLayer_vrdual.so.*, built ' <<<\"\$v\" &&
@@ -760,11 +804,12 @@ vrdual_selftest() {
     # 1b. vrdual install into a fresh HOME: wrapper + both layers + launch
     # option; `vrdual xr`'s --quiet run is silent when nothing changed and
     # replaces a layer copy that differs from build/.
-    label="install: fresh HOME gets wrapper, both layers, launch option; --quiet silent when current, updates a stale layer"
+    label="install: fresh HOME gets wrapper, both layers, profiles, launch option; --quiet silent when current, updates a stale layer"
     check env HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/home/.config" bash -c "cd '$VRDUAL_ROOT' && d=\$HOME/.local/share/vrdual &&
         ./vrdual install 2>/dev/null | grep -q '/.local/share/vrdual/run %command%\$' && [[ -x \$d/run && -f \$d/layer/libVkLayer_vrdual32.so && -f \$d/layer/VkLayer_vrdual64.json ]] &&
         out=\$(bash -c 'source ./_; vrdual_install --quiet' 2>&1) && [[ -z \$out ]] && printf x >>\$d/layer/libVkLayer_vrdual64.so &&
-        bash -c 'source ./_; vrdual_install --quiet' 2>&1 | grep -q 'updated the layer' && cmp -s build/libVkLayer_vrdual.so \$d/layer/libVkLayer_vrdual64.so"
+        bash -c 'source ./_; vrdual_install --quiet' 2>&1 | grep -q 'updated the layer' && cmp -s build/libVkLayer_vrdual.so \$d/layer/libVkLayer_vrdual64.so &&
+        diff -rq profiles \$d/profiles && grep -q 'VRDUAL_PROFILES=.*\$d/profiles' \$d/run"
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
@@ -1409,6 +1454,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
                                   Up/Down IPD, PgUp/PgDn near IPD, N near/far on/off,
                                   A anchor, -/= HFOV, W save to profile, H help, S swap
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
+  profiles [list|sync]          game profiles (profiles/*.conf): list and check them, or copy
+                                  them where games read them (vrdual install does it too)
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
   hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions);
                                   hunt MODE LO HI | off sets a key range, hunt shaders lists keys,
@@ -1452,7 +1499,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;

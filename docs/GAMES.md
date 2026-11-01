@@ -181,5 +181,5 @@ good test of the Vulkan path, too fast for a showcase.
    `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`, native
    `~/.var/app/com.valvesoftware.Steam/vrdual/game.log`, cores `coredumpctl`.
 
-Found values for everyone go into `kAppProfiles` in
-`common/vrdual_config.hpp` (and this table).
+Found values for everyone go into a profile file in `profiles/` (format:
+[CONFIG.md](CONFIG.md)), and into this table.

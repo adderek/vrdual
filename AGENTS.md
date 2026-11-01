@@ -42,7 +42,8 @@ automatically.
 | `layer/spirv_patch.hpp` | SPIR-V rewriter for VS/TES/GS (gate spec constant: last pre-raster stage only; baked or live params, near/far blend, `w==1` skip, shader rules + live hunt range, `shader_hash`) |
 | `layer/VkLayer_vrdual.json.in` | layer manifest (`VK_LAYER_VRDUAL_stereo`, explicit) |
 | `common/vrdual_shm.h` | shm frame ring + control block structs (C ABI shared by all processes) |
-| `common/vrdual_config.hpp` | `.conf` parser, precedence, `save_key` (keys documented in `docs/CONFIG.md`; selftest checks) |
+| `common/vrdual_config.hpp` | `.conf` parser, precedence, game profile loader, `save_key` (keys documented in `docs/CONFIG.md`; selftest checks) |
+| `profiles/*.conf` | curated game profiles, one file per game (`[game]` exe / steam id, `[settings]`); `vrdual profiles [list\|sync]` |
 | `common/vrdual_ctl.hpp` | control block open/read/write, eye param math, `ctl_save` |
 | `compositor/main.cpp` | SBS window, frame pairing, calibration overlay + keys, `--snapshot`, `--record` (SBS mp4 via ffmpeg) |
 | `testapp/main.cpp` | stereo-unaware test app; `--scene calib` = static posts at 0.5/1/2/5/20 m |
@@ -107,7 +108,7 @@ machine unless a row says otherwise. Read them with its topology in mind:
 - The layer stays **passive**: no UI, network, threads or prompts inside the
   app process. UIs edit the control block; layers only read it. See PLAN §H.
 - App-unaware is the point. No changes to apps or engines.
-- Config precedence: defaults < `[global]` < `[app:NAME]` < `VRDUAL_<KEY>` env.
+- Config precedence: defaults < `[global]` < game profile (`profiles/`) < `[app:NAME]` < `VRDUAL_<KEY>` env.
   `VRDUAL_EYE`, `VRDUAL_GPU` and `VRDUAL_SESSION` are per process only.
 - Changing a struct in `vrdual_shm.h` → bump `VRDUAL_VERSION` or the ctl `version`.
 - HMD path = OpenXR app with WiVRn as the runtime (Quest 3S). Quest Link and

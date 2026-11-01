@@ -4,6 +4,8 @@
 //   vrdual-ctl path                       config file location
 //   vrdual-ctl init                       write a commented default config if none exists
 //   vrdual-ctl show [APP]                 effective settings for APP, with their source
+//   vrdual-ctl profiles [DIR]             game profiles: file, exe list, steam id, keys;
+//                                         exit 1 if one has no exe or an unknown key
 //   vrdual-ctl live [--session S]         current live values of a running session
 //   vrdual-ctl set KEY VALUE [--session S]   change a live value (ipd accepts "64.5mm")
 //   vrdual-ctl save [--global] [--session S] write live values into the APP profile (or [global])
@@ -29,7 +31,7 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 }
 
 static int usage() {
-    fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
+    fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | profiles [DIR] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
                     "                  | live | set KEY VALUE | save [--global]   [--session S]\n"
                     "                  | shaders | hunt [off | hide|noshift|hud LO HI]   (LO, HI: 8 hex digits, inclusive)\n"
                     "                  | rule KEY noshift|hud|hide   (adds to shader_rules in the session's [app:NAME])\n");
@@ -78,9 +80,28 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (cmd == "profiles") {
+        std::string dir = args.size() > 1 ? args[1] : profiles_dir();
+        int bad = 0;
+        for (auto& p : load_profiles(dir)) {
+            std::string ex, ks;
+            for (auto& e : p.exe) ex += (ex.empty() ? "" : ",") + e;
+            for (auto& kv : p.settings) {
+                ks += (ks.empty() ? "" : " ") + kv.first + "=" + kv.second;
+                bool known = false;
+                for (auto& k : kKeys) known |= kv.first == k.name;
+                if (!known) fprintf(stderr, "%s: unknown key '%s'\n", p.file.c_str(), kv.first.c_str()), ++bad;
+            }
+            if (p.exe.empty()) fprintf(stderr, "%s: no exe in [game]\n", p.file.c_str()), ++bad;
+            printf("%s\t%s\t%s\t%s\n", p.file.c_str(), ex.c_str(), p.steam.empty() ? "-" : p.steam.c_str(), ks.c_str());
+        }
+        return bad ? 1 : 0;
+    }
+
     if (cmd == "show") {
         Settings st = load_settings({args.size() > 1 ? args[1] : ""});
-        fprintf(stderr, "config: %s   profile: %s\n", config_path().c_str(), st.profile.empty() ? "(none)" : st.profile.c_str());
+        fprintf(stderr, "config: %s   [app:] section: %s   profiles: %s\n", config_path().c_str(), st.profile.empty() ? "(none)" : st.profile.c_str(),
+                profiles_dir().c_str());
         for (auto& k : kKeys) printf("%-20s %-18s # %s\n", k.name, st.s(k.name).c_str(), st.src[k.name].c_str());
         return 0;
     }

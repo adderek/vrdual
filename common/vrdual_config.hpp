@@ -1,4 +1,4 @@
-// vrdual configuration: defaults < [global] < [app:NAME] < VRDUAL_* env.
+// vrdual configuration: defaults < [global] < profile < [app:NAME] < VRDUAL_* env.
 // Shared by the layer, the compositor and vrdual-ctl. Header-only, no deps.
 //
 // File: $VRDUAL_CONFIG, else $XDG_CONFIG_HOME/vrdual/vrdual.conf,
@@ -9,8 +9,11 @@
 //   [app:vrdual-cube]          # matches VkApplicationInfo name or exe basename
 //   hfov = 90
 #pragma once
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include <algorithm>
 
 #include <cctype>
 #include <cerrno>
@@ -83,26 +86,6 @@ static const Key kKeys[] = {
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };
 
-// Built-in per-game values (user tested unless noted). Precedence:
-// defaults < [global] < these < [app:NAME] < env. Matched like [app:NAME].
-struct AppValue {
-    const char* app;
-    const char* key;
-    const char* value;
-};
-static const AppValue kAppProfiles[] = {
-    {"psychonauts", "skip_w1", "0"},          // draws the scene with w == 1: unshifted = no stereo
-    {"mirrorsedge.exe", "world_scale", "50"},
-    {"mirrorsedge.exe", "hud_depth", "1"},    // crosshair fuses at 1 m (user, 2026-10-20)
-    {"tesv.exe", "world_scale", "70"},        // Skyrim: 1 unit = 1.43 cm (not tuned yet)
-    {"falloutnv.exe", "world_scale", "70"},   // same engine family (not tuned yet)
-    {"upc.exe", "stereo", "0"},               // Ubisoft Connect: CEF UI full of artefacts when mirrored
-    {"uplaywebcore.exe", "stereo", "0"},
-    {"eadesktop.exe", "stereo", "0"},         // EA app: a launcher, nothing to see in 3D
-    {"explorer.exe", "stereo", "0"},          // Wine desktop / tray (Zink), streamed the empty desktop
-    {"xalia.exe", "stereo", "0"},             // Proton's accessibility helper
-};
-
 inline std::string trim(std::string s) {
     size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n");
     return a == std::string::npos ? "" : s.substr(a, b - a + 1);
@@ -117,6 +100,25 @@ inline std::string config_path() {
     if (const char* x = getenv("XDG_CONFIG_HOME"); x && *x) return std::string(x) + "/vrdual/vrdual.conf";
     const char* h = getenv("HOME");
     return std::string(h ? h : ".") + "/.config/vrdual/vrdual.conf";
+}
+
+inline std::string data_home() {
+    if (const char* x = getenv("XDG_DATA_HOME"); x && *x) return x;
+    const char* h = getenv("HOME");
+    return std::string(h ? h : ".") + "/.local/share";
+}
+
+// Curated per-game profiles: one file per game, PROFILES_DIR/*.conf
+// (`vrdual profiles sync` / `vrdual install` copy the repo's profiles/ there):
+//   [game]
+//   exe = mirrorsedge.exe          # names matched like [app:NAME], comma list
+//   steam = 17410                  # optional alias: matches $SteamAppId
+//   [settings]
+//   world_scale = 50
+// Precedence: defaults < [global] < profile < [app:NAME] < env.
+inline std::string profiles_dir() {
+    if (const char* p = getenv("VRDUAL_PROFILES"); p && *p) return p;
+    return data_home() + "/vrdual/profiles";
 }
 
 // section -> key -> value
@@ -137,6 +139,38 @@ inline Ini parse_ini(const std::string& path) {
         ini[sec][lower(trim(line.substr(0, eq)))] = trim(line.substr(eq + 1));
     }
     return ini;
+}
+
+struct Profile {
+    std::string file;                          // basename without .conf
+    std::vector<std::string> exe;              // lower case
+    std::string steam;
+    std::map<std::string, std::string> settings;
+};
+
+inline std::vector<Profile> load_profiles(const std::string& dir = profiles_dir()) {
+    std::vector<Profile> out;
+    DIR* d = opendir(dir.c_str());
+    if (!d) return out;
+    std::vector<std::string> names;
+    while (dirent* e = readdir(d)) {
+        std::string n = e->d_name;
+        if (n.size() > 5 && n[0] != '.' && n.compare(n.size() - 5, 5, ".conf") == 0) names.push_back(n);
+    }
+    closedir(d);
+    std::sort(names.begin(), names.end());
+    for (auto& n : names) {
+        Ini ini = parse_ini(dir + "/" + n);
+        Profile p;
+        p.file = n.substr(0, n.size() - 5);
+        std::stringstream ex(ini["game"]["exe"]);
+        for (std::string x; std::getline(ex, x, ',');)
+            if (!trim(x).empty()) p.exe.push_back(lower(trim(x)));
+        p.steam = ini["game"]["steam"];
+        p.settings = ini["settings"];
+        out.push_back(std::move(p));
+    }
+    return out;
 }
 
 struct Settings {
@@ -162,13 +196,18 @@ inline Settings load_settings(const std::vector<std::string>& app_names) {
             if (st.val.count(kv.first)) { st.val[kv.first] = kv.second; st.src[kv.first] = label; }
     };
     apply("global", path + " [global]");
-    for (auto& n : app_names) {
-        if (n.empty()) continue;
-        bool hit = false;
-        for (auto& a : kAppProfiles)
-            if (lower(n) == a.app) { st.val[a.key] = a.value; st.src[a.key] = std::string("built-in [app:") + a.app + "]"; hit = true; }
-        if (hit) break;
-    }
+    // profile: the first name with one wins, then the Steam app id
+    std::vector<Profile> profs = load_profiles();
+    const Profile* hit = nullptr;
+    for (auto& n : app_names)
+        for (auto& p : profs)
+            if (!hit && !n.empty() && std::find(p.exe.begin(), p.exe.end(), lower(n)) != p.exe.end()) hit = &p;
+    const char* sid = getenv("SteamAppId");
+    for (auto& p : profs)
+        if (!hit && sid && *sid && strcmp(sid, "0") && p.steam == sid) hit = &p;
+    if (hit)
+        for (auto& kv : hit->settings)
+            if (st.val.count(kv.first)) { st.val[kv.first] = kv.second; st.src[kv.first] = "profile " + hit->file; }
     for (auto& n : app_names) {
         if (n.empty()) continue;
         if (st.app.empty()) st.app = n;

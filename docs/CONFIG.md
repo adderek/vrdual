@@ -2,11 +2,27 @@
 
 Every setting can be given four ways; later ones win:
 
-**default < `[global]` < built-in game profile < `[app:NAME]` < environment `VRDUAL_<KEY>`**
+**default < `[global]` < game profile < `[app:NAME]` < environment `VRDUAL_<KEY>`**
 
-Built-in game profiles (`kAppProfiles` in `common/vrdual_config.hpp`): values
-found for specific games, e.g. Psychonauts `skip_w1 = 0`, Mirror's Edge
-`world_scale = 50`, `hud_depth = 1`. `./vrdual-ctl show APP` marks them `built-in`.
+Game profiles: curated values for specific games, one file per game in
+`profiles/` (e.g. `profiles/mirror-s-edge.conf`: `world_scale = 50`,
+`hud_depth = 1`). Format:
+
+```ini
+[game]
+exe = mirrorsedge.exe     # names matched like [app:NAME], comma list
+steam = 17410             # optional alias: matches $SteamAppId (any exe of that game)
+[settings]
+world_scale = 50
+```
+
+A name match wins over the Steam id. Games read the copy in
+`$VRDUAL_PROFILES` (the Steam wrapper sets it to its own `profiles/`), else
+`~/.local/share/vrdual/profiles`; `./vrdual install` and `./vrdual profiles
+sync` refresh the copies, `./vrdual profiles` lists and checks the files.
+Tools started through `vrdual` read the checkout's `profiles/`.
+`./vrdual-ctl show APP` marks the values `profile FILE`. Button maps
+(`map_*`) are not read from profiles yet.
 
 - The environment variable is the key in upper case: `screen` → `VRDUAL_SCREEN`,
   `hud_depth` → `VRDUAL_HUD_DEPTH`, `map_a` → `VRDUAL_MAP_A`.

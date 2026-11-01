@@ -13,11 +13,13 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 8. [Guided IPD calibration](docs/tasks/guided-calibration.md): done 2026-11-02 in the compositor (G); left: the same flow in the HMD (`vrdual-xr`)
 9. [Borrowed from vorpX/FlatVR](docs/tasks/borrowed-features.md): HUD depth, cinema/curved screen, screen grab (done), HUD scale (needs HUD vs post-process distinction), edge peek; depth reprojection (Z3D) = M7 on branch `single-gpu`
 10. [Backlog: small defects and hardening](docs/tasks/backlog.md)
-11. Game profiles as data files: curated per-game settings (`kAppProfiles`
-    today: built into the binary) move to public data files the code loads,
-    so the table can grow without rebuilding (support model: donations only,
-    `docs/PLAN.md` §J, 2026-11-01). First step: `vrdual profiles sync` into
-    a local cache, then auto-pick by exe name (store ids as aliases, PLAN §K).
+11. Game profiles as data files: done 2026-11-02 (`profiles/*.conf`, one per
+    game, matched by exe name or Steam app id; `vrdual profiles list|sync`,
+    `vrdual install` copies them; `kAppProfiles` removed). Left: an online
+    sync (e.g. the profiles published with the Pages site) so users without a
+    checkout update, other store ids (GOG, Epic, umu `GAMEID`) as aliases,
+    button maps per profile; `shader_rules` in `[settings]` already work, but
+    their keys hold for one translator version only (shader-rules step 4).
 12. Non-Steam launchers (PLAN §K): GOG native via `vrdual run`, Heroic /
     Lutris / umu wrapper command, `heroic-install` if Heroic is a Flatpak;
     store/build column in `docs/GAMES.md`.
