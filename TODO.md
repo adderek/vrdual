@@ -72,6 +72,21 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
       page; private / unpublished configurations stay local (item 18).
       First step: a `_ perf GAME` helper that gathers the config and log
       parts and leaves the scene / FPS context to the owner.
+20. Shader hunt in the headset (owner's request 2026-11-02): `_ hunt find`
+    driven by the controllers in `vrdual-xr`, no terminal. Each step asks
+    in the overlay "did exactly the artefact we hunt disappear?" (note:
+    other things may appear or vanish too, judge only that one) with yes /
+    no / can't tell on buttons. One button toggles the current step's
+    shader group on / off, so the user can flip it quickly and confirm
+    before answering. At the end other buttons decide: save the rule
+    (`hunt rule KEY MODE`) or discard. Same bisection as `_ hunt` (one
+    implementation, two front ends); needs the HMD overlay (M3) and an
+    input mode for it (like `tune`).
+21. Controller modes the user never uses can be switched off (owner's
+    request 2026-11-02): e.g. `input_modes` listing the modes menu + a / b
+    cycles through (gamepad, mouse stick / motion / aim / move, tune, map);
+    left-out ones are skipped, also by the short-menu `mouse_mode` cycle.
+    All off = the controllers do nothing (no uinput devices, no tune).
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
