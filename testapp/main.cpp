@@ -584,11 +584,41 @@ int main(int argc, char** argv) {
     VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, fam};
     VkCommandPool pool;
     CK(vkCreateCommandPool(dev, &cpci, nullptr, &pool));
-    if (churn) {  // mirror check: N samplers alive at once, then destroyed (their handles must leave the twin map)
+    if (churn) {  // mirror check: N objects of each kind alive at once, then freed (their handles must leave the twin map)
         std::vector<VkSampler> sm(churn);
         VkSamplerCreateInfo smci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         for (auto& x : sm) CK(vkCreateSampler(dev, &smci, nullptr, &x));
         for (auto x : sm) vkDestroySampler(dev, x, nullptr);
+        // children freed implicitly: descriptor sets by a pool reset and a pool
+        // destroy (with and without FREE_DESCRIPTOR_SET, half freed one by
+        // one), command buffers by a pool destroy
+        VkDescriptorSetLayoutBinding lb{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+        VkDescriptorSetLayoutCreateInfo lci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, nullptr, 0, 1, &lb};
+        VkDescriptorSetLayout dsl;
+        CK(vkCreateDescriptorSetLayout(dev, &lci, nullptr, &dsl));
+        std::vector<VkDescriptorSetLayout> dsls(churn, dsl);
+        std::vector<VkDescriptorSet> ds(churn);
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uint32_t(churn)};
+        for (VkDescriptorPoolCreateFlags fl : {VkDescriptorPoolCreateFlags(0), VkDescriptorPoolCreateFlags(VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT)}) {
+            VkDescriptorPoolCreateInfo dpci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, nullptr, fl, uint32_t(churn), 1, &ps};
+            VkDescriptorPool dp;
+            CK(vkCreateDescriptorPool(dev, &dpci, nullptr, &dp));
+            VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, dp, uint32_t(churn), dsls.data()};
+            CK(vkAllocateDescriptorSets(dev, &dai, ds.data()));
+            if (fl) CK(vkFreeDescriptorSets(dev, dp, uint32_t(churn / 2), ds.data()));
+            else {
+                CK(vkResetDescriptorPool(dev, dp, 0));
+                CK(vkAllocateDescriptorSets(dev, &dai, ds.data()));
+            }
+            vkDestroyDescriptorPool(dev, dp, nullptr);
+        }
+        vkDestroyDescriptorSetLayout(dev, dsl, nullptr);
+        VkCommandPool cp;
+        CK(vkCreateCommandPool(dev, &cpci, nullptr, &cp));
+        std::vector<VkCommandBuffer> cbs(churn);
+        VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, cp, VK_COMMAND_BUFFER_LEVEL_PRIMARY, uint32_t(churn)};
+        CK(vkAllocateCommandBuffers(dev, &cai, cbs.data()));
+        vkDestroyCommandPool(dev, cp, nullptr);
     }
     if (wait_any) {
         // A fill into host-visible memory waits on timeline t[0] (signalled by

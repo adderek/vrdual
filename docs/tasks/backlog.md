@@ -63,9 +63,10 @@
   - Also reviewed 2026-11-01: twin device and WSI creation, acquire, the
     generated wrapper pattern. Fixed: the generated Destroy / Free wrappers
     never dropped the handle from `g_hmap` (3000 samplers churned left 3022
-    entries, now 30). Still left there: objects freed implicitly (descriptor
-    sets by a pool reset or destroy, command buffers by a pool destroy) keep
-    their entries until the address is reused.
+    entries, now 30). Objects freed implicitly (descriptor sets by a pool
+    reset or destroy, command buffers by a pool destroy) leave it too since
+    2026-11-02 (per-pool child lists; `FreeCommandBuffers` never dropped its
+    entries either; selftest churn: 7527 entries left before, 30 after).
   - Also reviewed 2026-11-01: the mirror stop path (selftest covers it),
     `_` (run, install, config copies, xr / audio / WiVRn), and
     `common/vrdual_input.hpp`. Fixed: the config copies games read

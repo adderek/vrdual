@@ -143,6 +143,11 @@ struct MDev {
     std::unordered_map<uint64_t, VkFormat> imgs;                   // A image -> format (copy extents)
     std::unordered_map<uint64_t, uint64_t> views;                  // A buffer view -> buffer
     std::unordered_map<VkCommandBuffer, std::vector<MemRange>> cbw;  // ranges a command buffer writes
+    // Descriptor / command pool -> its children, which a pool reset or destroy
+    // frees without a Free call: their twins leave g_hmap then. Pools without
+    // FREE_DESCRIPTOR_SET only grow until reset (vector, cheap per set).
+    struct Pool { bool can_free = true; std::vector<uint64_t> kids; std::unordered_set<uint64_t> kset; };
+    std::unordered_map<uint64_t, Pool> pools;
     std::vector<Writeback> wbs;                                    // submitted, not yet copied back
     std::vector<VkFence> fence_pool;                               // our fences for submits without one
     uint64_t wb_bytes = 0;
@@ -519,6 +524,52 @@ static void hook_DestroyBufferView(MDev* md, VkDevice, VkBufferView v, const VkA
     std::lock_guard<std::mutex> l(md->lock);
     md->views.erase(h2u(v));
 }
+
+// ----------------------------------------------------- pool children ----
+template <typename T> static void pool_add(MDev* md, uint64_t pool, const T* h, uint32_t n) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto& p = md->pools[pool];
+    for (uint32_t i = 0; i < n; ++i) p.can_free ? (void)p.kset.insert(h2u(h[i])) : p.kids.push_back(h2u(h[i]));
+}
+template <typename T> static void pool_del(MDev* md, uint64_t pool, const T* h, uint32_t n) {
+    std::lock_guard<std::mutex> l(md->lock);
+    auto it = md->pools.find(pool);
+    if (it != md->pools.end())
+        for (uint32_t i = 0; i < n; ++i) it->second.kset.erase(h2u(h[i]));
+}
+// Children of a pool being reset (keep = true) or destroyed leave the twin
+// map, before A frees them (their values can come back for new objects).
+static void pool_drop(MDev* md, uint64_t pool, bool keep, bool cmd) {
+    std::vector<uint64_t> kids;
+    {
+        std::lock_guard<std::mutex> l(md->lock);
+        auto it = md->pools.find(pool);
+        if (it == md->pools.end()) return;
+        kids.swap(it->second.kids);
+        kids.insert(kids.end(), it->second.kset.begin(), it->second.kset.end());
+        it->second.kset.clear();
+        if (!keep) md->pools.erase(it);
+        if (cmd)
+            for (uint64_t k : kids) md->cbw.erase(u2h<VkCommandBuffer>(k)), md->secondary.erase(u2h<VkCommandBuffer>(k));
+    }
+    std::unique_lock<std::shared_mutex> l(g_hlock);
+    for (uint64_t k : kids) g_hmap.erase(k);
+}
+static void hook_after_CreateDescriptorPool(MDev* md, VkDevice, const VkDescriptorPoolCreateInfo* ci, const VkAllocationCallbacks*,
+                                            VkDescriptorPool* p, VkResult r) {
+    if (r < 0) return;
+    std::lock_guard<std::mutex> l(md->lock);
+    md->pools[h2u(*p)] = MDev::Pool{(ci->flags & VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT) != 0, {}, {}};
+}
+static void hook_after_AllocateDescriptorSets(MDev* md, VkDevice, const VkDescriptorSetAllocateInfo* ai, VkDescriptorSet* sets, VkResult r) {
+    if (r >= 0) pool_add(md, h2u(ai->descriptorPool), sets, ai->descriptorSetCount);
+}
+static void hook_FreeDescriptorSets(MDev* md, VkDevice, VkDescriptorPool p, uint32_t n, const VkDescriptorSet* sets) {
+    if (sets) pool_del(md, h2u(p), sets, n);
+}
+static void hook_ResetDescriptorPool(MDev* md, VkDevice, VkDescriptorPool p, VkDescriptorPoolResetFlags) { pool_drop(md, h2u(p), true, false); }
+static void hook_DestroyDescriptorPool(MDev* md, VkDevice, VkDescriptorPool p, const VkAllocationCallbacks*) { pool_drop(md, h2u(p), false, false); }
+static void hook_DestroyCommandPool(MDev* md, VkDevice, VkCommandPool p, const VkAllocationCallbacks*) { pool_drop(md, h2u(p), false, true); }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -1462,6 +1513,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateCommandBuffers(VkDevice dev, con
         mirror_fail(md, "vkAllocateCommandBuffers failed on B");
     } else {
         for (uint32_t i = 0; i < ai->commandBufferCount; ++i) record_handle(cbs[i], b[i]);
+        pool_add(md, h2u(ai->commandPool), cbs, ai->commandBufferCount);
         if (ai->level == VK_COMMAND_BUFFER_LEVEL_SECONDARY) {
             std::lock_guard<std::mutex> l(md->lock);
             for (uint32_t i = 0; i < ai->commandBufferCount; ++i) md->secondary.insert(cbs[i]);
@@ -1482,6 +1534,8 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeCommandBuffers(VkDevice dev, VkCommandPo
         for (uint32_t i = 0; i < n; ++i)
             if (cbs[i]) b.push_back(xl_handle(cbs[i]));
     VkCommandPool bpool = md->live ? xl_handle(pool) : VK_NULL_HANDLE;
+    pool_del(md, h2u(pool), cbs, n);
+    for (uint32_t i = 0; i < n; ++i) forget_handle(cbs[i]);  // before A frees them (values come back)
     md->a.FreeCommandBuffers(dev, pool, n, cbs);
     if (!b.empty()) md->b.FreeCommandBuffers(md->bdev, bpool, uint32_t(b.size()), b.data());
 }
