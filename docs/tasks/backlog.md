@@ -6,9 +6,11 @@
   semaphore); without export (no copy submit) the CPU writes them immediately.
 - Compositor keys are only tested through `vrdual-ctl`; add an SDL event
   injection path (e.g. `--keys "Up Up W"`) so selftest can cover them.
-- Readback: the CPU copy into /dev/shm (~0.8 ms per frame for two 1080p eyes)
-  could go if the GPU wrote into the frame file (host-pointer import of the
-  slot, alpha forced by the readers). Small gain, amdgpu userptr risk: later.
+- Readback: the CPU copy into /dev/shm could go if the GPU wrote into the
+  frame file (host-pointer import of the slot, alpha forced by the readers).
+  Measured 2026-11-01 per eye on the game's present thread: 1.14 ms at 1080p,
+  4.67 ms at 4K (after non-temporal stores; before 1.58 / 6.6 ms). Matters
+  at 4K; amdgpu userptr risk on shmem pages: try a host-pointer import first.
 - Readback: 10-bit and FP16 swapchains go through a blit to 8-bit since
   2026-10-21; HDR colour spaces (PQ / scRGB above 1) are not tone-mapped.
 - `vrdual gpus` "behind-switch" heuristic counts bridge hops (>4); the Navi31
@@ -29,10 +31,21 @@
 - Layer logs every live change on both eyes; consider rate limiting.
 - Review items 2026-10-31 left until a measurement says otherwise (xr.log:
   our work 2.5–4 ms per frame; upload fence wait 0.3–0.6 ms, staging
-  0.6–1.3 ms, pairing 0.6–1.4 ms): three CPU copies per eye (shm → pair
-  buffer → staging), `vrdual-xr`'s fence wait every frame, the R/B swizzle
-  loop (never triggered in the logs), the mirror's `g_hmap` lock as a
-  `shared_mutex` (measure contention first).
+  0.6–1.3 ms, pairing 0.6–1.4 ms): `vrdual-xr`'s fence wait every frame,
+  the mirror's `g_hmap` lock as a `shared_mutex` (measure contention
+  first). Done 2026-11-01: pairing copies straight into the staging buffers
+  (one CPU copy per eye fewer), the R/B swizzle runs in place.
+- Review 2026-11-01 (fixed then: lockstep never resuming after a timeout,
+  destroy vs present race on the pending readbacks, non-atomic config saves,
+  the xr pair copy). Left:
+  - Measured 2026-11-01 and dropped (`vrdual-cube` on the headless GPU, lockstep off):
+    the wait for the previous frame's copy is 0.00-0.13 ms/frame, so
+    publishing without waiting gains nothing; the cursor image fetch costs
+    ~4 us per frame (pointer + geometry 12.7 us, + 48x48 image 16.5 us), not
+    worth an XFixes event path. The layer now logs `export: ... ms/frame`
+    every 600 frames for checks in games.
+  - Not reviewed yet: most of `vrdual_mirror.hpp` (replay, sync, WSI twins),
+    `_`, `common/vrdual_input.hpp`, `testapp/`, `site/`.
 - Done 2026-11-01: Witcher 3 DX12 unpatched modules (219 log lines, 12
   distinct, `shader_dump` on sharkoon) are all harmless: empty VS (no
   outputs), VS that only pass vertex IDs or tessellation control data, the

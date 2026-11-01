@@ -788,6 +788,8 @@ vrdual_selftest() {
     check bash -c "grep -q 'pci $gd' '$tmp/left.log' && grep -q 'pci $gh' '$tmp/right.log' &&
         grep -q 'gpu auto (left eye): pci:$gd' '$tmp/left.log' && grep -q 'gpu auto (right eye): pci:$gh' '$tmp/right.log'"
     label="live params enabled"; check grep -q 'live params at device address' "$tmp/left.log" "$tmp/right.log"
+    label="export stats: copy wait and publish time per frame logged"
+    check bash -c "for i in \$(seq 100); do grep -qE 'export: [0-9.]+ ms/frame waiting for the copy, [0-9.]+ ms/frame publishing' '$tmp/left.log' && exit 0; sleep 0.1; done; exit 1"
     label="default ipd 64mm";    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/a.png' && $M '$tmp/a.png' --ipd 0.064 --anchor center"
     set_live ipd=0.2
     label="live ipd 200mm";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/b.png' && $M '$tmp/b.png' --ipd 0.2 --anchor center"

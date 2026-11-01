@@ -504,6 +504,26 @@ static uint64_t now_ns() {
     return uint64_t(ts.tv_sec) * 1000000000ull + ts.tv_nsec;
 }
 
+// dst[i] = src[i] | alpha 1. Non-temporal stores: the slot is not read
+// back by this process, and skipping the read-for-ownership of the cold
+// frame file pages makes the copy 2-3x faster (1080p 1.38 -> 0.46 ms, 4K
+// 5.06 -> 2.38 ms here). SSE2 per function: the 32-bit build has no -msse2.
+#if defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+__attribute__((target("sse2"))) static void copy_opaque(uint32_t* d, const uint32_t* p, size_t n) {
+    size_t i = 0;
+    for (; i < n && (uintptr_t(d + i) & 15); ++i) d[i] = p[i] | 0xff000000u;
+    const __m128i a = _mm_set1_epi32(int(0xff000000u));
+    for (; i + 4 <= n; i += 4) _mm_stream_si128((__m128i*)(d + i), _mm_or_si128(_mm_loadu_si128((const __m128i*)(p + i)), a));
+    for (; i < n; ++i) d[i] = p[i] | 0xff000000u;
+    _mm_sfence();  // streamed stores visible before the seqlock's closing increment
+}
+#else
+static void copy_opaque(uint32_t* d, const uint32_t* p, size_t n) {
+    for (size_t i = 0; i < n; ++i) d[i] = p[i] | 0xff000000u;
+}
+#endif
+
 static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     auto* hd = g_out[eye].hdr;
     if (!hd) return;
@@ -514,8 +534,7 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     // Alpha forced to 1: games leave it undefined (Call of Juarez Gunslinger: 0
     // everywhere) and present opaque, but WiVRn shows alpha 0 as black.
     auto* d = (uint32_t*)((char*)hd + VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes);
-    auto* p = (const uint32_t*)pixels;
-    for (size_t i = 0; i < n / 4; ++i) d[i] = p[i] | 0xff000000u;
+    copy_opaque(d, (const uint32_t*)pixels, n / 4);
     s.present_ns = now_ns();
     __sync_synchronize();
     s.seq++;
@@ -1537,12 +1556,22 @@ static void finish_readback(const Dispatch& d, VkDevice dev, CopyRes& cr, int k)
     auto& p = cr.pend[k];
     if (!p.on) return;
     p.on = false;
+    uint64_t t0 = now_ns();
     d.WaitForFences(dev, 1, &cr.fence[k], VK_TRUE, UINT64_MAX);
     if (!p.rb->coherent) {
         VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, p.rb->mem, 0, VK_WHOLE_SIZE};
         d.InvalidateMappedMemoryRanges(dev, 1, &mr);
     }
+    uint64_t t1 = now_ns();
     if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes);
+    // where the game's present thread spends export time (g_shm_lock held)
+    static uint64_t wait_ns = 0, pub_ns = 0, n = 0;
+    wait_ns += t1 - t0;
+    pub_ns += now_ns() - t1;
+    if (++n % 600 == 0) {
+        logf("export: %.2f ms/frame waiting for the copy, %.2f ms/frame publishing (%zu bytes)", wait_ns / 600e6, pub_ns / 600e6, p.bytes);
+        wait_ns = pub_ns = 0;
+    }
 }
 
 // A swapchain going away: forget its copies still in flight (not published).
