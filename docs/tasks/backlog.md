@@ -18,6 +18,14 @@
   emitting from a function other than the entry point are patched too (any
   emit in the module).
 - Shadow-map passes: detect depth-only passes with non-swapchain extent and skip.
+  Seen 2026-11-01 in Civilization V (README screenshot `CivV_1.gif`): shadows
+  look cast from the camera side. Likely cause: the shadow-map pass (light
+  space) is shifted per eye like the camera view, so each eye looks up a
+  shadow map offset from its own geometry. Check: `_ hunt find` the shadow
+  VS, `noshift` it, compare. Fix candidates: a `noshift` rule per game, or
+  auto-noshift for depth-only render passes (no color attachment, extent not
+  the swapchain's). Same risk in other top-down games (RTS, 4X) and any game
+  with shadow maps.
 - Layer logs every live change on both eyes; consider rate limiting.
 - Review items 2026-10-31 left until a measurement says otherwise (xr.log:
   our work 2.5–4 ms per frame; upload fence wait 0.3–0.6 ms, staging
