@@ -1,10 +1,10 @@
 // Game list: status per GPU mode, other VR routes, details and media on demand.
 "use strict";
-let games = [], mode = "dual", sortK = "status", sortDir = 1, query = "", hidden = new Set(), open = new Set();
+let games = [], mode = "dual", sortK = "dual", sortDir = 1, query = "", hidden = new Set(), open = new Set();
 
 const modeSt = g => mode === "dual" ? g.status : g.single || "untested";
 const order = ["works", "runs", "broken", "no effect", "retest", "untested"];
-const keyOf = (g, k) => k === "game" ? nameKey(g) : k === "status" ? order.indexOf(modeSt(g))
+const keyOf = (g, k) => k === "game" ? nameKey(g)
   : k === "dual" ? order.indexOf(g.status) : k === "single" ? order.indexOf(g.single || "untested") : g.alt ? 0 : 1;
 
 function details(g) {
@@ -21,10 +21,21 @@ function render() {
   const hay = g => [g.game, g.store, g.path, g.settings, g.notes, g.alt].join(" ").toLowerCase();
   const rows = games.filter(g => !hidden.has(modeSt(g)) && words.every(w => hay(g).includes(w)))
     .sort((a, b) => { const x = keyOf(a, sortK), y = keyOf(b, sortK); return (x < y ? -1 : x > y ? 1 : 0) * sortDir || (nameKey(a) < nameKey(b) ? -1 : 1); });
+  // sorted by a status column: one labelled group per status
+  const grpOf = sortK === "dual" ? g => g.status : sortK === "single" ? g => g.single || "untested" : null;
+  const colName = sortK === "dual" ? "two GPUs" : "one GPU";
+  let prev = null;
   document.querySelector("#t tbody").innerHTML = rows.map(g => {
     const s = slug(g), o = open.has(s);
-    return `<tr class="row${o ? " open" : ""}" data-s="${esc(s)}" tabindex="0" aria-expanded="${o}">
-      <td data-h="game"><span class="tw">▸</span> ${esc(g.game)}${g.media.length ? ' <span class="cam" title="wiggle GIF / video">◐</span>' : ""}${g.sponsor ? ' <span class="spb" title="ready-made configuration for sponsors">★</span>' : ""}</td>
+    let head = "";
+    if (grpOf && grpOf(g) !== prev) {
+      prev = grpOf(g);
+      const n = rows.filter(x => grpOf(x) === prev).length;
+      head = `<tr class="grp"><th colspan="5" scope="rowgroup">${stHtml(prev)} <span class="muted">${colName} · ${n} game${n === 1 ? "" : "s"}</span></th></tr>`;
+    }
+    const marks = (g.media.length ? '<span class="cam" title="wiggle GIF / video">◐</span>' : "") + (g.sponsor ? '<span class="spb" title="ready-made configuration for sponsors">★</span>' : "");
+    return head + `<tr class="row${o ? " open" : ""}${modeSt(g) === "broken" ? " broken" : ""}" data-s="${esc(s)}" tabindex="0" aria-expanded="${o}">
+      <td data-h="game"><div class="gcell"><span><span class="tw">▸</span> ${esc(g.game)}</span>${marks ? `<span class="marks">${marks}</span>` : ""}</div></td>
       <td data-h="two GPUs" class="${mode === "dual" ? "hl" : ""}">${stHtml(g.status)}</td>
       <td data-h="one GPU" class="${mode === "single" ? "hl" : ""}">${stHtml(g.single)}</td>
       <td data-h="other VR routes">${g.alt ? md(g.alt) : '<span class="muted">not researched</span>'}</td>
@@ -50,7 +61,7 @@ document.getElementById("status").addEventListener("click", e => {
   render();
 });
 document.getElementById("mode").addEventListener("change", e => {
-  mode = e.target.value; hidden.clear(); sortK = "status"; sortDir = 1;
+  mode = e.target.value; hidden.clear(); sortK = mode; sortDir = 1;
   try { localStorage.setItem("vrdual-mode", mode); } catch (_) {}
   chips(); render();
 });
@@ -73,6 +84,7 @@ tbody.addEventListener("click", e => {
 tbody.addEventListener("keydown", e => { const tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(tr); } });
 
 try { mode = localStorage.getItem("vrdual-mode") === "single" ? "single" : "dual"; } catch (_) {}
+sortK = mode;
 document.querySelector(`#mode input[value="${mode}"]`).checked = true;
 const want = new URLSearchParams(location.search).get("g");
 loadGames().then(d => {
