@@ -749,6 +749,11 @@ vrdual_selftest() {
     trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
     check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
     vrdual_build || return 1
+    # The user's real installs (what games load) must come out untouched: a
+    # check running `vrdual xr` without --no-install once copied the empty
+    # test config over them.
+    inst_sum() { find "$STEAM_FLATPAK/vrdual" "$HOME/.local/share/vrdual" -type f ! -name game.log -exec md5sum {} + 2>/dev/null | sort; }
+    local inst0; inst0=$(inst_sum)
 
     _selftest_nogpu
 
@@ -1203,7 +1208,7 @@ PA
     check bash -c "d='$tmp/pa'; printf 'hdmi\nwivrn.sink\n' >\$d/sinks; echo hdmi >\$d/default
         # background jobs start with SIGINT ignored; a terminal's Ctrl-C does not: default it again
         setsid python3 -I -c 'import os,signal,sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \\
-            bash -c \"export PATH=\$d:\\\$PATH VRDUAL_AUDIO_POLL=0.1 XR_RUNTIME_JSON=/x/openxr_wivrn.json; source '$VRDUAL_ROOT/_'; B=\$d/b; vrdual_xr --session none || true; echo done >\$d/exited\" 2>/dev/null & p=\$!
+            bash -c \"export PATH=\$d:\\\$PATH VRDUAL_AUDIO_POLL=0.1 XR_RUNTIME_JSON=/x/openxr_wivrn.json; source '$VRDUAL_ROOT/_'; B=\$d/b; vrdual_xr --no-install --session none || true; echo done >\$d/exited\" 2>/dev/null & p=\$!
         for i in \$(seq 30); do [[ \$(cat \$d/default) == wivrn.sink ]] && break; sleep 0.1; done
         [[ \$(cat \$d/default) == wivrn.sink ]] || { echo 'not switched'; kill -- -\$p; exit 1; }
         kill -INT -- -\$p; for i in \$(seq 30); do [[ -e \$d/exited ]] && break; sleep 0.1; done
@@ -1211,7 +1216,7 @@ PA
     label="vrdual xr --no-start-wivrn: refuses without wivrn-server"
     mkdir -p "$tmp/nopgrep" && printf '#!/bin/sh\nexit 1\n' >"$tmp/nopgrep/pgrep" && chmod +x "$tmp/nopgrep/pgrep"
     printf '#!/bin/sh\nsleep 3\n' >"$tmp/nopgrep/flatpak" && chmod +x "$tmp/nopgrep/flatpak"  # fake server
-    check bash -c "out=\$(PATH='$tmp/nopgrep':\$PATH XR_RUNTIME_JSON=/x/openxr_wivrn.json '$VRDUAL_ROOT/vrdual' xr --no-start-wivrn --session none 2>&1); rc=\$?
+    check bash -c "out=\$(PATH='$tmp/nopgrep':\$PATH XR_RUNTIME_JSON=/x/openxr_wivrn.json '$VRDUAL_ROOT/vrdual' xr --no-install --no-start-wivrn --session none 2>&1); rc=\$?
         [[ \$rc != 0 ]] && grep -q 'wivrn-server is not running' <<<\"\$out\" || { echo \"rc=\$rc \$out\"; false; }"
     label="vrdual wivrn-restart: stops the server, waits for the lock, starts it again"
     mkdir -p "$tmp/fakew" && printf '#!/bin/sh\n[ -f %s/fakew/running ] && echo 4242\n' "$tmp" >"$tmp/fakew/pgrep"
@@ -1386,6 +1391,8 @@ sys.exit(0 if max(row(150)[3::4]) > 0 else 1)' '$tmp/ov1g.pam' || { grep '\\[xr\
     check bash -c "printf '#!/bin/sh\nexec \"\$@\"\n' >'$tmp/umu-shim' && chmod +x '$tmp/umu-shim' && cd '$VRDUAL_ROOT' && source ./_ &&
         UMU_SHIM='$tmp/umu-shim' && umu_shim_patch 2>/dev/null && umu_shim_patch 2>/dev/null && [[ \$(grep -c VRDUAL_DISPLAY '$tmp/umu-shim') == 1 ]] &&
         [[ \$(DISPLAY=:0 VRDUAL_DISPLAY=:7 '$tmp/umu-shim' sh -c 'echo \$DISPLAY') == :7 ]] && [[ \$(DISPLAY=:0 '$tmp/umu-shim' sh -c 'echo \$DISPLAY') == :0 ]]"
+    label="the user's installed layer, wrapper, config copy and profiles untouched"
+    check diff <(printf '%s\n' "$inst0") <(inst_sum)
     unset VRDUAL_CONFIG XDG_STATE_HOME
     if ((fails)); then say "selftest: $fails FAILED"; return 1; fi
     say "selftest: all passed"
