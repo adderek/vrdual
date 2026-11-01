@@ -134,7 +134,7 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - A second VkDevice on the same GPU cannot replay the first one's device
   addresses (NVIDIA: shared VA) — hence alternate-eye rendering for single GPU.
 - Proton logs: Steam writes none by default. The installed wrapper sets
-  `PROTON_LOG=1` (`vrdual steam-install`), log lands in
+  `PROTON_LOG=1` (`vrdual install`), log lands in
   `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`. Launch with
   `flatpak run com.valvesoftware.Steam steam://rungameid/<appid>`. gdb cannot
   attach across pressure-vessel's PID namespace; bisect via the wrapper.
@@ -188,7 +188,9 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
   games pick 2880x5120: the HMD shows a tall screen, and Portal 2 (Source)
   renders only part of it correctly. Use `-windowed -w 1920 -h 1080` or the
   game's resolution setting.
-- Steam games load a copy of the layer (`vrdual steam-install`). After a layer
-  change, re-run it, or the game silently runs the old layer (`vrdual xr` warns).
+- Steam games load a copy of the layer (`vrdual install`, old name
+  `steam-install`; `vrdual xr` refreshes it at every start). After a layer
+  change, re-run it or restart `vrdual xr`, or the game silently runs the old
+  layer. A game already running keeps the layer it loaded.
 - Debug crashes inside the Flatpak: `coredumpctl dump` + gdb with a sysroot of
   symlinks to `/var/lib/flatpak/{app,runtime}/…/files`.

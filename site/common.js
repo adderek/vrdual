@@ -25,6 +25,25 @@ const loadGames = () => fetch("games.json").then(r => { if (!r.ok) throw new Err
 // One media file: gif = wiggle (left / right eye alternated), mp4 = video.
 function mediaHtml(f) {
   const src = "screenshots/" + encodeURIComponent(f);
-  if (/\.mp4$/i.test(f)) return `<figure><video src="${src}" controls preload="none" playsinline></video><figcaption>video</figcaption></figure>`;
-  return `<figure><a href="${src}"><img src="${src}" loading="lazy" alt="${esc(f)}: left and right eye alternated"></a><figcaption>wiggle: eyes alternated</figcaption></figure>`;
+  if (/\.mp4$/i.test(f)) return `<figure><span class="shot"><video src="${src}" controls preload="none" playsinline></video></span><figcaption>video</figcaption></figure>`;
+  return `<figure><a class="shot" href="${src}"><img src="${src}" loading="lazy" alt="${esc(f)}: left and right eye alternated"></a><figcaption>wiggle: eyes alternated</figcaption></figure>`;
 }
+
+// Theme: auto (system) / light / dark; the choice is kept per browser. The
+// head of each page applies a saved one before the first paint.
+(function themeButton() {
+  const order = ["auto", "light", "dark"], icon = {auto: "◐", light: "☀", dark: "☾"};
+  const nav = document.querySelector("nav.top");
+  if (!nav) return;
+  let t = document.documentElement.dataset.theme || "auto";
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "theme";
+  const show = () => { b.textContent = icon[t]; b.title = "Theme: " + t; b.setAttribute("aria-label", b.title); };
+  b.addEventListener("click", () => {
+    t = order[(order.indexOf(t) + 1) % order.length];
+    if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+    try { t === "auto" ? localStorage.removeItem("vrdual-theme") : localStorage.setItem("vrdual-theme", t); } catch (_) {}
+    show();
+  });
+  show(); nav.appendChild(b);
+})();

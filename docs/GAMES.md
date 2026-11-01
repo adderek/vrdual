@@ -2,7 +2,7 @@
 
 Status per game, dual GPU (2x RX 7900 XTX, host "fractal") unless noted.
 Launch option for all: `/home/adderek/vrdual/run %command%` (from
-`vrdual steam-install`); `vrdual xr` runs once for all games. Last update
+`vrdual install`); `vrdual xr` runs once for all games. Last update
 2026-10-30. Most games here are Steam; Epic/GOG ones go through Heroic
 (setup below), Assassin's Creed Origins through Heroic + Ubisoft Connect.
 
@@ -123,7 +123,7 @@ game without its own value, so new games get the wrapper and gamescope.
 `gamescope-pv-display` does not apply (umu builds the container command
 itself); the same DISPLAY reset happens there (game on the desktop, gamescope
 WSI: "creating swapchain for non-gamescope swapchain hooking has failed"), so
-`vrdual steam-install` patches `~/.local/share/umu/umu-shim` to restore
+`vrdual install` patches `~/.local/share/umu/umu-shim` to restore
 gamescope's display from `VRDUAL_DISPLAY` (set by the wrapper). Heroic has its own private `/dev/shm`
 (`/run/user/UID/.flatpak/com.heroicgameslauncher.hgl/dev-shm`), watched by
 `vrdual xr` since 2026-10-25. umu games: the Proton log (layer lines included) goes to

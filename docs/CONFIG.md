@@ -22,9 +22,9 @@ found for specific games, e.g. Psychonauts `skip_w1 = 0`, Mirror's Edge
 | who reads it | path |
 |---|---|
 | host tools (`vrdual xr`, `view`, `run`, `vrdual-ctl`) | `$VRDUAL_CONFIG`, else `$XDG_CONFIG_HOME/vrdual/vrdual.conf`, else `~/.config/vrdual/vrdual.conf` |
-| Steam games (the layer inside the game) | the copy `vrdual steam-install` makes: `~/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf` (Flatpak) or `~/.local/share/vrdual/vrdual.conf` |
+| Steam games (the layer inside the game) | the copy `vrdual install` makes: `~/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf` (Flatpak) or `~/.local/share/vrdual/vrdual.conf` |
 
-Edit the host file, then run `./vrdual steam-install` so games see the change
+Edit the host file, then run `./vrdual install` so games see the change
 (`vrdual xr` warns when the copy is out of date: at its start, and for a
 Flatpak game at each game start, in the headset notice as `OLD CONFIG`). `./vrdual-ctl path` prints
 the host path, `./vrdual-ctl init` writes a commented default file there,

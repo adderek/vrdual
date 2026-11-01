@@ -36,34 +36,22 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 
 Video: [The Witcher 3, 5 s side-by-side](screenshots/Witcher3.mp4) (3840x1080, made with `vrdual record`; play it in a VR video player as SBS).
 
-## Requirements
+## Install
 
-- Linux with a Vulkan driver (Mesa RADV, NVIDIA proprietary, …)
-- Build tools: `make`, g++ (with 32-bit multilib for 32-bit games), python3,
-  `glslc`, SDL3, Vulkan loader
-- For the headset: WiVRn (server on the PC, app on the Quest)
-- Steam: tested with the Flatpak
-
-## Get it
-
-`vrdual-<version>.tar.gz` of a release from
-[Releases](https://github.com/adderek/vrdual/releases) (0.x are
-pre-releases; GitHub's own "Source code" archives lack the Vulkan headers
-submodule and do not build), or:
+**[INSTALL.md](INSTALL.md)**: packages, then
 
 ```bash
 git clone --recursive https://github.com/adderek/vrdual
+cd vrdual
+./vrdual install   # builds, prints the launch option: .../vrdual/run %command%
+./vrdual xr        # starts WiVRn, game into the headset
 ```
 
-## Steam games
-
-```bash
-./vrdual build
-./vrdual steam-install   # prints the launch option: .../vrdual/run %command%
-./vrdual wivrn           # streaming server for the Quest (WiVRn app on the headset)
-./vrdual xr              # game into the headset
-./vrdual view            # optional: side by side window on the monitor
-```
+Optional: `./vrdual view` shows both eyes side by side on the monitor.
+Releases: `vrdual-<version>.tar.gz` from
+[Releases](https://github.com/adderek/vrdual/releases) (0.x are pre-releases;
+GitHub's own "Source code" archives lack the Vulkan headers submodule and do
+not build).
 
 With one GPU the game window on the monitor flickers (it shows left and right
 frames alternately); the headset is fine.

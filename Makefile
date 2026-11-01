@@ -16,6 +16,9 @@ LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.h
 
 all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test
 
+# What `vrdual install` needs: the tools and both layers (no 32-bit GL test app).
+install-build: all $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json
+
 # 32-bit layer for 32-bit games (Zen Bound 2, most older Steam titles).
 lib32: $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json $(B)/lib32/vrdual-gltest
 
@@ -79,7 +82,7 @@ $(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_config.hpp common/vrdual_ctl
 clean:
 	[ ! -d $(B) ] || find $(B) -mindepth 1 -maxdepth 1 ! -name monado -exec rm -rf {} +
 
-.PHONY: all lib32 clean ci
+.PHONY: all lib32 install-build clean ci
 
 # GPU-free targets for `vrdual ci` (no SDL3, no 32-bit toolchain; the layer is
 # built so gen_mirror.py and the layer code compile: needs xcb + xfixes headers)

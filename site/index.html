@@ -6,9 +6,10 @@
 <title>vrdual</title>
 <meta name="description" data-i18n="desc" data-i18n-attr="content" content="Real stereo 3D for ordinary games in a VR headset on Linux: each eye gets its own rendered view. No mods. One GPU is enough.">
 <link rel="stylesheet" href="style.css">
+<script>try{var t=localStorage.getItem("vrdual-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
   <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
 
 <section class="hero">
@@ -18,11 +19,12 @@
       the headset instead of hanging there as a flat screen. No mods, no VR support needed in the game.
       Linux; one graphics card is enough.</p>
     <a class="cta" href="games.html"><span data-i18n="cta">See which games work</span> <span id="works" data-i18n="works_n">({n} in the headset)</span> →</a>
-    <p class="muted small" data-i18n="gh_line"><a href="https://github.com/adderek/vrdual">Source, install and docs on GitHub</a> ·
+    <p class="muted small" data-i18n="gh_line"><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md">Install: 4 commands</a> ·
+      <a href="https://github.com/adderek/vrdual">source and docs on GitHub</a> ·
       Quest 3 / 3S via WiVRn tested, any OpenXR runtime should work</p>
   </div>
   <figure class="hero-img">
-    <img src="screenshots/HogwartsLegacy_1.gif" alt="Hogwarts Legacy: left and right eye views alternated, showing depth" width="640">
+    <span class="shot halo"><img src="screenshots/HogwartsLegacy_1.gif" alt="Hogwarts Legacy: left and right eye views alternated, showing depth" width="640"></span>
     <figcaption data-i18n="hero_cap">Hogwarts Legacy through vrdual. The GIF alternates the two eye views so the depth shows on a flat
       screen; in the headset each eye sees its own view.</figcaption>
   </figure>
@@ -31,9 +33,9 @@
 <section class="how">
   <h2 data-i18n="how">How it works</h2>
   <figure class="promo">
-    <img src="img/promo.webp" srcset="img/promo-800.webp 800w, img/promo.webp 1400w" sizes="(max-width: 1200px) 100vw, 1168px"
+    <span class="shot halo"><img src="img/promo.webp" srcset="img/promo-800.webp 800w, img/promo.webp 1400w" sizes="(max-width: 1200px) 100vw, 1168px"
       width="1400" height="788" loading="lazy" data-i18n="promo_alt" data-i18n-attr="alt"
-      alt="A game on a monitor goes through vrdual on Linux, is split into a left and a right eye stream and reaches a VR headset, where a dragon flies out in front of the lenses. Below: one GPU, or two GPUs at about twice the speed.">
+      alt="A game on a monitor goes through vrdual on Linux, is split into a left and a right eye stream and reaches a VR headset, where a dragon flies out in front of the lenses. Below: one GPU, or two GPUs at about twice the speed."></span>
     <figcaption data-i18n="promo_cap">The game draws as usual; vrdual on Linux turns every frame into a left and a right eye view. One GPU
       renders them in turn; two GPUs render them at the same time, about twice as fast.</figcaption>
   </figure>
@@ -51,11 +53,11 @@
 <section class="gallery">
   <h2 data-i18n="gallery">From the games</h2>
   <div class="grid">
-    <figure><img src="screenshots/HospitalTycoon-3.gif" loading="lazy" alt="Hospital Tycoon, eyes alternated"><figcaption data-i18n="cap_ht">Hospital Tycoon: a diorama on your desk</figcaption></figure>
-    <figure><img src="screenshots/DukeNukem4ever_1.gif" loading="lazy" alt="Duke Nukem Forever, eyes alternated"><figcaption data-i18n="cap_duke">Duke Nukem Forever: the hands at the sides show the depth</figcaption></figure>
-    <figure><img src="screenshots/Mafia.gif" loading="lazy" alt="Mafia, eyes alternated"><figcaption data-i18n="cap_mafia">Mafia (2002): depth even in an old classic</figcaption></figure>
-    <figure><img src="screenshots/HogwartsLegacy_2.gif" loading="lazy" alt="Hogwarts Legacy, eyes alternated"><figcaption data-i18n="cap_hog2">Hogwarts Legacy: a rich scene in depth</figcaption></figure>
-    <figure><img src="screenshots/AssasinsCreedOrigins.gif" loading="lazy" alt="Assassin's Creed Origins, eyes alternated"><figcaption>Assassin's Creed Origins</figcaption></figure>
+    <figure><span class="shot"><img src="screenshots/HospitalTycoon-3.gif" loading="lazy" alt="Hospital Tycoon, eyes alternated"></span><figcaption data-i18n="cap_ht">Hospital Tycoon: a diorama on your desk</figcaption></figure>
+    <figure><span class="shot"><img src="screenshots/DukeNukem4ever_1.gif" loading="lazy" alt="Duke Nukem Forever, eyes alternated"></span><figcaption data-i18n="cap_duke">Duke Nukem Forever: the hands at the sides show the depth</figcaption></figure>
+    <figure><span class="shot"><img src="screenshots/Mafia.gif" loading="lazy" alt="Mafia, eyes alternated"></span><figcaption data-i18n="cap_mafia">Mafia (2002): depth even in an old classic</figcaption></figure>
+    <figure><span class="shot"><img src="screenshots/HogwartsLegacy_2.gif" loading="lazy" alt="Hogwarts Legacy, eyes alternated"></span><figcaption data-i18n="cap_hog2">Hogwarts Legacy: a rich scene in depth</figcaption></figure>
+    <figure><span class="shot"><img src="screenshots/AssasinsCreedOrigins.gif" loading="lazy" alt="Assassin's Creed Origins, eyes alternated"></span><figcaption>Assassin's Creed Origins</figcaption></figure>
   </div>
   <p class="muted" data-i18n="gallery_note">Each GIF alternates the left and right eye views; in the headset the depth is steady.</p>
   <a class="cta" href="games.html"><span data-i18n="cta2">See which games work</span> →</a>

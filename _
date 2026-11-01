@@ -101,7 +101,7 @@ vrdual_live() { pick_shm "$@"; "$B/vrdual-ctl" live "$@"; }
 vrdual_set() { pick_shm "$@"; "$B/vrdual-ctl" set "$@"; }
 vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@" && config_sync; }
 
-# Games in Flatpak Steam / Heroic read the copy steam-install made, not the
+# Games in Flatpak Steam / Heroic read the copy `vrdual install` made, not the
 # host config: refresh the copies after a write (they apply at the next start).
 config_sync() {
     local c d
@@ -219,14 +219,21 @@ pick_shm() {
 
 # Installs the layer (32 + 64 bit) and a launch wrapper where Steam games can
 # see them; prints the Steam launch option (stdout).
-vrdual_steam_install() {
-    make -C "$VRDUAL_ROOT" -j"$(nproc)" all lib32 >&2 || return 1
-    local host inside
+# Layer + wrapper where games load them (Flatpak Steam's dir, else
+# ~/.local/share/vrdual), plus the config copy. --quiet (vrdual xr runs it at
+# every start): no launch option on stdout, say only what changed.
+vrdual_install() {
+    local quiet=0
+    [[ ${1:-} == --quiet ]] && quiet=1
+    make -s -C "$VRDUAL_ROOT" -j"$(nproc)" install-build >&2 || return 1
+    local host inside first=0 changed=0
     if [[ -d $STEAM_FLATPAK ]]; then
         host=$STEAM_FLATPAK/vrdual; inside=$HOME/vrdual
     else
         host=$HOME/.local/share/vrdual; inside=$host
     fi
+    [[ -f $host/run ]] || first=1
+    cmp -s "$B/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual64.so" 2>/dev/null && cmp -s "$B/lib32/libVkLayer_vrdual.so" "$host/layer/libVkLayer_vrdual32.so" 2>/dev/null || changed=1
     mkdir -p "$host/layer"
     # new inode (cp + mv): running games keep their mapping of the old file
     cp "$B/libVkLayer_vrdual.so" "$host/layer/.new64" && mv -f "$host/layer/.new64" "$host/layer/libVkLayer_vrdual64.so"
@@ -239,7 +246,7 @@ vrdual_steam_install() {
     done
     cat >"$host/run" <<'WRAP'
 #!/bin/sh
-# vrdual Steam wrapper (installed by `vrdual steam-install`).
+# vrdual Steam wrapper (installed by `vrdual install`).
 # Steam > game > Properties > Launch options:   <path of this file> %command%
 # One process, the game sees one GPU, the other renders the second eye.
 # OpenGL games go through Zink (GL on Vulkan) so the layer can see them.
@@ -250,7 +257,7 @@ export VRDUAL_EYE="${VRDUAL_EYE:-both}"
 export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-zink}"
 # glvnd would pick NVIDIA's own GL (bypasses Vulkan and the layer); force Mesa.
 export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-mesa}"
-# Host config copy (steam-install); Proton games log to ~/.var/app/…Steam/steam-<appid>.log
+# Host config copy (vrdual install); Proton games log to ~/.var/app/…Steam/steam-<appid>.log
 [ -f "$d/vrdual.conf" ] && export VRDUAL_CONFIG="${VRDUAL_CONFIG:-$d/vrdual.conf}"
 export PROTON_LOG="${PROTON_LOG:-1}"
 # Heroic + umu: Proton names its log steam-0-….log for every game; one dir per game
@@ -259,7 +266,7 @@ if [ -n "$HEROIC_APP_NAME" ] && [ -n "$PROTON_LOG_DIR" ]; then
     mkdir -p "$PROTON_LOG_DIR"
 fi
 # gamescope around a Flatpak launcher (Heroic + umu): the container start
-# resets DISPLAY to the desktop's; umu-shim (patched by steam-install) puts
+# resets DISPLAY to the desktop's; umu-shim (patched by vrdual install) puts
 # gamescope's back from VRDUAL_DISPLAY inside the container.
 [ -n "$GAMESCOPE_WAYLAND_DISPLAY" ] && export VRDUAL_DISPLAY="${VRDUAL_DISPLAY:-$DISPLAY}"
 # native games (no Proton): stderr incl. the layer log -> game.log next to this
@@ -268,15 +275,20 @@ WRAP
     chmod +x "$host/run"
     umu_shim_patch
     if [[ -f $(vrdual-config-path) ]]; then
-        cp "$(vrdual-config-path)" "$host/vrdual.conf"
-        say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"
+        cmp -s "$(vrdual-config-path)" "$host/vrdual.conf" || { cp "$(vrdual-config-path)" "$host/vrdual.conf"; say "copied $(vrdual-config-path) -> $host/vrdual.conf (the game reads that one)"; }
     else
         rm -f "$host/vrdual.conf"
+    fi
+    if ((quiet)); then
+        ((first)) && say "installed to $host; Steam > game > Properties > Launch options: $inside/run %command%"
+        ((changed && !first)) && say "updated the layer games load ($host); games already running keep the old one"
+        return 0
     fi
     say "installed to $host"
     say "Steam > game > Properties > Launch options:"
     echo "$inside/run %command%"
 }
+vrdual_steam_install() { vrdual_install "$@"; }  # old name
 vrdual-config-path() { "$B/vrdual-ctl" path; }
 
 # umu (Heroic, Lutris) runs this shim inside the Steam Runtime container. umu
@@ -291,20 +303,20 @@ umu_shim_patch() {
 }
 
 # Warns when the layer or config copy Steam games load differs from build/ or
-# the host config (forgot `vrdual steam-install`: the game runs the old one).
+# the host config (forgot `vrdual install`: the game runs the old one).
 steam_layer_check() {
     local d c
     c=$(vrdual-config-path)
     for d in "$STEAM_FLATPAK/vrdual" "$HOME/.local/share/vrdual"; do
         [[ -f $d/layer/libVkLayer_vrdual64.so ]] || continue
-        cmp -s "$d/layer/libVkLayer_vrdual64.so" "$B/libVkLayer_vrdual.so" || say "warning: $d/layer differs from build/ (run: vrdual steam-install)"
-        if [[ -f $c ]] && ! cmp -s "$c" "$d/vrdual.conf"; then say "warning: $d/vrdual.conf differs from $c (run: vrdual steam-install)"; fi
+        cmp -s "$d/layer/libVkLayer_vrdual64.so" "$B/libVkLayer_vrdual.so" || say "warning: $d/layer differs from build/ (run: vrdual install)"
+        if [[ -f $c ]] && ! cmp -s "$c" "$d/vrdual.conf"; then say "warning: $d/vrdual.conf differs from $c (run: vrdual install)"; fi
     done
     return 0
 }
 
 # Build identity (tools/build_info.sh) of what would run: source tree, tools,
-# build/ layers and the copies games load (steam-install). stdout = data:
+# build/ layers and the copies games load (vrdual install). stdout = data:
 # "<what>\t<build info>", "-" when missing.
 vrdual_version() {
     local f d i
@@ -333,15 +345,17 @@ vrdual_view() { pick_shm "$@"; "$B/vrdual-compositor" "$@"; }
 # --restart-wivrn stops a running one first (headset stuck on WiVRn's app list).
 # Audio follows the headset (xr_audio_follow); --no-audio leaves outputs alone.
 vrdual_xr() {
-    local a start=1 restart=0 audio=1 args=()
+    local a start=1 restart=0 audio=1 install=1 args=()
     for a in "$@"; do
-        case $a in --no-start-wivrn) start=0 ;; --restart-wivrn) restart=1 ;; --no-audio) audio=0 ;; *) args+=("$a") ;; esac
+        case $a in --no-install) install=0 ;; --no-start-wivrn) start=0 ;; --restart-wivrn) restart=1 ;; --no-audio) audio=0 ;; *) args+=("$a") ;; esac
     done
     set -- "${args[@]}"
     # follows the game between host /dev/shm, Flatpak Steam's and Heroic's,
     # across games (Heroic's dir exists only while Heroic runs)
     if [[ -z ${VRDUAL_SHM_DIR:-} && -d $STEAM_FLATPAK ]]; then export VRDUAL_SHM_DIR="/dev/shm:$FLATPAK_SHM:$HEROIC_SHM"; fi
-    steam_layer_check
+    # the copy games load follows build/ and the config (--no-install: leave it)
+    if ((install)); then vrdual_install --quiet || { say "warning: install failed, games may load an old layer"; steam_layer_check; }
+    else steam_layer_check; fi
     # checked again by vrdual-xr at each game start (the conf may be edited meanwhile)
     [[ -f $STEAM_FLATPAK/vrdual/vrdual.conf ]] && export VRDUAL_CONF_COPY="$STEAM_FLATPAK/vrdual/vrdual.conf"
     if [[ -z ${XR_RUNTIME_JSON:-} && ! -e ${XDG_CONFIG_HOME:-$HOME/.config}/openxr/1/active_runtime.json ]]; then
@@ -525,7 +539,7 @@ system_facts() {
     mesa=${mesa#*:}  # package epoch
     os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
     local gpu=${1:-$(lspci 2>/dev/null | grep -E 'VGA|3D|Display' | cut -d: -f3- | sed 's/^ //' | sort | uniq -c | sed -E 's/^ *([0-9]+) /\1x /' | paste -sd';' || true)}
-    # the layer games load: steam-install's copy, else build/ (each binary carries its own build info)
+    # the layer games load: vrdual install's copy, else build/ (each binary carries its own build info)
     local f ver=""
     for f in "$STEAM_FLATPAK"/vrdual/layer/libVkLayer_vrdual64.so "$HOME"/.local/share/vrdual/layer/libVkLayer_vrdual64.so "$B/libVkLayer_vrdual.so"; do
         [[ -f $f ]] && { ver="$(layer_info "$f") (layer ${f/#$HOME/\~})"; break; }
@@ -723,6 +737,15 @@ vrdual_selftest() {
     vrdual_build || return 1
 
     _selftest_nogpu
+
+    # 1b. vrdual install into a fresh HOME: wrapper + both layers + launch
+    # option; `vrdual xr`'s --quiet run is silent when nothing changed and
+    # replaces a layer copy that differs from build/.
+    label="install: fresh HOME gets wrapper, both layers, launch option; --quiet silent when current, updates a stale layer"
+    check env HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/home/.config" bash -c "cd '$VRDUAL_ROOT' && d=\$HOME/.local/share/vrdual &&
+        ./vrdual install 2>/dev/null | grep -q '/.local/share/vrdual/run %command%\$' && [[ -x \$d/run && -f \$d/layer/libVkLayer_vrdual32.so && -f \$d/layer/VkLayer_vrdual64.json ]] &&
+        out=\$(bash -c 'source ./_; vrdual_install --quiet' 2>&1) && [[ -z \$out ]] && printf x >>\$d/layer/libVkLayer_vrdual64.so &&
+        bash -c 'source ./_; vrdual_install --quiet' 2>&1 | grep -q 'updated the layer' && cmp -s build/libVkLayer_vrdual.so \$d/layer/libVkLayer_vrdual64.so"
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
@@ -1238,12 +1261,12 @@ sys.exit(0 if max(row(150)[3::4]) > 0 else 1)' '$tmp/ov1g.pam' || { grep '\\[xr\
         check bash -c "f='$tmp/state/vrdual/games.tsv'; [[ \$(grep -cE \$'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}\t[0-9]+\tvrdual-cube\t[^\t]+\tnone\$' \"\$f\") -ge 2 ]] &&
             grep -q \"no vrdual profile for 'vrdual-cube'\" '$tmp/xr5.log' || { cat \"\$f\"; false; }"
         # a game outside /dev/shm (Flatpak) whose config copy differs from the host config
-        label="openxr: warns at game start when steam-install's config copy is stale"
+        label="openxr: warns at game start when the installed config copy is stale"
         mkdir -p "$tmp/fshm" && echo 'world_scale = 2' >"$tmp/copy.conf"
         check bash -c "VRDUAL_SHM_DIR='$tmp/fshm' $cube >'$tmp/g3.log' 2>&1 & g=\$!
             XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_SHM_DIR='$tmp/fshm' VRDUAL_CONF_COPY='$tmp/copy.conf' timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr8.log' 2>&1
             kill \$g; wait \$g
-            grep -q 'copy.conf differs from .*run: vrdual steam-install' '$tmp/xr8.log' && grep -q 'overlay: game started, OLD CONFIG' '$tmp/xr8.log' || { cat '$tmp/xr8.log'; false; }"
+            grep -q 'copy.conf differs from .*run: vrdual install' '$tmp/xr8.log' && grep -q 'overlay: game started, OLD CONFIG' '$tmp/xr8.log' || { cat '$tmp/xr8.log'; false; }"
     else
         say "SKIP  openxr (no Monado build at $xrj; see docs/ARCHITECTURE.md)"
     fi
@@ -1282,10 +1305,11 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
                                   5 s, 60 fps, screenshots/<app>_<time>_LR.mp4, game audio)
   wiggle [PNG|DIR...]           SBS screenshots -> wiggle GIFs next to them (default
                                   screenshots/; skips PNGs that already have a .gif)
-  steam-install                 install layer + wrapper for Steam (Flatpak or native); prints
-                                  the launch option:  .../vrdual/run %command%
+  install                       install layer + wrapper for Steam / Heroic (Flatpak or native);
+                                  prints the launch option:  .../vrdual/run %command%
+                                  (old name: steam-install; `vrdual xr` refreshes it at start)
   view [--session S]            SBS window of a running game (finds Flatpak Steam sessions)
-  xr [--session S] [--lock world|head] [--no-start-wivrn] [--restart-wivrn] [--no-audio]
+  xr [--session S] [--lock world|head] [--no-install] [--no-start-wivrn] [--restart-wivrn] [--no-audio]
                                 game in the HMD via OpenXR (WiVRn -> Quest); runs across
                                 games; starts wivrn-server in the background if none runs;
                                 audio goes to the headset while it is connected
@@ -1315,7 +1339,7 @@ vrdual_dispatch() {
     case "$cmd" in
         build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
-        steam-install) vrdual_steam_install "$@" ;;
+        install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
     esac
 }
@@ -1325,7 +1349,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ $# -gt 0 ]]; then vrdual_dispatch "$@"; exit; fi
     vrdual_help
     PS3=$'\nchoose: '
-    select c in build gpus demo calib config snapshot record steam-install view wivrn xr map request report clean quit; do
+    select c in build gpus demo calib config snapshot record install view wivrn xr map request report clean quit; do
         [[ $c == quit || -z $c ]] && exit 0
         case $c in request|report) vrdual_dispatch "$c" --open ;; *) vrdual_dispatch "$c" ;; esac
         break

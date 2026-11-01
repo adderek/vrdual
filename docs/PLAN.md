@@ -150,10 +150,10 @@ reference store for legacy-game tweaks: tests reproduce without a Steam account.
 |---|---|---|
 | GOG native Linux build | directly | `vrdual run -- ./start.sh` (works today) |
 | GOG / Epic Windows build | Heroic (gogdl / legendary), Lutris, Bottles, `umu-run` (Proton outside Steam) | Heroic "wrapper command", Lutris "command prefix", umu: plain wrapper |
-| Steam | Flatpak, pressure-vessel | `vrdual steam-install` (done) |
+| Steam | Flatpak, pressure-vessel | `vrdual install` (done) |
 
 Heroic as a Flatpak likely has Steam's problems (private `/dev/shm`, own
-`$HOME`) and needs a `heroic-install` twin of `steam-install` (untested:
+`$HOME`) and needs a `heroic-install` twin of `vrdual install` (untested:
 Heroic/Lutris/umu are not installed on fractal). Epic: DRM is rarely the
 problem (Denuvo usually lets Vulkan layers load, ReShade works); anti-cheat
 (EAC, BattlEye) in online games is. Offline only, warning in the docs.

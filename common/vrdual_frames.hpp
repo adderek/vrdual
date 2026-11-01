@@ -57,7 +57,7 @@ inline bool eye_map(Eye& e) {
     if (h->version != VRDUAL_VERSION) {  // other header layout: an old layer copy (Steam) or an old reader
         static uint32_t told = 0;
         if (told != h->version)
-            fprintf(stderr, "[compositor] %s: frame file version %u, this build reads %u (game runs an old layer? vrdual steam-install)\n",
+            fprintf(stderr, "[compositor] %s: frame file version %u, this build reads %u (game runs an old layer? vrdual install)\n",
                     e.name.c_str(), h->version, VRDUAL_VERSION);
         told = h->version;
         munmap(p, st.st_size);

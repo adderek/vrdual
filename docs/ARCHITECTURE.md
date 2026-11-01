@@ -18,7 +18,7 @@ frame index. Near cube shifts ~25 px between eyes, far cubes ~0, the HUD bar
 ./vrdual run [--left-gpu G --right-gpu G --session S --snapshot PNG --at N] -- APP ARGS...
 ./vrdual config show [APP] | init | path
 ./vrdual live | set KEY VALUE | save [--global]
-./vrdual steam-install                         # layer + wrapper for Steam; prints the launch option
+./vrdual install                         # layer + wrapper for Steam; prints the launch option
 ./vrdual view [--session S]                    # SBS window (finds games inside Flatpak Steam)
 ./vrdual wivrn                                 # WiVRn streaming server (Flatpak, user install)
 ./vrdual xr [--session S] [--lock world|head]  # game in the HMD via OpenXR
@@ -237,7 +237,7 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
 
 ## Steam (Flatpak or native) and OpenGL games
 
-`./vrdual steam-install` copies the 32- and 64-bit layer (`library_arch`
+`./vrdual install` copies the 32- and 64-bit layer (`library_arch`
 manifests) and a `run` wrapper to `~/.var/app/com.valvesoftware.Steam/vrdual`
 (Flatpak; `~/vrdual` inside the sandbox) or `~/.local/share/vrdual`, and prints
 the launch option `…/vrdual/run %command%`. The wrapper enables the layer in

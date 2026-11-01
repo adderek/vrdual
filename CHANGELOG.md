@@ -43,6 +43,9 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   vertex shaders differently (key = hash of the SPIR-V); `_ hunt find` finds
   a shader in the running game by live bisection (hide half, ask). Idea from
   witcher3-vr's per-build shader fingerprints.
+- `vrdual install` (was `steam-install`, still accepted) and INSTALL.md: four
+  commands from clone to headset. `vrdual xr` refreshes the installed layer,
+  wrapper and config copy at every start (`--no-install` skips it).
 - `shader_catalog = FILE` (known shader keys of a game) logs each shader not
   in it once and sums up seen / new / unseen at exit: shows what a mod or an
   update changed. `shader_dump = DIR` writes unpatched shaders for
@@ -99,7 +102,7 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
 - `vrdual record`: a few seconds of the running game as a side-by-side mp4
   (`_LR`, full or `--half` SBS, game audio from the default output's monitor);
   fixed frame rate, libx264 on the CPU.
-- `vrdual xr` warns at each Flatpak game start when steam-install's config
+- `vrdual xr` warns at each Flatpak game start when the installed config
   copy differs from the host config (headset notice: `OLD CONFIG`).
 - Games: see docs/GAMES.md.
 

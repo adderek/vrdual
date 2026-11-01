@@ -379,7 +379,7 @@ static XrQuaternionf level(XrQuaternionf q) {
 
 // input = tune, a: keep world_scale / hud_depth / hfov (+ screen_fov for a
 // flat / curved screen) for this game. Steam games read a copy of the config
-// (vrdual steam-install): refresh it too.
+// (vrdual install): refresh it too.
 static void tune_save(const char* app, const vrdual::Tuner& t) {
     std::string sec = app[0] ? std::string("app:") + app : "global", path = vrdual::config_path();
     const char* keys[vrdual::Tuner::N] = {"world_scale", "hud_depth", "hfov", "screen_fov"};
@@ -1027,7 +1027,7 @@ static int run(int argc, char** argv) {
             edge_mode = st.s("edge_mask") == "off" ? 0 : st.s("edge_mask") == "both" ? 2 : 1;
             edge_dist = st.f("edge_mask_dist");
             cur_d_ok = false;
-            // Flatpak games read steam-install's config copy (VRDUAL_CONF_COPY, set
+            // Flatpak games read vrdual install's config copy (VRDUAL_CONF_COPY, set
             // by `vrdual xr`); edits to the host config reach them only via a re-install
             bool stale_conf = false;
             if (const char* cp = getenv("VRDUAL_CONF_COPY"); cp && *cp && dirs[dir_i] != "/dev/shm") {
@@ -1038,10 +1038,10 @@ static int run(int argc, char** argv) {
                     sb << b.rdbuf();
                     stale_conf = sa.str() != sb.str();
                 }
-                if (stale_conf) fprintf(stderr, "[xr] warning: %s differs from %s, the game runs the old config (run: vrdual steam-install)\n",
+                if (stale_conf) fprintf(stderr, "[xr] warning: %s differs from %s, the game runs the old config (run: vrdual install)\n",
                                         cp, vrdual::config_path().c_str());
             }
-            if (stale_conf) notify("game started, OLD CONFIG (vrdual steam-install)");
+            if (stale_conf) notify("game started, OLD CONFIG (vrdual install)");
             else notify(prof == "none" ? "game started, no profile (vrdual request)" : "game started");
             grab = vrdual::ScreenGrab{};
             grab.sx = scr.sx;
