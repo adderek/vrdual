@@ -44,5 +44,18 @@
   catalog lines; record the translator (DXVK / vkd3d version) in the catalog
   so an all-new run says "translator changed" rather than "mod?"; a Witcher 3
   catalog with descriptions (sponsors, `~/src/vrdual-sponsors`).
+- Site / showcase media (owner's ranking 2026-11-01, best first): HospitalTycoon-3,
+  HogwartsLegacy_1, DukeNukem4ever_1, Mafia, HogwartsLegacy_2,
+  AssasinsCreedOrigins. `HospitalTycoon-3.gif`: the subtitle line at the
+  bottom spoils it, re-record or crop. The landing page diagram is abstract
+  (top view); wanted: a picture of an older game whose 3D comes out of the
+  screen. Side-by-side PNGs are not in git (2-10 MB): compressed JPEGs could
+  go on the per-game pages.
+- LEGO games: per-eye shading errors visible in the LEGO Marvel GIFs (a
+  screen-space effect computed for one eye); find and fix the shader.
+- Witcher 3 and Cyberpunk 2077: well-known titles, worth fixing shader
+  issues, but say on the site how vrdual compares with the dedicated VR
+  projects for them (witcher3-vr and its Linux fork for Witcher 3; Cyberpunk:
+  research), which will be the better choice for those games.
 - Frame generation (DLSS FG / FSR FG) with two GPUs: untested (does each
   GPU generate its own frames, does pairing L[F]/R[F] hold?).

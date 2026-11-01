@@ -16,7 +16,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "site" / "games.json"
 DOC = ROOT / "docs" / "GAMES.md"
-FIELDS = ["game", "store", "path", "status", "settings", "notes"]
+FIELDS = ["game", "store", "path", "status", "settings", "notes"]  # the GAMES.md columns
+# Site only: one-GPU status ("" = untested), other VR routes, files in
+# screenshots/ tracked in git (gif = wiggle, mp4 = video), and whether
+# sponsors get a ready-made configuration.
+EXTRA = {"single": str, "alt": str, "media": list, "sponsor": bool}
+SHOTS = ROOT / "screenshots"
 STATUS = {"works", "runs", "broken", "no effect", "retest"}
 BEGIN, END = "<!-- games:begin (generated from site/games.json by tools/gen_games.py) -->", "<!-- games:end -->"
 
@@ -32,16 +37,20 @@ def load():
     errs = []
     for k, g in enumerate(games):
         where = f"{DATA.name}[{k}] {g.get('game', '?')!r}"
-        if not isinstance(g, dict) or list(g) != FIELDS:
-            errs.append(f"{where}: want exactly the keys {FIELDS} in that order")
+        if not isinstance(g, dict) or list(g) != FIELDS + list(EXTRA):
+            errs.append(f"{where}: want exactly the keys {FIELDS + list(EXTRA)} in that order")
             continue
-        if not all(isinstance(v, str) for v in g.values()):
-            errs.append(f"{where}: values must be strings")
+        if not all(isinstance(g[f], str) for f in FIELDS) or not all(isinstance(g[k], t) for k, t in EXTRA.items()):
+            errs.append(f"{where}: wrong value types (strings; media a list, sponsor true/false)")
+        elif g["single"] not in STATUS | {""}:
+            errs.append(f"{where}: single {g['single']!r} not in {sorted(STATUS)} or empty")
+        elif any(not isinstance(m, str) or "/" in m or not (SHOTS / m).is_file() for m in g["media"]):
+            errs.append(f"{where}: media must name files in screenshots/")
         elif not g["game"]:
             errs.append(f"{where}: empty game")
         elif g["status"] not in STATUS:
             errs.append(f"{where}: status {g['status']!r} not in {sorted(STATUS)}")
-        elif any("|" in v or "\n" in v for v in g.values()):
+        elif any("|" in g[f] or "\n" in g[f] for f in FIELDS):
             errs.append(f"{where}: '|' or a newline breaks the Markdown table")
     names = [g.get("game") for g in games if isinstance(g, dict)]
     errs += [f"duplicate game {n!r}" for n in sorted({n for n in names if names.count(n) > 1})]

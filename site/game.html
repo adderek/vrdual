@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vrdual game</title>
+<meta name="description" content="Materials from vrdual's work on one game: status, settings, notes, wiggle GIFs and videos.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html">Games</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek">Sponsor</a></nav>
+<main class="page" id="g"><p class="muted">Loading…</p></main>
+<script src="common.js"></script>
+<script>
+"use strict";
+const want = new URLSearchParams(location.search).get("g");
+loadGames().then(games => {
+  const g = games.find(x => slug(x) === want), box = document.getElementById("g");
+  if (!g) { box.innerHTML = `<h1>Not found</h1><p><a href="games.html">All games</a></p>`; return; }
+  document.title = g.game + " · vrdual";
+  const rows = [["store: test", g.store], ["path", g.path], ["settings", g.settings], ["notes", g.notes]]
+    .filter(r => r[1]).map(([h, v]) => `<dt>${h}</dt><dd>${md(v)}</dd>`).join("");
+  box.innerHTML = `<p><a href="games.html?g=${encodeURIComponent(want)}">← all games</a></p>
+    <h1>${esc(g.game)}</h1>
+    <div class="cards">
+      <div class="card"><h3>two GPUs</h3>${stHtml(g.status)}</div>
+      <div class="card"><h3>one GPU</h3>${stHtml(g.single)}</div>
+      <div class="card wide"><h3>other VR routes</h3>${g.alt ? md(g.alt) : '<span class="muted">not researched</span>'}</div>
+    </div>
+    <h2>Materials</h2>
+    ${g.media.length ? `<div class="media">${g.media.map(mediaHtml).join("")}</div>
+      <p class="muted">Wiggle GIFs alternate the left and right eye views to show depth on a flat screen; in the headset each eye sees its own view.</p>`
+      : '<p class="muted">No GIFs or videos yet.</p>'}
+    <h2>For sponsors</h2>
+    <p>${g.sponsor ? `A ready-made configuration (tested settings, fixes for the problems already worked through) is available to <a href="https://github.com/sponsors/adderek">sponsors</a>. Nothing is locked: everything can be configured by hand, free (<a href="${REPO}CONFIG.md">CONFIG.md</a>).`
+      : `No extra sponsor material for this game; everything known is on this page.`}</p>
+    <h2>Details</h2><dl>${rows}</dl>`;
+}).catch(e => { document.getElementById("g").textContent = "games.json: " + e; });
+</script>
+</body>
+</html>

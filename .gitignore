@@ -2,3 +2,4 @@ build/
 *.png
 !docs/*.png
 *.local.md
+site/screenshots

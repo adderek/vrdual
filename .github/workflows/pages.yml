@@ -1,10 +1,11 @@
-# Public site (GitHub Pages, source "GitHub Actions"): site/ as is.
+# Public site (GitHub Pages, source "GitHub Actions"): site/ plus the
+# tracked screenshots/ (wiggle GIFs, videos).
 # Public material only; sponsor material never goes here (TODO 18).
 name: pages
 on:
   push:
     branches: [master]
-    paths: ['site/**', '.github/workflows/pages.yml']
+    paths: ['site/**', 'screenshots/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 -I tools/gen_games.py --check
+      - run: cp -r screenshots site/screenshots
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
