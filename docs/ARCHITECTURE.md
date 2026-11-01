@@ -115,7 +115,10 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
 3. **Frame export** — at `vkQueuePresentKHR` the swapchain image is copied to a
    host buffer and published into a 4-slot seqlocked ring in `/dev/shm`.
 4. **Lockstep** — frame N is held until the other eye has published N, so two
-   deterministic processes stay frame-aligned.
+   deterministic processes stay frame-aligned. After `lockstep_timeout_ms`
+   without the peer's frame the eye runs free, but only while the peer makes
+   no progress (paused, gone); once it moves again the wait resumes, so one
+   long hitch does not leave the eyes apart for the rest of the session.
 
 ## Mirror mode (one process, `VRDUAL_EYE=both`)
 

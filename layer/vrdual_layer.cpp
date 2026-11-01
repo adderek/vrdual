@@ -548,10 +548,15 @@ static int shm_claim(uint64_t sc, VkExtent2D e) {
 
 // Block until the other eye has published `frame` (or timeout). Keeps the two
 // processes frame-locked so the compositor can always pair L[F] with R[F].
+// After a timeout we stop waiting only while the peer makes no progress
+// (paused, gone): one long hitch must not end lockstep for the session, or
+// the faster eye runs ahead for good and the pairs drift apart.
 static void lockstep_wait(uint64_t frame) {
     if (!g_cfg.lockstep) return;
     static bool warned = false;
-    uint64_t deadline = now_ns() + uint64_t(g_cfg.lockstep_timeout_ms) * 1000000ull;
+    static uint64_t peer_last = 0, peer_moved_ns = 0;  // peer's last_frame and when it last changed
+    uint64_t timeout_ns = uint64_t(g_cfg.lockstep_timeout_ms) * 1000000ull;
+    uint64_t deadline = now_ns() + timeout_ns;
     static uint64_t checked_ns = 0;
     for (;;) {
         uint64_t now = now_ns();
@@ -574,17 +579,20 @@ static void lockstep_wait(uint64_t frame) {
                 close(fd);
             }
         }
-        if (g_peer.hdr && g_peer.hdr->magic == VRDUAL_MAGIC && g_peer.hdr->last_frame >= frame + 1) {
+        uint64_t pl = g_peer.hdr && g_peer.hdr->magic == VRDUAL_MAGIC ? g_peer.hdr->last_frame : 0;
+        if (pl != peer_last) peer_last = pl, peer_moved_ns = now;
+        if (pl >= frame + 1) {
+            if (warned) logf("lockstep: peer eye back at frame %llu, locked again", (unsigned long long)frame);
             warned = false;
             return;
         }
-        if (now_ns() > deadline) {
+        bool stalled = !pl || now - peer_moved_ns > timeout_ns;  // no progress: don't stall every frame
+        if (now > deadline || (warned && stalled)) {
             if (!warned) logf("lockstep: peer eye not at frame %llu after %d ms, running free", (unsigned long long)frame, g_cfg.lockstep_timeout_ms);
             warned = true;
             return;
         }
-        usleep(warned ? 0 : 200);
-        if (warned) return;  // peer gone: don't stall every frame
+        usleep(200);
     }
 }
 
@@ -1472,6 +1480,10 @@ static void drop_pending(const Dispatch& d, VkDevice dev, CopyRes& cr, const Rea
 static VKAPI_ATTR void VKAPI_CALL vrd_DestroySwapchainKHR(VkDevice dev, VkSwapchainKHR sc, const VkAllocationCallbacks* alloc) {
     DeviceData* dd = dev_of(key(dev));
     {
+        // g_shm_lock first: a present of another swapchain on another thread
+        // finishes the pending copies (cr.pend) under it, and one of them may
+        // point at this swapchain's readback. Present never holds both locks.
+        std::lock_guard<std::mutex> sl(g_shm_lock);
         std::lock_guard<std::mutex> l(g_lock);
         auto it = dd->swapchains.find(sc);
         if (it != dd->swapchains.end()) {
@@ -1480,9 +1492,6 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroySwapchainKHR(VkDevice dev, VkSwapch
             if (dd->md) mirror::destroy_swapchain_twin(dd, it->second);
             dd->swapchains.erase(it);
         }
-    }
-    {
-        std::lock_guard<std::mutex> l(g_shm_lock);
         if (g_owner.sc == sc_id(sc)) g_owner.sc = 0;
     }
     dd->d.DestroySwapchainKHR(dev, sc, alloc);

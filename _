@@ -810,6 +810,35 @@ vrdual_selftest() {
         ! awk 'BEGIN{s=\"[global]\"} /^\[/{s=\$0} /^(ipd|ipd_near|near_dist|far_dist) /{print s}' '$tmp/save.conf' | grep -q app: && grep -q '^\[app:' '$tmp/save.conf'"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 
+    # Lockstep after a stall past lockstep_timeout_ms: the right eye renders
+    # 4K (slower), is stopped for 1 s, and must not stay behind for good: the
+    # left one has to wait for it again (last_frame at header offset 40).
+    label="lockstep: eyes back in step after the slower one stalled longer than lockstep_timeout_ms"
+    rm -f /dev/shm/vrdual-$sess-*
+    local rpid
+    for e in left right; do
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e \
+            "$B/vrdual-cube" --scene calib $([[ $e == right ]] && echo --size 3840x2160) --title "selftest lockstep $e" >"$tmp/ls-$e.log" 2>&1 &
+        rpid=$!
+    done
+    for i in $(seq 100); do grep -q exporting "$tmp/ls-left.log" && grep -q exporting "$tmp/ls-right.log" && break; sleep 0.1; done
+    sleep 1; kill -STOP "$rpid"; sleep 1; kill -CONT "$rpid"
+    check python3 -I -c "
+import struct, sys, time
+def lf(e):
+    with open('/dev/shm/vrdual-$sess-%d' % e, 'rb') as f:
+        f.seek(40)
+        return struct.unpack('<Q', f.read(8))[0]
+gap0 = lf(0) - lf(1)
+if gap0 <= 3: sys.exit('the stall made no gap (%d): test invalid' % gap0)
+end = time.time() + 30
+while time.time() < end:
+    l, r = lf(0), lf(1)
+    if abs(l - r) <= 2: sys.exit(0)
+    time.sleep(0.05)
+sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
+    kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
+
     # Wine: /proc/self/exe = the preloader, argv[0] = the Windows path; matches the built-in [app:upc.exe]
     label="stereo = 0 (launchers, by Wine argv[0]): layer passive in mirror mode, app renders, no frame files"
     rm -f /dev/shm/vrdual-$sess-*
