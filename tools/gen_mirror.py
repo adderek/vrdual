@@ -182,36 +182,20 @@ def main(xml_path, disp_path, out_path):
         for p in parents:
             chain_members.setdefault(canon(p), set()).add(s)
 
-    # NT: struct may (transitively) carry a device handle on input
-    nt = {}
-
-    def struct_nt(s, stack=()):
-        s = canon(s)
-        if s in nt:
-            return nt[s]
-        if s in stack or not usable(s):
-            return False
-        r = False
-        for m in structs[s]:
-            if xl_handle(m.type):
-                r = True
-            elif canon(m.type) in structs and canon(m.type) != s and struct_nt(m.type, stack + (s,)):
-                r = True
-        for c in chain_members.get(s, ()):
-            if c != s and c not in returnedonly and struct_nt(c, stack + (s,)):
-                r = True
-        if s in stack:
-            return r
-        nt[s] = r
-        return r
-
-    for s in structs:
-        struct_nt(s)
-    # second pass to settle recursion
-    for _ in range(3):
-        nt.clear()
+    # NT: struct may (transitively) carry a device handle on input: least
+    # fixpoint over members and the structs that can sit in its pNext chain
+    # (a recursive walk that cuts cycles caches wrong answers inside them).
+    nt = {s: False for s in structs}
+    changed = True
+    while changed:
+        changed = False
         for s in structs:
-            struct_nt(s)
+            if nt[s] or not usable(s):
+                continue
+            r = any(xl_handle(m.type) or (canon(m.type) in structs and nt[canon(m.type)]) for m in structs[s]) or \
+                any(c not in returnedonly and nt[c] for c in chain_members.get(s, ()))
+            if r:
+                nt[s] = changed = True
 
     # can we translate s generically?
     bad_reason = {}
@@ -231,8 +215,6 @@ def main(xml_path, disp_path, out_path):
                 return f'{m.name}: pointer to pointer'
             if m.ptr == 1 and not m.const:
                 return f'{m.name}: non-const pointer'
-            if m.ptr == 1 and m.noauto and xl_handle(ct) is False and not nt.get(ct):
-                continue
             if m.ptr == 1 and m.noauto:
                 return f'{m.name}: conditionally ignored pointer'
             if m.ptr == 1 and m.len and not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', m.len):

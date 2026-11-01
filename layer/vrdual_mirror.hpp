@@ -200,7 +200,7 @@ struct Ctx {
         static std::mutex m;
         static std::unordered_set<int> seen;
         std::lock_guard<std::mutex> l(m);
-        if (seen.insert(int(st)).second) logf("mirror: pNext sType %d not translated (passed through)", int(st));
+        if (seen.insert(int(st)).second) logf("mirror: pNext sType %d unknown: it and the rest of its chain reach B untranslated", int(st));
     }
 };
 

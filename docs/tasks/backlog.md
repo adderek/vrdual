@@ -73,9 +73,18 @@
     (`vrdual install`, `config_sync`) were plain `cp` (a game starting
     meanwhile could read half a file), now cp + mv. Minor, left: a new
     uinput device may miss its first events before userspace opens it.
-  - Not reviewed yet: the struct translators in `tools/gen_mirror.py`
-    (unknown pNext structs pass to B untranslated: any A handle inside
-    reaches B; logged once per sType), `site/`.
+  - Struct translators in `tools/gen_mirror.py` reviewed 2026-11-02. Fixed:
+    "may carry a handle" was a recursive walk that cut cycles and cached
+    the wrong answer inside them (now a least fixpoint; with today's vk.xml
+    the output is byte-identical, so no struct was affected). Left: an
+    unknown pNext sType (returnedonly, platform / provisional, newer than
+    our vk.xml) and the rest of its chain reach B untranslated (logged once
+    per sType); none in 35 mirror game logs here, so no change without a
+    case (dropping the node would change B's behaviour instead). Stubs that
+    stop the mirror: acceleration structure builds, shader objects,
+    pipeline binaries, indirect execution sets, descriptor heap writes; all
+    behind features the layer hides.
+  - Not reviewed yet: `site/`.
 - Done 2026-11-01: Witcher 3 DX12 unpatched modules (219 log lines, 12
   distinct, `shader_dump` on sharkoon) are all harmless: empty VS (no
   outputs), VS that only pass vertex IDs or tessellation control data, the
