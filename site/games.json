@@ -1,0 +1,474 @@
+[
+ {
+  "game": "ABZU",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (UE4, DXVK, 64-bit `AbzuGame-Win64-Shipping.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); no own profile (ran at `world_scale` ~0.1 from the control block)",
+  "notes": "works, 2026-10-29"
+ },
+ {
+  "game": "Age of Wonders (1999)",
+  "store": "GOG (Heroic): negative (2D game)",
+  "path": "Proton (umu, Proton-CachyOS), 32-bit `aow.exe` (launched from `AoWSetup.exe`), OpenGL → Zink (log: `pEngineName: mesa zink`)",
+  "status": "no effect",
+  "settings": "",
+  "notes": "2D game, no 3D or VR effect; 2026-10-29"
+ },
+ {
+  "game": "Alice: Madness Returns (19680)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (UE3, DXVK, 32-bit)",
+  "status": "works",
+  "settings": "",
+  "notes": "also single GPU. Two-GPU mirror: fast and without the black flickering shadows/objects since cached memory is shadowed with write-back (2026-10-22; maybe slightly slower than `cached_wp = 1`, which was fast but flickered). `head_look` mouse and edge both work (2026-10-21)"
+ },
+ {
+  "game": "Alien: Isolation",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (DXVK, 32-bit `AI.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `world_scale` 0.1 or lower (`[app:wine-preloader]` profile)",
+  "notes": "works correctly, confirmed 2026-10-29. At `world_scale` 0.2 the VR effect is strong but can cause heavy nausea. Earlier (2026-10-25): hang when gameplay started after skipping the intro videos, artifacts outside the game's 1920x1200 image in a 1920x1080 gamescope; not seen any more"
+ },
+ {
+  "game": "Aliens: Colonial Marines (49540)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (UE3, DXVK, 32-bit `ACM.exe`)",
+  "status": "works",
+  "settings": "none saved",
+  "notes": "runs OK; old game, so modest graphics; confirmed 2026-10-23"
+ },
+ {
+  "game": "Assassin's Creed Origins",
+  "store": "Epic (Heroic + Ubisoft Connect): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (AnvilNext, DXVK, 64-bit `ACOrigins.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:ACOrigins.exe]` `world_scale` ~0.1 (larger values: strong nausea, user still getting used to VR), `hud_depth = 0`, `hfov = 90`",
+  "notes": "great: smooth in the HMD, the 3D stereo is impressive. Fixed on the way: a double free at exit (mirror Destroy/Free wrappers translated handles after A's call, racing handle reuse) and 10 Hz in the HMD (`vrdual xr` staging in write-combined memory, the edge mask read it back: 89 ms/frame). Open: the character seems to float above the ground (screen-space effects? AO / contact shadows off not tried); fixed 2026-10-26: the start crash in ~2 of 3 launches (`vkCreateDevice` `Exception 0xc0000005 in Unix call`: the layer's per-thread device lookup cache returned a destroyed device's data when the third device reused its dispatch key; 3 of 3 starts fine after the fix; likely also UplayWebCore's jump to NULL from the loader); Ubisoft Connect's helpers (upc, UplayWebCore, explorer, xalia) run with `stereo = 0` (built-in), 2026-10-26"
+ },
+ {
+  "game": "Beyond Blue",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (Unity, DXVK, 64-bit `Beyond Blue.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `world_scale` ~0.1 (at 1 the depth is very strong, with artefacts), `hud_depth = 0`; `screen = curved`",
+  "notes": "confirmed 2026-10-29. Fixed on the way: the right eye froze (black in the HMD) when the first video played: Unity's video player decodes on a second D3D11 device and shares the frames, the mirror did not recognise the other device's export (`mirror STOPPED: vkAllocateMemory failed on B`)"
+ },
+ {
+  "game": "Botany Manor",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (Unity, DXVK, 64-bit `Botany Manor.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `input = mouse`, `mouse_mode = stick` (made for keyboard + mouse); small `world_scale` (~0.01)",
+  "notes": "confirmed 2026-10-29. Fixed on the way: black in the HMD at the first try, `vrdual-xr` hung in a WiVRn call after the headset's network dropped (`Broken pipe`, session resumed, xr never returned); xr now reconnects after 10 s stuck. Second D3D11 device's shared memory (Unity) handled by the mirror"
+ },
+ {
+  "game": "Call of Juarez: Gunslinger (204450)",
+  "store": "Steam: positive",
+  "path": "Proton, DXVK d3d9 (32-bit)",
+  "status": "works",
+  "settings": "ready-made configuration for sponsors (or tune it yourself)",
+  "notes": "game leaves alpha 0 (black in the HMD before the layer forced alpha 1); weak depth at default settings; mirror memory sync 24 ms → 0.13 ms/submit with cached write tracking; confirmed 2026-10-21, fast 2026-10-22"
+ },
+ {
+  "game": "Carmageddon TDR 2000",
+  "store": "GOG (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), old D3D via wined3d → GL → Zink (32-bit `TDR2000.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "notes": "works, but an old game: looks poor; 2026-10-29"
+ },
+ {
+  "game": "Chasm: The Rift",
+  "store": "GOG (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), 64-bit `Chasm.exe` (DXVK and Zink both loaded; renderer not checked)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic)",
+  "notes": "runs correctly, but in the HMD the colours were wrong: red shows as blue (R/B swapped). Likely cause (found with Troy, 2026-10-30): `vrdual xr` kept the headset swapchain of the previous BGRA game at the same size; fixed, not re-tested (uninstalled by the user, 2026-10-29)"
+ },
+ {
+  "game": "Civilization V (8930)",
+  "store": "Steam: positive",
+  "path": "native GL → Zink (`Civ5XP`)",
+  "status": "runs",
+  "settings": "user profile `[app:Civ5XP]`, `world_scale` ~0.1",
+  "notes": "stereo not impressive; crash to desktop after a while (game.log ends in normal mirror stats, no error; not analysed, not checked without vrdual), 2026-10-23. Shadows look cast from the camera side (screenshot, 2026-11-01): shadow pass probably shifted, backlog"
+ },
+ {
+  "game": "Control",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (`Control_DX11.exe`, DXVK) or D3D12 (`Control_DX12.exe`, vkd3d-proton), Northlight, 64-bit",
+  "status": "works",
+  "settings": "DX11: Heroic \"Alternative EXE\" = `Control_DX11.exe`; DX12: ready-made configuration for sponsors (or tune it yourself); gamescope 1920x1080 (Heroic)",
+  "notes": "DX11 and DX12 both run with the mirror on (2026-10-27); DX12 confirmed working correctly in the HMD 2026-10-29. `Control.exe` starts `Control_DX12.exe`; without the right configuration DX12 crashes at start: vkd3d's first `vkCreateSemaphore` (swapchain setup) jumps to NULL in winevulkan (`SIGSEGV ip (nil)`, `err:vulkan:vkCreateSemaphore Exception 0xc0000005 in Unix call`)"
+ },
+ {
+  "game": "Crysis 3 Remastered (2096610)",
+  "store": "Steam: negative",
+  "path": "Proton, D3D11 (DXVK, 64-bit)",
+  "status": "broken",
+  "settings": "",
+  "notes": "does not start. The game opens a second Vulkan device in the process (likely the ray tracing interop) and wants a D3D11 shared resource: DXVK `Failed to create shared resource: VK_KHR_EXTERNAL_MEMORY_WIN32 not supported`, then an access violation at `rip=0`. winevulkan builds that extension on `VK_KHR_external_memory_fd`, which the layer hides (the mirror cannot replay external memory on B). Next: turn ray tracing off in the game's config, or check with `VRDUAL_KEEP_EXT=VK_KHR_external_memory_fd,VK_KHR_external_semaphore_fd` whether that alone is the blocker; a real fix = mirror support for memory shared between two devices of one process (larger work). 2026-10-25"
+ },
+ {
+  "game": "Deus Ex: Human Revolution (28050)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (DXVK, 32-bit `dxhr.exe`)",
+  "status": "works",
+  "settings": "",
+  "notes": "confirmed 2026-10-23 (a first attempt showed nothing in the HMD, cause unknown, then it worked). Layer sees `exe='wine-preloader'` and picked the `[app:wine-preloader]` profile (saved during Duke Nukem Forever)"
+ },
+ {
+  "game": "Disney•Pixar WALL-E",
+  "store": "Amazon (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `WALL-E.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "notes": "no problems; 2026-10-28"
+ },
+ {
+  "game": "Duke Nukem Forever (57900)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (DXVK, 32-bit `DukeForever.exe`)",
+  "status": "runs",
+  "settings": "none: ran at `world_scale = 1` (Unreal-derived engine, try ~50)",
+  "notes": "medium effect; some levels are shader-heavy, problems expected there. The layer sees `app=''` (wine-preloader), so `vrdual save` wrote `[app:wine-preloader]`, which then matches every 32-bit Proton game without its own profile (seen in Deus Ex: HR); 1680x1050 under gamescope, 2026-10-23"
+ },
+ {
+  "game": "The Elder Scrolls III: Morrowind",
+  "store": "GOG (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D8 (DXVK, 32-bit `Morrowind.exe`, 1440x1080)",
+  "status": "works",
+  "settings": "gamescope (Heroic); `[app:wine-preloader]` profile",
+  "notes": "very old, looks poor by today's standards, but in VR it is actually playable; works even without mods; parallax textures would help (see MODDING.md); 2026-10-29"
+ },
+ {
+  "game": "Fable Anniversary (288470)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (UE3, DXVK, 32-bit)",
+  "status": "works",
+  "settings": "`world_scale` ~10–13 (tuned live), `hfov` ~91",
+  "notes": "confirmed 2026-10-23. `vrdual save` wrote into `[app:wine-preloader]` (the profile it had matched by exe), not `[app:Fable Anniversary.exe]`, although the layer knew the app name"
+ },
+ {
+  "game": "Fallout: New Vegas (22380)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9",
+  "status": "runs",
+  "settings": "`world_scale = 70` (built-in, not tuned)",
+  "notes": "HUD shown; `hud_depth` not confirmed yet"
+ },
+ {
+  "game": "Fell in love with coser 5",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (Unity, DXVK 3.1.1 from Heroic, 64-bit)",
+  "status": "works",
+  "settings": "`VRDUAL_KEEP_EXT=VK_KHR_external_memory_fd,VK_KHR_external_semaphore_fd` (Heroic env)",
+  "notes": "starts and runs (user: not really a game, videos; marked working, not tested further). Without the env var: CTD at start, with or without gamescope: Unity asks for a D3D11 shared resource, DXVK logs `Failed to create shared resource: VK_KHR_EXTERNAL_MEMORY_WIN32 not supported` and still calls `vkGetMemoryWin32HandleKHR`, which is NULL (the layer hides `external_memory_fd`; winevulkan lists the win32 extension anyway). With the env var the mirror stops on the 2nd device (`vkAllocateMemory failed on B`: B cannot import the shared memory), so the right eye freezes. Fix idea (same as Crysis 3): keep `external_memory_fd` visible, give B plain memory without the import/export structs. `-screen-width 1920 -screen-height 1080 -screen-fullscreen 0` was ignored (2880x5120), 2026-10-26"
+ },
+ {
+  "game": "Firewatch (383870)",
+  "store": "Steam: positive",
+  "path": "Unity",
+  "status": "runs",
+  "settings": "landscape resolution",
+  "notes": "the portrait desktop cuts the menu"
+ },
+ {
+  "game": "Galactic Civilizations III",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (DXVK, 64-bit `GalCiv3.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 windowed (Heroic)",
+  "notes": "works correctly, confirmed 2026-10-29. The mouse cursor was missing in the HMD: in 64-bit games under gamescope its WSI layer sits above ours and passes down a Wayland surface, so the layer had no X window to read the cursor from (32-bit games and games without gamescope were fine); the cursor now comes from the root of gamescope's X screen"
+ },
+ {
+  "game": "Grim Fandango Remastered",
+  "store": "GOG (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), OpenGL → Zink (32-bit `GrimFandango.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile (`world_scale` ~0.1)",
+  "notes": "confirmed 2026-10-27"
+ },
+ {
+  "game": "Hogwarts Legacy (990080)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D12 (UE4)",
+  "status": "works",
+  "settings": "ready-made configuration for sponsors (or tune it yourself)",
+  "notes": "impressive stereo; fast since the cached-memory write tracking (2026-10-22; before: mirror memory sync ~12 ms/submit); early screenshots showed only the GUI (game image black), the 2026-10-23 ones are fine; no native VR (a UEVR mod exists for Windows); confirmed 2026-10-21"
+ },
+ {
+  "game": "Hospital Tycoon (11590)",
+  "store": "Steam: positive",
+  "path": "Proton",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (below)",
+  "notes": "crashes (NULL read in the game) on the portrait desktop; system cursor drawn by `vrdual xr` at the scene's depth (`cursor_depth = auto`), confirmed 2026-10-20"
+ },
+ {
+  "game": "LEGO Batman 3 (313690)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (DXVK)",
+  "status": "works",
+  "settings": "`world_scale` ~0.1",
+  "notes": "gamescope 1920x1080; the launcher can start `LEGOBatman3.exe` (D3D9) or `LEGOBatman3_DX11.EXE`: a profile saved for one does not apply to the other; confirmed 2026-10-23"
+ },
+ {
+  "game": "LEGO Builder's Journey",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), Unity, D3D12 (vkd3d-proton) + D3D11 (DXVK), 64-bit",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `world_scale` ≤ 2.4",
+  "notes": "runs since the layer keeps `VK_KHR_external_memory_fd` visible (2026-10-28; before: CTD at start, same as Never Alone; B gets plain memory for the shared resource). 3D effect weak; problems above `world_scale` 2.4; 2026-10-29"
+ },
+ {
+  "game": "LEGO Harry Potter 1-4 (21130)",
+  "store": "Steam: positive",
+  "path": "Proton",
+  "status": "works",
+  "settings": "turn off video effects",
+  "notes": "a \"ghost\" with effects on (likely DoF)"
+ },
+ {
+  "game": "LEGO Marvel Super Heroes (249130)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (DXVK)",
+  "status": "works",
+  "settings": "`world_scale` ~0.1, `hud_depth` ~75 (user config, `[app:LEGOMARVEL.exe]`)",
+  "notes": "gamescope 1920x1080; confirmed 2026-10-23"
+ },
+ {
+  "game": "LIMBO",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `Limbo.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "notes": "little to gain: the game is very flat (2D layers), the depth effect is weak; 2026-10-29"
+ },
+ {
+  "game": "Little Nightmares (424840)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D11 (UE4, DXVK)",
+  "status": "runs",
+  "settings": "gamescope 1920x1080 (below); `world_scale = 1`",
+  "notes": "dark, no wow: at 1 the eye shift is ~mono for UE units (cm); higher values make the eyes render differently (screen-space effects?), not checked which; micro stutter in the HMD, smooth on the monitor (gamescope nested refresh is 60 Hz); a first start showed a black screen once; segfault at exit in `vkDestroySwapchainKHR` (call into an unloaded library), 2026-10-22"
+ },
+ {
+  "game": "Magicka (42910)",
+  "store": "Steam: negative",
+  "path": "Proton, XNA on Wine Mono, D3D9 (DXVK, 32-bit `Magicka.exe`)",
+  "status": "broken",
+  "settings": "",
+  "notes": "2026-10-29: crash at start, right in `D3D9DeviceEx::ResetSwapChain` (800x600 windowed): NULL read at `04DFB1CB`, outside every loaded DLL (likely Mono JIT code). Same crash, same address, with the layer passive (`VRDUAL_STEREO=0`), so not vrdual; not tried without the wrapper. 2026-10-23 it still reached the menu, then a black screen when a game loaded (submits continuing, no error); log full of Mono TLS/HTTP errors (dead Paradox servers: 308/403), likely harmless"
+ },
+ {
+  "game": "Maid of Sker",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (Unity, DXVK, 64-bit `Maid of Sker.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `world_scale` 0.01-0.02 (larger: too strong)",
+  "notes": "impressive; 2026-10-29"
+ },
+ {
+  "game": "Medal of Honor (47790)",
+  "store": "Steam: positive",
+  "path": "Proton, DXVK (32-bit `moh.exe`)",
+  "status": "works",
+  "settings": "`[app:wine-preloader]` profile",
+  "notes": "confirmed 2026-10-29; the log shows an 800x600 swapchain (launcher or game resolution, not checked)"
+ },
+ {
+  "game": "Mirror's Edge (17410)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (UE3)",
+  "status": "works",
+  "settings": "`world_scale = 50`, `hud_depth = 1`, `hfov = 106.26` at 16:9; ready-made configuration for sponsors (or tune it yourself); launch in a 1920x1080 gamescope window (below)",
+  "notes": "confirmed 2026-10-20; stereo works but less impressive than expected. 2026-10-31: first game set up with [shader rules](tasks/shader-rules.md): with the default `hud_depth_scope = all`, `hud_depth` also shifts the full-screen post passes (stale strip at one edge, flicker in the letterbox bars); `hud_depth_scope = rules` plus a `hud` rule for the crosshair (`_ hunt find hud`) fixes that. One crash in that session, cause unknown"
+ },
+ {
+  "game": "Never Alone (Kisima Ingitchuna)",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (Unity, DXVK, 64-bit `NeverAlone.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); `world_scale` ≤ 10",
+  "notes": "runs since the layer keeps `VK_KHR_external_memory_fd` visible (2026-10-28; before: CTD, Unity's D3D11 shared resource called a NULL `vkGetMemoryWin32HandleKHR`). The import comes from an exporter the mirror does not know (likely the game's other Vulkan device), so B gets plain memory for it. Artifacts above `world_scale` 10. Stereo not impressive: a side-scrolling platformer with little depth. Starts in 4K: the Heroic gamescope window type is fullscreen; 2026-10-29"
+ },
+ {
+  "game": "Oddworld: Abe's Oddysee",
+  "store": "GOG (Heroic): negative (2D game)",
+  "path": "Proton (umu, Proton-CachyOS), 32-bit `AbeWin.exe`, Zink",
+  "status": "no effect",
+  "settings": "",
+  "notes": "2D game, no stereo to gain. Ignored the gamescope size, ran at 4K and very slowly; the layer saw only tiny swapchains (119x34); 2026-10-28"
+ },
+ {
+  "game": "OpenTTD",
+  "store": "GOG (Heroic): negative (2D game)",
+  "path": "Proton (umu, Proton-CachyOS), `openttd.exe`",
+  "status": "no effect",
+  "settings": "",
+  "notes": "2D game, no stereo to gain; 2026-10-28"
+ },
+ {
+  "game": "Overlord (11450)",
+  "store": "Steam: positive",
+  "path": "native GL → Zink",
+  "status": "runs",
+  "settings": "`hud_depth` ~2 (subtitles); Mesa ≤ 26.2: `ZINK_DEBUG=noreorder`",
+  "notes": "Zink bugs, also without vrdual: flashing squares on the loading screen (fixed in Mesa 26.2.5), green glow after the new-game video (gone in Mesa main since MR 45178, 0786a9511, which only flushes less often: with the old flush interval main still glows, only at some camera angles); subtitles sit at infinity with `hud_depth = 0`, doubled against the near scene; default 800x600 window, camera odd with the mouse; crash on exit with every driver (game bug), 2026-10-23"
+ },
+ {
+  "game": "Planet Zoo (703080)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D11 (DXVK)",
+  "status": "works",
+  "settings": "no gamescope; in-game window 1920x1080 (fullscreen picks the portrait 2880x5120)",
+  "notes": "without gamescope: menus and a zoo, no crash, confirmed 2026-10-22. With gamescope: once glibc \"double free or corruption (!prev)\" ~10 s in on DXVK's `dxvk-queue` thread (not seen with `VRDUAL_CACHED_SHADOW=0`; write-back copied 0 MB, so the readback shadow is the suspect), once gamescope itself died entering a zoo; gamescope without vrdual fine. Keep `VRDUAL_BACKTRACE=1` set: an abort then logs its native frames"
+ },
+ {
+  "game": "Portal (400)",
+  "store": "Steam: positive",
+  "path": "native GL → Zink",
+  "status": "runs",
+  "settings": "gamescope 1920x1080 (`gamescope -w 1920 -h 1080 -W 1920 -H 1080 --force-grab-cursor -- /home/adderek/vrdual/run /home/adderek/bin/gamescope-pv-display %command%`); quit from the game menu, not Alt+F4",
+  "notes": "menu, level load and stereo stream in the HMD work (the earlier crash on level load, NULL GL buffer map, no longer seen). **After a level loads the HMD stays black until you move in the game** (mouse): the game sends no Vulkan submits or presents until then, the monitor keeps the last frame; maybe Source pausing without focus, `-nopause` / `engine_no_focus_sleep 0` not tried. Alt+F4 closes gamescope, not the game: Portal loses X and hangs in its own exit (`server.so` / `libtier0` waiting for a lock; Steam \"Stop\" does not end it, kill the PID); 2026-10-29"
+ },
+ {
+  "game": "Portal 2 (620)",
+  "store": "Steam: positive",
+  "path": "native GL → Zink",
+  "status": "works",
+  "settings": "`-windowed -w 1920 -h 1080`",
+  "notes": "fullscreen picks the portrait 2880x5120"
+ },
+ {
+  "game": "Portal: Revolution (601360)",
+  "store": "Steam: positive",
+  "path": "Proton Experimental, Windows-only Source mod build (`bin/win64/revolution.exe`)",
+  "status": "works",
+  "settings": "Properties → Compatibility → force Proton (Experimental); gamescope 1920x1080 (below); pad: ready-made configuration for sponsors (or tune it yourself)",
+  "notes": "without forced Proton Steam starts the `.exe` natively in the Steam Linux Runtime and it exits after ~2 s (looks like a crash at start, the layer never loads); runs with Proton Experimental, 2026-10-30"
+ },
+ {
+  "game": "Portal with RTX (2012840)",
+  "store": "Steam: negative",
+  "path": "Proton, RTX Remix (DXVK-Remix, path tracing)",
+  "status": "broken",
+  "settings": "",
+  "notes": "not an AMD problem: Remix logs `Required Vulkan extension VK_KHR_ray_query / VK_KHR_ray_tracing_pipeline not supported` because the layer hides ray tracing (RADV has it). Unhiding is not enough: the image is path traced from the camera in raygen shaders, there is no rasterized vertex output to shift, and the mirror would have to replay acceleration structures on B. Stereo needs a per-eye camera in Remix's ray generation: big work, not planned. 2026-10-25"
+ },
+ {
+  "game": "Psychonauts (3830)",
+  "store": "Steam: positive",
+  "path": "native GL → Zink",
+  "status": "works",
+  "settings": "`skip_w1 = 0` (built-in)",
+  "notes": "draws the scene with `w == 1`; one SIGSEGV seen, not analysed"
+ },
+ {
+  "game": "Quantum Conundrum (200010)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D9 (UE3, DXVK, 32-bit `TryGame-Win32-Shipping.exe`)",
+  "status": "works",
+  "settings": "`[app:wine-preloader]` profile",
+  "notes": "looks nice, nothing special; 2026-10-25"
+ },
+ {
+  "game": "RollerCoaster Tycoon 3: Complete Edition",
+  "store": "Epic (Heroic): negative",
+  "path": "Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `RCT3.exe`)",
+  "status": "broken",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "notes": "hangs while loading a park at \"Clear data (0%)\": the process keeps ~100 % CPU, no Vulkan submits or presents any more (frame export stops), no error in the log; not yet checked with `VRDUAL_STEREO=0`, 2026-10-29"
+ },
+ {
+  "game": "Shadow Warrior (233130)",
+  "store": "Steam: not finished",
+  "path": "native GL → Zink",
+  "status": "retest",
+  "settings": "",
+  "notes": "SIGBUS in the 2026-10-19 frame export (reverted 55c0b81); window scaling issues"
+ },
+ {
+  "game": "Skyrim (72850)",
+  "store": "Steam: positive",
+  "path": "Proton Experimental, D3D9",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (below); `world_scale = 70` (built-in, not tuned)",
+  "notes": "weak depth at scale 1; long loading; works, 2026-10-30"
+ },
+ {
+  "game": "Tomb Raider GOTY (2013, 203160)",
+  "store": "Steam: positive",
+  "path": "Proton (forced: Proton Experimental), D3D11 (DXVK, 32-bit `TombRaider.exe`)",
+  "status": "works",
+  "settings": "`world_scale` < 10, best ~2",
+  "notes": "looks better in the HMD than in screenshots. At larger scales objects shift too far into the depth. The native Linux build (Feral) does not start: `libicui18n.so.51` missing (game.log), so force Proton. Picked the `[app:wine-preloader]` profile; confirmed 2026-10-23; re-checked 2026-10-29: stereo correct, but no wow effect"
+ },
+ {
+  "game": "Tomb Raider I (224960)",
+  "store": "Steam: negative",
+  "path": "DOSBox",
+  "status": "broken",
+  "settings": "",
+  "notes": "flat 2D image, no stereo; exits in windowed mode / on alt+tab"
+ },
+ {
+  "game": "Tomb Raider II (225300)",
+  "store": "Steam: positive",
+  "path": "Proton",
+  "status": "runs",
+  "settings": "`input = mouse` (a = Enter, b = Esc)",
+  "notes": "the menu wants keys, pad buttons do nothing"
+ },
+ {
+  "game": "Tomb Raider III (225320)",
+  "store": "Steam: positive",
+  "path": "Proton",
+  "status": "works",
+  "settings": "windowed / 1920x1080",
+  "notes": ""
+ },
+ {
+  "game": "A Total War Saga: TROY",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (DXVK, 64-bit `Troy.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic); turn-based strategy: `input = mouse`, `mouse_mode = move` (stick mode is too coarse), `world_scale` ~0.15, `hud_depth = 0`",
+  "notes": "colours right after the fix (confirmed 2026-10-30). Before: red and blue swapped in the HMD: the game's `R8G8B8A8_UNORM` swapchain (most games: BGRA) at the same size as the previous game, and `vrdual xr` (running for hours) re-created its headset swapchain only on a size change, keeping the BGRA one. Fixed 2026-10-30 (new swapchain when the frame format changes)"
+ },
+ {
+  "game": "Unravel (1225560)",
+  "store": "Steam (+ EA app): positive",
+  "path": "Proton, via EA app (`steam2ea://`), D3D11 (DXVK, 64-bit `Unravel.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080; `world_scale` ~0.1 (no own profile, ran with the values in the control block)",
+  "notes": "**wow effect**, although a side-scrolling platformer: the scene is rendered in full 3D, confirmed 2026-10-29. The game renders 1920x800 (letterbox). Before (2026-10-23): CTD at start, the game's 2nd `vkCreateDevice` faulted right after the mirror's twin device (`Exception 0xc0000005 in Unix call`, call through a garbage pointer); not seen since the layer's device lookup cache is invalidated on device create/destroy (666955a, likely the fix, not verified). The EA app (`EADesktop.exe`) loads the layer too"
+ },
+ {
+  "game": "The Witcher 3 GOTY (next-gen DX12 build)",
+  "store": "GOG (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D12 (vkd3d-proton 3.1, 64-bit `bin/x64_dx12/witcher3.exe`)",
+  "status": "works",
+  "settings": "gamescope (Heroic); `[app:witcher3.exe]` `sparse = 1` (without it: \"DirectX 12 is required\")",
+  "notes": "works in the HMD (confirmed 2026-10-30, `sparse = 1`, after the `vkQueueBindSparse` replay fix; a later start the same evening crashed after 26 s: `[vrdual] SIGSEGV ip 0x7fc72537c68a`, cause not checked, the log was overwritten by the next start; after a restart it worked again). A dedicated mod exists: [witcher3-vr](https://github.com/tig3rmast3r/witcher3-vr) (next-gen DX12 v4.0.4, Windows, OpenXR) and its fork [joschi127/witcher3-vr](https://github.com/joschi127/witcher3-vr) (also Remastered 5.01, and Linux under Proton + WiVRn via `wineopenxr`, see its `LINUX.md`); made for this one game (engine hooks: head-tracked camera, first person, HUD on its own layer), it may well give a better result. What vrdual took from it: [shader rules](tasks/shader-rules.md). vrdual is generic (any game, no mod) and runs on Linux, with each eye rendered in full on its own GPU. History: earlier sessions were not stable. Fixed on the way: the mirror's twin device failed with -7 (vkd3d enables `VK_NV_cooperative_matrix2`, which RADV offers only by drirc to engine `vkd3d`; the twin instance now carries the app's name and engine). vkd3d gives D3D12 feature level 12_0 only with sparse residency (Tiled Resources Tier 2), which the layer hides by default, hence the new `sparse` key. Stability: one start hung ~1 s after the swapchain (black screen, render thread spinning without syscalls; no stack taken); one session ran ~8 min (~140 submits/s, mirror sync 0.6 ms over 483 MB), and 21 s after the game exited **06:00.0 hung** (`ring sdma0 test failed`, SMU no response, reset failed), machine reboot. Suspects: the `vkQueueBindSparse` replay on B (was a generated wrapper without `qlock` and fence tracking; hand-written since 2026-10-30, not re-tested in the game), vkd3d's copy queue (SDMA) on 06. Next: the game with `sparse = 1` and `VRDUAL_EYE` unset (is 06 stable without the layer?), 2026-10-27"
+ },
+ {
+  "game": "X: Beyond the Frontier (2840)",
+  "store": "Steam: positive",
+  "path": "Proton, old D3D via wined3d → GL → Zink (32-bit)",
+  "status": "works",
+  "settings": "`[app:wine-preloader]` profile (shared by 32-bit Proton games)",
+  "notes": "very old, poor textures, but the depth is a \"wow\" effect: in VR the game becomes likeable; 2026-10-25"
+ },
+ {
+  "game": "Zen Bound 2 (61600)",
+  "store": "Steam: positive",
+  "path": "native GL → Zink",
+  "status": "works",
+  "settings": "",
+  "notes": "first game tested in the Quest"
+ }
+]

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vrdual games</title>
+<meta name="description" content="vrdual: real stereo 3D for ordinary games in a VR headset on Linux. Which games run, how, and with which settings.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>vrdual <span>games</span></h1>
+  <p>Ordinary 3D games in a VR headset with real stereo 3D, no mods, Linux.
+    Status per game as tested; anything not listed is untested.
+    <a href="https://github.com/adderek/vrdual">Source and docs on GitHub</a>.</p>
+</header>
+<main>
+  <div class="tools">
+    <input id="q" type="search" placeholder="Search game, path, notes…" aria-label="search">
+    <div id="status" class="chips" role="group" aria-label="status filter"></div>
+  </div>
+  <p id="count" class="muted"></p>
+  <div class="wrap">
+    <table id="t">
+      <thead><tr>
+        <th data-k="game">game (Steam appid)</th><th data-k="store">store: test</th><th data-k="path">path</th>
+        <th data-k="status">status</th><th data-k="settings">settings</th><th data-k="notes">notes</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="muted legend"><b>works</b> = stereo in the headset confirmed; <b>runs</b> = renders, stereo not
+    confirmed or weak; <b>broken</b> = crash or no picture; <b>no effect</b> = runs, nothing to gain (2D);
+    <b>retest</b> = result outdated. <b>store: test</b> = the store whose copy was tested and whether that
+    test was positive. Setup, settings that break stereo and tuning:
+    <a href="https://github.com/adderek/vrdual/blob/master/docs/GAMES.md">GAMES.md</a>.
+    Ready-made configurations for some games go to
+    <a href="https://github.com/sponsors/adderek">sponsors</a> first; everything can be configured by hand,
+    free (<a href="https://github.com/adderek/vrdual/blob/master/docs/CONFIG.md">CONFIG.md</a>).</p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

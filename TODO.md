@@ -52,7 +52,9 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     as the source of the GAMES.md table (generator + `vrdual ci` check) and of
     a static viewer (filter / sort); per game `sponsor_config` and `public_on`
     (PLAN §J 3-month clock); sponsor data in the same schema, viewed locally.
-    Owner enables Pages (Settings → Pages → GitHub Actions).
+    Owner enables Pages (Settings → Pages → GitHub Actions). Step 1 done
+    2026-11-01: `site/games.json` + generator + ci check, viewer in `site/`,
+    workflow `pages.yml`. Next: sponsor data in the same schema, `_ site`.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

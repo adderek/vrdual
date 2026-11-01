@@ -52,7 +52,8 @@ automatically.
 | `tools/measure_posts.py` | measures disparity/anchor in a calib snapshot vs theory (±1 px / 4 %) |
 | `_` / `vrdual` | implementation + human menu / machine CLI (sources `_`) |
 | `tools/build_info.sh`, `common/vrdual_version.h` | build identity (version from `git describe`, ISO build time, machine) compiled into every binary; `vrdual version` |
-| `docs/GAMES.md` | per-game status and settings (update after testing a game) |
+| `site/games.json` | per-game status and settings (update after testing a game); `tools/gen_games.py` writes the table in `docs/GAMES.md` from it (`vrdual ci` checks) |
+| `site/` | public GitHub Pages site (game table viewer), deployed by `.github/workflows/pages.yml`; public material only, never sponsor material |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
 ## Commands

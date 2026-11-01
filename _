@@ -638,6 +638,10 @@ vrdual_wiggle() {
 # GPU-free part of selftest (also `vrdual ci`): patcher, parsers, file
 # formats, CLI. Runs in the caller's scope (tmp, B, check, label, fails).
 _selftest_nogpu() {
+    # 0. Game table: site/games.json valid, docs/GAMES.md generated from it.
+    label="games: site/games.json valid, docs/GAMES.md table up to date"
+    check python3 -I "$VRDUAL_ROOT/tools/gen_games.py" --check
+
     # 1. SPIR-V patcher: baked + live variants must validate; non-vertex must be refused.
     glslc "$VRDUAL_ROOT/testapp/cube.vert" -o "$tmp/glsl.spv"
     glslc -fshader-stage=vertex -x hlsl "$VRDUAL_ROOT/tools/test-shaders/hlsl_vs.hlsl" -o "$tmp/hlsl.spv"
