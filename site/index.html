@@ -4,95 +4,96 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vrdual</title>
-<meta name="description" content="Real stereo 3D for ordinary games in a VR headset on Linux: each eye gets its own rendered view. No mods. One GPU is enough.">
+<meta name="description" data-i18n="desc" data-i18n-attr="content" content="Real stereo 3D for ordinary games in a VR headset on Linux: each eye gets its own rendered view. No mods. One GPU is enough.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html">Games</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek">Sponsor</a></nav>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+  <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
 
 <section class="hero">
   <div class="hero-text">
-    <h1>Your 3D games, in real&nbsp;3D, in&nbsp;VR.</h1>
-    <p class="lead">vrdual renders a separate view for each eye of ordinary games, so the scene gets real depth in
+    <h1 data-i18n="h1">Your 3D games, in real&nbsp;3D, in&nbsp;VR.</h1>
+    <p class="lead" data-i18n="lead">vrdual renders a separate view for each eye of ordinary games, so the scene gets real depth in
       the headset instead of hanging there as a flat screen. No mods, no VR support needed in the game.
       Linux; one graphics card is enough.</p>
-    <a class="cta" href="games.html">See which games work <span id="works"></span> →</a>
-    <p class="muted small"><a href="https://github.com/adderek/vrdual">Source, install and docs on GitHub</a> ·
+    <a class="cta" href="games.html"><span data-i18n="cta">See which games work</span> <span id="works" data-i18n="works_n">({n} in the headset)</span> →</a>
+    <p class="muted small" data-i18n="gh_line"><a href="https://github.com/adderek/vrdual">Source, install and docs on GitHub</a> ·
       Quest 3 / 3S via WiVRn tested, any OpenXR runtime should work</p>
   </div>
   <figure class="hero-img">
     <img src="screenshots/HogwartsLegacy_1.gif" alt="Hogwarts Legacy: left and right eye views alternated, showing depth" width="640">
-    <figcaption>Hogwarts Legacy through vrdual. The GIF alternates the two eye views so the depth shows on a flat
+    <figcaption data-i18n="hero_cap">Hogwarts Legacy through vrdual. The GIF alternates the two eye views so the depth shows on a flat
       screen; in the headset each eye sees its own view.</figcaption>
   </figure>
 </section>
 
 <section class="how">
-  <h2>How it works</h2>
+  <h2 data-i18n="how">How it works</h2>
   <svg class="diagram" viewBox="0 0 700 330" role="img" aria-labelledby="dg-t dg-d">
     <title id="dg-t">Screen mode versus vrdual, seen from above</title>
     <desc id="dg-d">Left: in screen mode both eyes look at the same flat picture, so every object lies on the screen.
       Right: with vrdual each eye renders its own view, so a near object appears in front of the screen and a far one behind it.</desc>
-    <defs><marker id="dot" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5"><circle cx="3" cy="3" r="3" class="f-fg"/></marker></defs>
     <!-- left panel: screen mode -->
-    <text x="160" y="24" class="t-h" text-anchor="middle">Usual: a flat screen in VR</text>
+    <text x="160" y="24" class="t-h" text-anchor="middle" data-i18n="d_left">Usual: a flat screen in VR</text>
     <line x1="40" y1="130" x2="280" y2="130" class="s-screen"/>
-    <text x="40" y="118" class="t-s">screen</text>
+    <text x="40" y="118" class="t-s" data-i18n="d_screen">screen</text>
     <rect x="132" y="122" width="22" height="8" class="f-near"/><rect x="186" y="124" width="12" height="6" class="f-far"/>
     <line x1="140" y1="290" x2="143" y2="130" class="s-l"/><line x1="180" y1="290" x2="143" y2="130" class="s-r"/>
     <line x1="140" y1="290" x2="192" y2="130" class="s-l"/><line x1="180" y1="290" x2="192" y2="130" class="s-r"/>
     <circle cx="140" cy="292" r="9" class="f-eye"/><circle cx="180" cy="292" r="9" class="f-eye"/>
-    <text x="160" y="322" class="t-s" text-anchor="middle">same picture for both eyes: depth only painted</text>
+    <text x="160" y="322" class="t-s" text-anchor="middle" data-i18n="d_same">same picture for both eyes: depth only painted</text>
     <!-- right panel: vrdual -->
-    <text x="520" y="24" class="t-h" text-anchor="middle">vrdual: one view per eye</text>
+    <text x="520" y="24" class="t-h" text-anchor="middle" data-i18n="d_right">vrdual: one view per eye</text>
     <line x1="390" y1="170" x2="660" y2="170" class="s-ghost"/>
-    <text x="660" y="160" class="t-s" text-anchor="end">screen distance</text>
-    <rect x="452" y="54" width="26" height="26" class="f-far"/><text x="486" y="72" class="t-s">far: behind the screen</text>
-    <rect x="512" y="222" width="30" height="22" class="f-near"/><text x="550" y="231" class="t-s">near: in front,</text><text x="550" y="246" class="t-s">out of the screen</text>
+    <text x="660" y="160" class="t-s" text-anchor="end" data-i18n="d_dist">screen distance</text>
+    <rect x="452" y="54" width="26" height="26" class="f-far"/><text x="486" y="72" class="t-s" data-i18n="d_far">far: behind the screen</text>
+    <rect x="512" y="222" width="30" height="22" class="f-near"/><text x="550" y="231" class="t-s" data-i18n="d_near1">near: in front,</text><text x="550" y="246" class="t-s" data-i18n="d_near2">out of the screen</text>
     <line x1="500" y1="290" x2="465" y2="67" class="s-l"/><line x1="540" y1="290" x2="465" y2="67" class="s-r"/>
     <line x1="500" y1="290" x2="527" y2="233" class="s-l"/><line x1="540" y1="290" x2="527" y2="233" class="s-r"/>
     <circle cx="500" cy="292" r="9" class="f-eye"/><circle cx="540" cy="292" r="9" class="f-eye"/>
-    <text x="520" y="322" class="t-s" text-anchor="middle">each eye from its own position: real depth</text>
+    <text x="520" y="322" class="t-s" text-anchor="middle" data-i18n="d_own">each eye from its own position: real depth</text>
     <line x1="340" y1="40" x2="340" y2="300" class="s-ghost"/>
   </svg>
   <ol class="steps">
-    <li><b>The game runs as usual.</b> Vulkan, OpenGL (via Zink) and Windows games through Proton (DXVK, vkd3d). Nothing in the game changes.</li>
-    <li><b>vrdual shifts each eye.</b> A Vulkan layer patches the game's vertex shaders so every frame is drawn from the left eye's position and from the right eye's.</li>
-    <li><b>The headset shows both.</b> Each eye gets its own image: real depth, the HUD at a distance you choose, IPD and scale adjustable live.</li>
+    <li data-i18n="step1"><b>The game runs as usual.</b> Vulkan, OpenGL (via Zink) and Windows games through Proton (DXVK, vkd3d). Nothing in the game changes.</li>
+    <li data-i18n="step2"><b>vrdual shifts each eye.</b> A Vulkan layer patches the game's vertex shaders so every frame is drawn from the left eye's position and from the right eye's.</li>
+    <li data-i18n="step3"><b>The headset shows both.</b> Each eye gets its own image: real depth, the HUD at a distance you choose, IPD and scale adjustable live.</li>
   </ol>
   <div class="cards">
-    <div class="card"><h3>One GPU</h3><p>The eyes are rendered on alternate frames: each eye gets half the game's frame rate. Any vendor (AMD, NVIDIA, Intel). Temporal AA, upscalers and motion blur must be off.</p></div>
-    <div class="card"><h3>Two GPUs</h3><p>A second, identical GPU renders the other eye in parallel: each eye gets the full frame rate.</p></div>
+    <div class="card"><h3 data-i18n="one_h">One GPU</h3><p data-i18n="one_p">The eyes are rendered on alternate frames: each eye gets half the game's frame rate. Any vendor (AMD, NVIDIA, Intel). Temporal AA, upscalers and motion blur must be off.</p></div>
+    <div class="card"><h3 data-i18n="two_h">Two GPUs</h3><p data-i18n="two_p">A second, identical GPU renders the other eye in parallel: each eye gets the full frame rate.</p></div>
   </div>
 </section>
 
 <section class="gallery">
-  <h2>From the games</h2>
+  <h2 data-i18n="gallery">From the games</h2>
   <div class="grid">
-    <figure><img src="screenshots/HospitalTycoon-3.gif" loading="lazy" alt="Hospital Tycoon, eyes alternated"><figcaption>Hospital Tycoon: a diorama on your desk</figcaption></figure>
-    <figure><img src="screenshots/DukeNukem4ever_1.gif" loading="lazy" alt="Duke Nukem Forever, eyes alternated"><figcaption>Duke Nukem Forever: the hands at the sides show the depth</figcaption></figure>
-    <figure><img src="screenshots/Mafia.gif" loading="lazy" alt="Mafia, eyes alternated"><figcaption>Mafia (2002): depth even in an old classic</figcaption></figure>
-    <figure><img src="screenshots/HogwartsLegacy_2.gif" loading="lazy" alt="Hogwarts Legacy, eyes alternated"><figcaption>Hogwarts Legacy: a rich scene in depth</figcaption></figure>
+    <figure><img src="screenshots/HospitalTycoon-3.gif" loading="lazy" alt="Hospital Tycoon, eyes alternated"><figcaption data-i18n="cap_ht">Hospital Tycoon: a diorama on your desk</figcaption></figure>
+    <figure><img src="screenshots/DukeNukem4ever_1.gif" loading="lazy" alt="Duke Nukem Forever, eyes alternated"><figcaption data-i18n="cap_duke">Duke Nukem Forever: the hands at the sides show the depth</figcaption></figure>
+    <figure><img src="screenshots/Mafia.gif" loading="lazy" alt="Mafia, eyes alternated"><figcaption data-i18n="cap_mafia">Mafia (2002): depth even in an old classic</figcaption></figure>
+    <figure><img src="screenshots/HogwartsLegacy_2.gif" loading="lazy" alt="Hogwarts Legacy, eyes alternated"><figcaption data-i18n="cap_hog2">Hogwarts Legacy: a rich scene in depth</figcaption></figure>
     <figure><img src="screenshots/AssasinsCreedOrigins.gif" loading="lazy" alt="Assassin's Creed Origins, eyes alternated"><figcaption>Assassin's Creed Origins</figcaption></figure>
   </div>
-  <p class="muted">Each GIF alternates the left and right eye views; in the headset the depth is steady.</p>
-  <a class="cta" href="games.html">See which games work →</a>
+  <p class="muted" data-i18n="gallery_note">Each GIF alternates the left and right eye views; in the headset the depth is steady.</p>
+  <a class="cta" href="games.html"><span data-i18n="cta2">See which games work</span> →</a>
 </section>
 
 <section class="honest">
-  <h2>Not always the best route</h2>
-  <p>vrdual works with games that know nothing about VR. A dedicated VR mod made for one game (for example
+  <h2 data-i18n="honest_h">Not always the best route</h2>
+  <p data-i18n="honest_p">vrdual works with games that know nothing about VR. A dedicated VR mod made for one game (for example
     <a href="https://github.com/tig3rmast3r/witcher3-vr">witcher3-vr</a>) can do more for that game: head tracking
     in the engine, motion controls, a fixed HUD. The game list names such routes where we know them.</p>
 </section>
 
-<footer class="foot muted small">
+<footer class="foot muted small" data-i18n="foot">
   Apache-2.0 · <a href="https://github.com/adderek/vrdual">github.com/adderek/vrdual</a> ·
   Ready-made configurations for some games go to <a href="https://github.com/sponsors/adderek">sponsors</a> first; everything can be configured by hand, free.
 </footer>
 <script src="common.js"></script>
+<script src="i18n.js"></script>
 <script>
-loadGames().then(g => { document.getElementById("works").textContent = `(${g.filter(x => x.status === "works").length} in the headset)`; }).catch(() => {});
+loadGames().then(g => setVar("n", g.filter(x => x.status === "works").length)).catch(() => {});
 </script>
 </body>
 </html>

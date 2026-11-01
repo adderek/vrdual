@@ -3,7 +3,8 @@
 
 gen_games.py           rewrite the table between the games:begin / games:end
                        markers in docs/GAMES.md (alphabetical)
-gen_games.py --check   validate games.json; exit 1 if GAMES.md is out of date
+gen_games.py --check   validate games.json and the landing page translations
+                       (site/i18n.json); exit 1 if GAMES.md is out of date
 
 The same games.json is the data of the GitHub Pages viewer (site/). Public
 material only: sponsor configurations never go here (TODO 18).
@@ -59,6 +60,24 @@ def load():
     return games
 
 
+def check_i18n():
+    """site/i18n.json: every language has exactly the data-i18n keys of index.html."""
+    html = (ROOT / "site" / "index.html").read_text()
+    keys = set(re.findall(r'data-i18n="(\w+)"', html))
+    tr = json.loads((ROOT / "site" / "i18n.json").read_text())
+    errs = []
+    for lang, d in tr.items():
+        if set(d) != keys:
+            errs.append(f"i18n.json {lang}: missing {sorted(keys - set(d))}, unknown {sorted(set(d) - keys)}")
+        errs += [f"i18n.json {lang}.{k}: unknown placeholder" for k, v in d.items() if set(re.findall(r"\{(\w+)\}", v)) - {"n"}]
+        js = (ROOT / "site" / "i18n.js").read_text()
+        if f'["{lang}"' not in js:
+            errs.append(f"i18n.json {lang}: not in LANGS of i18n.js")
+    if errs:
+        sys.exit("\n".join(errs))
+    return len(tr)
+
+
 def table(games):
     rows = ["| game (Steam appid) | store: test | path | status | settings | notes |", "|---|---|---|---|---|---|"]
     rows += ["| " + " | ".join(g[f] for f in FIELDS) + " |" for g in sorted(games, key=sort_key)]
@@ -75,7 +94,7 @@ def main():
     if sys.argv[1:] == ["--check"]:
         if new != doc:
             sys.exit(f"{DOC.relative_to(ROOT)} is out of date: run tools/gen_games.py")
-        print(f"{len(games)} games, {DOC.relative_to(ROOT)} up to date")
+        print(f"{len(games)} games, {DOC.relative_to(ROOT)} up to date; {check_i18n()} translations complete")
     elif not sys.argv[1:]:
         DOC.write_text(new)
         print(f"{len(games)} games written to {DOC.relative_to(ROOT)}")

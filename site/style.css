@@ -23,9 +23,11 @@ img, video { max-width: 100%; height: auto; display: block; }
 .small { font-size: 14px; }
 h1, h2, h3 { line-height: 1.2; }
 
-nav.top { display: flex; gap: 20px; align-items: center; max-width: 1200px; margin: 0 auto; padding: 14px 16px; }
+nav.top { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; max-width: 1200px; margin: 0 auto; padding: 14px 16px; }
 nav.top a { text-decoration: none; color: var(--fg); }
 nav.top a[aria-current] { color: var(--accent); }
+#lang { font: inherit; font-size: 14px; color: var(--fg); background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 6px; max-width: 100%; }
 nav.top .brand { font-weight: 700; font-size: 18px; margin-right: auto; }
 
 section, header.page, main.page, footer.foot { max-width: 1200px; margin: 0 auto; padding: 0 16px; }

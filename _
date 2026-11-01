@@ -639,7 +639,7 @@ vrdual_wiggle() {
 # formats, CLI. Runs in the caller's scope (tmp, B, check, label, fails).
 _selftest_nogpu() {
     # 0. Game table: site/games.json valid, docs/GAMES.md generated from it.
-    label="games: site/games.json valid, docs/GAMES.md table up to date"
+    label="site: games.json valid, GAMES.md table up to date, translations complete"
     check python3 -I "$VRDUAL_ROOT/tools/gen_games.py" --check
 
     # 1. SPIR-V patcher: baked + live variants must validate; non-vertex must be refused.

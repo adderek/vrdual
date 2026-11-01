@@ -53,7 +53,7 @@ automatically.
 | `_` / `vrdual` | implementation + human menu / machine CLI (sources `_`) |
 | `tools/build_info.sh`, `common/vrdual_version.h` | build identity (version from `git describe`, ISO build time, machine) compiled into every binary; `vrdual version` |
 | `site/games.json` | per-game status and settings (update after testing a game); `tools/gen_games.py` writes the table in `docs/GAMES.md` from it (`vrdual ci` checks) |
-| `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), deployed by `.github/workflows/pages.yml`; public material only, never sponsor material |
+| `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), landing page translated (English in the HTML, `site/i18n.json` for the rest, `site/i18n.js` language list + browser detection; `vrdual ci` checks every language has every key), deployed by `.github/workflows/pages.yml`; public material only, never sponsor material |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
 ## Commands
