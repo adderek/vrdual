@@ -144,7 +144,7 @@ reference store for legacy-game tweaks: tests reproduce without a Steam account.
 
 Heroic as a Flatpak likely has Steam's problems (private `/dev/shm`, own
 `$HOME`) and needs a `heroic-install` twin of `vrdual install` (untested:
-Heroic/Lutris/umu are not installed on the dev machine). Epic: DRM is rarely the
+Heroic/Lutris/umu are not installed on fractal). Epic: DRM is rarely the
 problem (Denuvo usually lets Vulkan layers load, ReShade works); anti-cheat
 (EAC, BattlEye) in online games is. Offline only, warning in the docs.
 `docs/GAMES.md` should name the store/build per row: GOG and Steam builds of

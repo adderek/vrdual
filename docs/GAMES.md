@@ -1,6 +1,6 @@
 # Games
 
-Status per game, dual GPU (2x RX 7900 XTX, the maintainer's machine) unless noted.
+Status per game, dual GPU (2x RX 7900 XTX, host "fractal", see AGENTS.md "Reference test machine") unless noted.
 Launch option for all: `/home/<user>/vrdual/run %command%` (from
 `vrdual install`); `vrdual xr` runs once for all games. Last update
 2026-10-30. Most games here are Steam; Epic/GOG ones go through Heroic
@@ -101,7 +101,7 @@ and DoF look fine, judged by eye in `vrdual view`).
 | other temporal effects (temporal SSR/AO/volumetrics; same mechanism, not seen yet: Witcher 3's SSAO/GTAO look fine) | reuse history from the previous frame | weaker ghosting in those effects | single GPU |
 | tessellated hair/fur (NVIDIA HairWorks) | positions come out of tessellation/geometry shaders, the layer shifted only vertex shaders | hair at screen depth, detached from the head (Witcher 3, 2026-10-31) | both; fixed the same day (TES/GS patched), fine in Witcher 3 by eye (single GPU) |
 | depth of field and other blur post effects | blur an image whose depth no longer matches the shifted geometry | a "ghost" around objects (LEGO Harry Potter; Witcher 3's DoF, blur and bloom look fine) | both |
-| fullscreen on the portrait desktop | the game picks the desktop's 2880x5120 | tall picture in the HMD, cut menus | both (maintainer's portrait desktop) |
+| fullscreen on the portrait desktop | the game picks the desktop's 2880x5120 | tall picture in the HMD, cut menus | both (host "fractal") |
 
 
 Gamescope keeps a game at 1920x1080 whatever the (portrait) desktop is, e.g.

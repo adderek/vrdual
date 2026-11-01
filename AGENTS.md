@@ -70,6 +70,31 @@ automatically.
 
 Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_EYE=left VRDUAL_SESSION=x APP`.
 
+## Dependencies
+
+Build: `g++` (with 32-bit multilib for `make lib32`), `glslc` (shaderc), SDL3,
+the Vulkan loader, X11/xcb/GL headers. `selftest` also needs `spirv-val`,
+`magick` (ImageMagick), `python3` and Pillow (`tools/wiggle.py`, the only
+non-stdlib Python dependency); `--record` needs `ffmpeg`. Vulkan headers are a
+submodule, OpenXR headers are vendored (both in `third_party/`), no system
+package. Packages per distro: [INSTALL.md](INSTALL.md); details: ARCHITECTURE
+"Commands".
+
+## Reference test machine (host "fractal")
+
+Results in `docs/GAMES.md`, `site/games.json` and the docs come from this
+machine unless a row says otherwise. Read them with its topology in mind:
+
+- Two RX 7900 XTX (RADV, Mesa 26), Arch Linux, GNOME on Wayland.
+  - `0000:06:00.0`: behind the B550 chipset, **PCIe Gen3 x4**, no PCIe
+    atomics, drives the desktop.
+  - `0000:0b:00.0`: CPU-direct **Gen4 x16**, headless.
+  - DRM cardN and ROCm indices are swapped relative to each other here (hence
+    the PCI-address rule below).
+- Portrait desktop monitor (X reports `DP-2 2880x5120`): fullscreen games pick
+  2880x5120 (see Conventions).
+- Steam is the Flatpak; headset Quest 3S via WiVRn.
+
 ## Invariants / decisions (don't relitigate without new evidence)
 
 - The layer stays **passive**: no UI, network, threads or prompts inside the
@@ -157,7 +182,8 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 - `_` = humans (menu); `vrdual` = machines (no prompts, stdout data). New
   operations become subcommands in `_`, not new top-level scripts.
 - Code comments and docs in English; match the existing terse comment style.
-  Keep explanations concise and technically precise.
+  Keep explanations concise and technically precise. The maintainer writes in
+  Polish, is a senior engineer and prefers terse answers.
 - Git repo since 2026-10-18 (`master`, remote `origin` = github.com:adderek/vrdual). Vulkan-Headers is a
   submodule (`git submodule update --init`). Releases (maintainer, all local, no
   CI): tag `v0.x.y`, push it, `tools/release.sh --publish v0.x.y` (tarball with
@@ -181,6 +207,9 @@ Manual layer use: `VK_ADD_LAYER_PATH=$PWD/build VK_INSTANCE_LAYERS=VK_LAYER_VRDU
 
 ## Local environment
 
-If `AGENTS.local.md` exists, read it for machine-specific development
-constraints and local test environment details. This file is intentionally not
-tracked by Git (`*.local.md`); everything above works without it.
+If `AGENTS.local.md` exists, read it before you start: it holds constraints
+of the local workstation (other services on the GPUs, processes you must not
+touch, known instabilities, permissions, installed tools). It is not tracked
+by Git (`*.local.md`); Claude Code loads it through `CLAUDE.local.md`
+(`@AGENTS.local.md`), other agents must open it themselves. Everything above
+works without it.
