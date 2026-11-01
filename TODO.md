@@ -46,6 +46,13 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     2026-10-31): per-shader `noshift | hud | hide` by SPIR-V hash in
     `shader_rules`, live bisection `_ hunt` to find a shader. Step 1 done;
     next: try it in a DXVK game (key stability), then HUD scale.
+18. Public docs on GitHub Pages (owner's decision 2026-11-01): public
+    material only; sponsor material never goes on Pages (public on a normal
+    account), it stays in the private sponsor repo. Plan: `docs/games.json`
+    as the source of the GAMES.md table (generator + `vrdual ci` check) and of
+    a static viewer (filter / sort); per game `sponsor_config` and `public_on`
+    (PLAN §J 3-month clock); sponsor data in the same schema, viewed locally.
+    Owner enables Pages (Settings → Pages → GitHub Actions).
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
