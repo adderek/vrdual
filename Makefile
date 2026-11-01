@@ -14,7 +14,7 @@ LAYERFLAGS := -shared -fPIC -fvisibility=hidden -static-libstdc++ -static-libgcc
 BUILDINFO = -DVRDUAL_BUILD_INFO="\"$$(tools/build_info.sh)\""
 LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
 
-all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test
+all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test
 
 # What `vrdual install` needs: the tools and both layers (no 32-bit GL test app).
 install-build: all $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json
@@ -75,6 +75,9 @@ $(B)/spvpatch-asan: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
 $(B)/vrdual-frames-test: tools/frames_test.cpp common/vrdual_frames.hpp common/vrdual_shm.h | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<
 
+$(B)/vrdual-calib-test: tools/calib_test.cpp common/vrdual_calib.hpp | $(B)
+	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<
+
 $(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_config.hpp common/vrdual_ctl.hpp common/vrdual_shm.h common/vrdual_input.hpp $(B)/input_names.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -o $@ $< -lrt
 
@@ -86,4 +89,4 @@ clean:
 
 # GPU-free targets for `vrdual ci` (no SDL3, no 32-bit toolchain; the layer is
 # built so gen_mirror.py and the layer code compile: needs xcb + xfixes headers)
-ci: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test
+ci: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test

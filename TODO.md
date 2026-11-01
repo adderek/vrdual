@@ -10,7 +10,7 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 5. [M4 — head pose](docs/tasks/M4-head-pose.md): needs M3
 6. [M5 — real applications](docs/tasks/M5-real-apps.md): after M1 for games, demos earlier
 7. [M6 — single-GPU mode](docs/tasks/M6-single-gpu.md): alternate-eye rendering (2026-10-18); same-frame eyes optional
-8. [Guided IPD calibration](docs/tasks/guided-calibration.md): small, independent
+8. [Guided IPD calibration](docs/tasks/guided-calibration.md): done 2026-11-02 in the compositor (G); left: the same flow in the HMD (`vrdual-xr`)
 9. [Borrowed from vorpX/FlatVR](docs/tasks/borrowed-features.md): HUD depth, cinema/curved screen, screen grab (done), HUD scale (needs HUD vs post-process distinction), edge peek; depth reprojection (Z3D) = M7 on branch `single-gpu`
 10. [Backlog: small defects and hardening](docs/tasks/backlog.md)
 11. Game profiles as data files: curated per-game settings (`kAppProfiles`

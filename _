@@ -692,6 +692,8 @@ _selftest_nogpu() {
     check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv" "$tmp/geom.spv"
     label="frame reader: producer re-init to a bigger size is refused until remap; no per-frame allocation; pairs straight into caller buffers"
     mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
+    label="guided IPD calibration: simulated viewers 50-80 mm converge within 0.5 mm, near IPD found or left off"
+    check "$B/vrdual-calib-test"
     label="built-in game profile: Psychonauts gets skip_w1 = 0"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Psychonauts | grep -q '^skip_w1 *0 *# built-in'"
     label="build info: vrdual version lists tools and layers; SOURCE_DATE_EPOCH fixes the time"
@@ -838,6 +840,15 @@ vrdual_selftest() {
             END{exit !(i>0.06459 && i<0.06461 && a==\"left\" && h==91 && n>1.09 && n<1.11)}' &&
         grep -qx '\[app:vrdual-cube\]' \$VRDUAL_CONFIG && grep -qx 'anchor = left' \$VRDUAL_CONFIG && grep -qx 'hfov = 91' \$VRDUAL_CONFIG ||
         { '$B/vrdual-ctl' --session $sess live; cat \$VRDUAL_CONFIG; false; }"
+    # Guided calibration, a viewer whose IPD is 62.3 mm: 65 near, 57.5 far,
+    # 61.25 far, 63.125 near, 62.19 far, 62.66 near -> 62.42; near post right.
+    label="guided calibration in the compositor: 6 answers -> ipd 62.4 mm, near off, saved to [global]; Backspace restores"
+    check bash -c "export VRDUAL_CONFIG='$tmp/guided.conf'; : >\$VRDUAL_CONFIG; c='$B/vrdual-compositor --session $sess --scale 0.25'
+        SDL_RENDER_DRIVER=software timeout 20 \$c --keys 'G Left Right Right Left Right Left Return Q' &&
+        '$B/vrdual-ctl' --session $sess live | awk '\$1==\"ipd\"{i=\$2} \$1==\"ipd_near\"{n=\$2} END{exit !(i>0.0618 && i<0.0628 && n==0)}' &&
+        grep -q '^ipd = 0.0624' \$VRDUAL_CONFIG && grep -qx 'ipd_near = 0' \$VRDUAL_CONFIG && ! grep -q '^\[app:' \$VRDUAL_CONFIG &&
+        SDL_RENDER_DRIVER=software timeout 20 \$c --keys 'G Left Right Backspace Q' &&
+        '$B/vrdual-ctl' --session $sess live | grep -q '^ipd 0.0624' || { '$B/vrdual-ctl' --session $sess live; cat \$VRDUAL_CONFIG; false; }"
     set_live ipd=0.064 anchor=center hfov=90
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 

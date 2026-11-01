@@ -49,6 +49,7 @@ automatically.
 | `tools/vrdual_ctl.cpp` | `vrdual-ctl` CLI (config show/init, live/set/save) |
 | `tools/spvpatch.cpp` | offline patcher driver for `spirv-val` checks; `--fuzz` (built with ASan as `spvpatch-asan`) |
 | `tools/frames_test.cpp` | `vrdual-frames-test`: frame reader vs a fake producer (re-init bounds, no per-frame allocation) |
+| `common/vrdual_calib.hpp`, `tools/calib_test.cpp` | guided IPD calibration (bisection, pure) and `vrdual-calib-test` (simulated viewers) |
 | `tools/measure_posts.py` | measures disparity/anchor in a calib snapshot vs theory (±1 px / 4 %) |
 | `_` / `vrdual` | implementation + human menu / machine CLI (sources `_`) |
 | `tools/build_info.sh`, `common/vrdual_version.h` | build identity (version from `git describe`, ISO build time, machine) compiled into every binary; `vrdual version` |

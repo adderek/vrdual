@@ -499,13 +499,22 @@ angular width) and opens the compositor with an overlay:
 | `[` / `]` | near distance ∓0.1 m |
 | A | anchor center → left → right |
 | `-` / `=` | assumed HFOV ∓1° |
-| W | save to the app's profile |
+| G | guided IPD calibration (below) |
+| W | save to the app's profile (game keys; IPD only with `vrdual save --global`) |
 | S / H / Q | swap eyes / hide overlay / quit |
 
 Procedure: set the far IPD first while looking at the 20 m post. It should fuse
 effortlessly and feel far away, not like a small nearby toy. Then check the
 0.5 m post. Only if it still feels wrong, enable N and tune the near IPD. The
 same keys work in `./vrdual demo` and for any app started with `vrdual run`.
+
+Guided (G): bisects the far IPD over 50–80 mm with the 20 m post, then the
+near IPD over far ±8 mm with the 0.5 m post (`common/vrdual_calib.hpp`). Each
+step asks whether the post looks nearer / smaller than it should (Left),
+farther / huge (Right) or right (Enter); at most 6 answers per phase, result
+within 0.5 mm. "Right" at the first near probe leaves near/far IPD off. The
+result goes to `[global]` (the IPD belongs to the viewer, not the game);
+Backspace aborts and restores the previous values.
 Honest caveat: until there is HMD output (M3), the SBS window only works for
 free-viewing or a phone SBS viewer, so absolute IPD calibration is not
 meaningful yet. The mechanism is done; the measurement needs the headset.

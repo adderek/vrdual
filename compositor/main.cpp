@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "../common/vrdual_version.h"
+#include "../common/vrdual_calib.hpp"
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_frames.hpp"
 #include "../common/vrdual_shm.h"
@@ -61,12 +62,43 @@ static const char* kHelp[] = {
     "[ / ]       near dist  -/+ 0.1m",
     "A           anchor center/left/right",
     "- / =       assumed HFOV -/+ 1 deg",
-    "W save to profile  S swap eyes  H hide  Q quit",
+    "G guided IPD (calib scene)  W save to profile",
+    "S swap eyes  H hide  Q quit",
 };
+
+static vrdual::GuidedCalib g_guided;
+static float g_guided_prev[2];  // ipd, ipd_near before G (Backspace restores)
+
+// Guided calibration keys; "" = not one of them.
+static std::string guided_key(vrdual_ctl* c, SDL_Keycode k) {
+    using G = vrdual::GuidedCalib;
+    if (k == SDLK_G) {
+        vrdual_ctl v = vrdual::ctl_read(c);
+        g_guided_prev[0] = v.ipd, g_guided_prev[1] = v.ipd_near;
+        g_guided.start();
+    } else if (!g_guided.active()) {
+        return "";
+    } else if (k == SDLK_BACKSPACE) {
+        vrdual::ctl_write(c, [&](vrdual_ctl& x) { x.ipd = g_guided_prev[0], x.ipd_near = g_guided_prev[1]; });
+        g_guided.phase = G::Off;
+        return "guided calibration aborted, IPD restored";
+    } else if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_RETURN) {
+        g_guided.answer(k == SDLK_LEFT ? G::Nearer : k == SDLK_RIGHT ? G::Farther : G::Right);
+    } else {
+        return "";
+    }
+    vrdual::ctl_write(c, [&](vrdual_ctl& x) { x.ipd = g_guided.show_ipd(), x.ipd_near = g_guided.show_ipd_near(); });
+    if (g_guided.phase != G::Done) return g_guided.prompt();
+    // IPD belongs to the viewer, not the game: [global], like `vrdual save --global`
+    vrdual_ctl v = vrdual::ctl_read(c);
+    bool ok = vrdual::save_keys(vrdual::config_path(), "global", {{"ipd", vrdual::live_value(v, "ipd")}, {"ipd_near", vrdual::live_value(v, "ipd_near")}});
+    return g_guided.prompt() + (ok ? ", saved to [global]" : ", save FAILED: " + vrdual::config_path());
+}
 
 // Returns a status line for the overlay ("" = nothing to report).
 static std::string handle_key(vrdual_ctl* c, SDL_Keycode k, SDL_Keymod mod) {
     if (!c) return "no control block yet";
+    if (std::string g = guided_key(c, k); !g.empty()) return g;
     float step = (mod & SDL_KMOD_SHIFT) ? 0.0001f : 0.0005f;
     vrdual_ctl v = vrdual::ctl_read(c);
     switch (k) {
@@ -137,7 +169,9 @@ static void draw_overlay(SDL_Renderer* ren, vrdual_ctl* c, float half_w, const s
         float x = (eye * half_w + 16) / 2, y = 8;
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(ren, 0, 0, 0, 160);
-        SDL_FRect bg{x - 4, y - 4, 8.0f * 52 + 8, 10.0f * lines.size() + 8};
+        size_t wmax = 52;
+        for (auto& l : lines) wmax = std::max(wmax, l.size());
+        SDL_FRect bg{x - 4, y - 4, 8.0f * wmax + 8, 10.0f * lines.size() + 8};
         SDL_RenderFillRect(ren, &bg);
         SDL_SetRenderDrawColor(ren, 255, 255, 160, 255);
         for (auto& l : lines) { SDL_RenderDebugText(ren, x, y, l.c_str()); y += 10; }
