@@ -62,9 +62,14 @@
     between them reach B in A's order only by luck (A and B submits are not
     one atomic step); whole-allocation shadows cost more address space for
     32-bit apps that map small windows of big allocations.
-  - Not reviewed yet: the generated replay wrappers (`tools/gen_mirror.py`),
-    twin device / WSI creation, the mirror stop path, `_`,
-    `common/vrdual_input.hpp`, `site/`.
+  - Also reviewed 2026-11-01: twin device and WSI creation, acquire, the
+    generated wrapper pattern. Fixed: the generated Destroy / Free wrappers
+    never dropped the handle from `g_hmap` (3000 samplers churned left 3022
+    entries, now 30). Still left there: objects freed implicitly (descriptor
+    sets by a pool reset or destroy, command buffers by a pool destroy) keep
+    their entries until the address is reused.
+  - Not reviewed yet: the mirror stop path, the struct translators in
+    `tools/gen_mirror.py`, `_`, `common/vrdual_input.hpp`, `site/`.
 - Done 2026-11-01: Witcher 3 DX12 unpatched modules (219 log lines, 12
   distinct, `shader_dump` on sharkoon) are all harmless: empty VS (no
   outputs), VS that only pass vertex IDs or tessellation control data, the

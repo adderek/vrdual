@@ -983,6 +983,12 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
             '$B/vrdual-cube' --scene calib --wait-any --frames 30 --title 'selftest wait-any' 2>&1) &&
             ms=\$(grep -oP 'wait-any: 0 after \K[0-9.]+(?= ms; fill read back)' <<<\"\$out\") && awk -v m=\"\$ms\" 'BEGIN{exit !(m < 100)}' &&
             ! grep -q STOPPED <<<\"\$out\" || { grep -E 'wait-any|mirror' <<<\"\$out\"; false; }"
+        # Destroy / Free wrappers drop the handle from the twin map (3000
+        # samplers alive at once, then destroyed: was 3022 entries left).
+        label="mirror: destroyed objects leave the handle map (3000 samplers churned)"
+        check bash -c "out=\$(env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            '$B/vrdual-cube' --scene calib --churn 3000 --frames 30 --title 'selftest churn' 2>&1) &&
+            n=\$(grep -oP 'memory syncs, \K[0-9]+(?= handles mapped)' <<<\"\$out\") && (( n < 1000 )) || { grep -E 'mirror' <<<\"\$out\"; false; }"
     fi
 
     # VRDUAL_KEEP_EXT names whole extensions: keeping present_id2 must not keep

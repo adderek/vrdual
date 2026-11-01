@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
     bool tess = false, geom = false, nopos = false;
     bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
-    int late_verts = 0;
+    int late_verts = 0, churn = 0;
     bool cached = false, verts_file = false, readback = false, list_exts = false, remap = false, wait_any = false;
     std::string want_fmt;
     for (int i = 1; i < argc; ++i) {
@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--list-exts")) list_exts = true;
         else if (!strcmp(argv[i], "--remap")) remap = true;
         else if (!strcmp(argv[i], "--wait-any")) wait_any = true;
+        else if (!strcmp(argv[i], "--churn") && i + 1 < argc) churn = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--tess")) tess = true;
         else if (!strcmp(argv[i], "--geom")) geom = true;
         else if (!strcmp(argv[i], "--nopos-vs")) nopos = true;
@@ -583,6 +584,12 @@ int main(int argc, char** argv) {
     VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, fam};
     VkCommandPool pool;
     CK(vkCreateCommandPool(dev, &cpci, nullptr, &pool));
+    if (churn) {  // mirror check: N samplers alive at once, then destroyed (their handles must leave the twin map)
+        std::vector<VkSampler> sm(churn);
+        VkSamplerCreateInfo smci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        for (auto& x : sm) CK(vkCreateSampler(dev, &smci, nullptr, &x));
+        for (auto x : sm) vkDestroySampler(dev, x, nullptr);
+    }
     if (wait_any) {
         // A fill into host-visible memory waits on timeline t[0] (signalled by
         // the host later) and signals t[1] = 1; the host signals t[2] = 2.

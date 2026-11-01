@@ -2049,7 +2049,12 @@ static void destroy_twin(DeviceData* dd) {
     }
     free_param_buffer(md->b, md->bdev, md->bep);
     free_copy_res(md->b, md->bdev, md->bcr);
-    logf("mirror: %s, %llu memory syncs", md->live ? "ran to the end" : "had stopped", (unsigned long long)md->pushes);
+    size_t handles;
+    {
+        std::shared_lock<std::shared_mutex> l(g_hlock);
+        handles = g_hmap.size();
+    }
+    logf("mirror: %s, %llu memory syncs, %zu handles mapped", md->live ? "ran to the end" : "had stopped", (unsigned long long)md->pushes, handles);
     md->b.DestroyDevice(md->bdev, nullptr);
     ((PFN_vkDestroyInstance)md->icd_gipa(md->binst, "vkDestroyInstance"))(md->binst, nullptr);
     delete md;

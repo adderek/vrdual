@@ -524,6 +524,14 @@ def main(xml_path, disp_path, out_path):
                 continue
             bargs.append(p.name)
         if early:
+            # the destroyed object(s): the last handle parameter (vkDestroyX(dev, x),
+            # vkFreeDescriptorSets(dev, pool, n, sets)); forgotten before A frees
+            # them, like m_FreeMemory, so the map holds live objects only
+            victim = next((q for q in reversed(params[1:]) if xl_handle(canon(q.type))), None)
+            if victim is not None and victim.ptr == 0:
+                w(f'    forget_handle({victim.name});')
+            elif victim is not None and victim.len:
+                w(f'    if ({victim.name}) for (uint32_t i = 0; i < (uint32_t)({victim.len}); ++i) forget_handle({victim.name}[i]);')
             w(call_a)
             if ret == 'VkResult' and canon_name in HOOKS_AFTER:
                 w(f'    hook_after_{canon_name[2:]}(md, {args}, r);')
