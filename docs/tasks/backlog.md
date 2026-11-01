@@ -49,7 +49,7 @@
   AssasinsCreedOrigins. `HospitalTycoon-3.gif`: the subtitle line at the
   bottom spoils it, re-record or crop. Landing page "how it works" picture:
   done 2026-11-01 (`site/img/promo.webp`, generated, no third-party game
-  characters). Side-by-side PNGs are not in git (2-10 MB): compressed JPEGs could
+  characters); the top-view eye diagram was removed (too technical for most visitors). Side-by-side PNGs are not in git (2-10 MB): compressed JPEGs could
   go on the per-game pages.
 - LEGO games: per-eye shading errors visible in the LEGO Marvel GIFs (a
   screen-space effect computed for one eye); find and fix the shader.

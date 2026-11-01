@@ -44,17 +44,6 @@ figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
 
 .promo { margin: 8px 0 24px; }
 .promo img { width: 100%; border-radius: 12px; }
-.diagram { width: 100%; max-width: 760px; display: block; margin: 8px auto 16px; }
-.diagram .t-h { font: 600 15px system-ui, sans-serif; fill: var(--fg); }
-.diagram .t-s { font: 12px system-ui, sans-serif; fill: var(--muted); }
-.diagram .s-screen { stroke: var(--fg); stroke-width: 4; }
-.diagram .s-ghost { stroke: var(--line); stroke-width: 2; stroke-dasharray: 6 5; }
-.diagram .s-l { stroke: var(--eye-l); stroke-width: 1.6; }
-.diagram .s-r { stroke: var(--eye-r); stroke-width: 1.6; }
-.diagram .f-eye { fill: var(--card); stroke: var(--fg); stroke-width: 2; }
-.diagram .f-near { fill: var(--near); }
-.diagram .f-far { fill: var(--far); }
-.diagram .f-fg { fill: var(--fg); }
 .steps { max-width: 820px; margin: 0 auto 24px; padding-left: 22px; }
 .steps li { margin-bottom: 8px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0 20px; }

@@ -37,31 +37,6 @@
     <figcaption data-i18n="promo_cap">The game draws as usual; vrdual on Linux turns every frame into a left and a right eye view. One GPU
       renders them in turn; two GPUs render them at the same time, about twice as fast.</figcaption>
   </figure>
-  <svg class="diagram" viewBox="0 0 700 330" role="img" aria-labelledby="dg-t dg-d">
-    <title id="dg-t">Screen mode versus vrdual, seen from above</title>
-    <desc id="dg-d">Left: in screen mode both eyes look at the same flat picture, so every object lies on the screen.
-      Right: with vrdual each eye renders its own view, so a near object appears in front of the screen and a far one behind it.</desc>
-    <!-- left panel: screen mode -->
-    <text x="160" y="24" class="t-h" text-anchor="middle" data-i18n="d_left">Usual: a flat screen in VR</text>
-    <line x1="40" y1="130" x2="280" y2="130" class="s-screen"/>
-    <text x="40" y="118" class="t-s" data-i18n="d_screen">screen</text>
-    <rect x="132" y="122" width="22" height="8" class="f-near"/><rect x="186" y="124" width="12" height="6" class="f-far"/>
-    <line x1="140" y1="290" x2="143" y2="130" class="s-l"/><line x1="180" y1="290" x2="143" y2="130" class="s-r"/>
-    <line x1="140" y1="290" x2="192" y2="130" class="s-l"/><line x1="180" y1="290" x2="192" y2="130" class="s-r"/>
-    <circle cx="140" cy="292" r="9" class="f-eye"/><circle cx="180" cy="292" r="9" class="f-eye"/>
-    <text x="160" y="322" class="t-s" text-anchor="middle" data-i18n="d_same">same picture for both eyes: depth only painted</text>
-    <!-- right panel: vrdual -->
-    <text x="520" y="24" class="t-h" text-anchor="middle" data-i18n="d_right">vrdual: one view per eye</text>
-    <line x1="390" y1="170" x2="660" y2="170" class="s-ghost"/>
-    <text x="660" y="160" class="t-s" text-anchor="end" data-i18n="d_dist">screen distance</text>
-    <rect x="452" y="54" width="26" height="26" class="f-far"/><text x="486" y="72" class="t-s" data-i18n="d_far">far: behind the screen</text>
-    <rect x="512" y="222" width="30" height="22" class="f-near"/><text x="550" y="231" class="t-s" data-i18n="d_near1">near: in front,</text><text x="550" y="246" class="t-s" data-i18n="d_near2">out of the screen</text>
-    <line x1="500" y1="290" x2="465" y2="67" class="s-l"/><line x1="540" y1="290" x2="465" y2="67" class="s-r"/>
-    <line x1="500" y1="290" x2="527" y2="233" class="s-l"/><line x1="540" y1="290" x2="527" y2="233" class="s-r"/>
-    <circle cx="500" cy="292" r="9" class="f-eye"/><circle cx="540" cy="292" r="9" class="f-eye"/>
-    <text x="520" y="322" class="t-s" text-anchor="middle" data-i18n="d_own">each eye from its own position: real depth</text>
-    <line x1="340" y1="40" x2="340" y2="300" class="s-ghost"/>
-  </svg>
   <ol class="steps">
     <li data-i18n="step1"><b>The game runs as usual.</b> Vulkan, OpenGL (via Zink) and Windows games through Proton (DXVK, vkd3d). Nothing in the game changes.</li>
     <li data-i18n="step2"><b>vrdual shifts each eye.</b> A Vulkan layer patches the game's vertex shaders so every frame is drawn from the left eye's position and from the right eye's.</li>
