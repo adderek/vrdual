@@ -6,11 +6,20 @@
   semaphore); without export (no copy submit) the CPU writes them immediately.
 - Compositor keys are only tested through `vrdual-ctl`; add an SDL event
   injection path (e.g. `--keys "Up Up W"`) so selftest can cover them.
-- Readback: the CPU copy into /dev/shm could go if the GPU wrote into the
-  frame file (host-pointer import of the slot, alpha forced by the readers).
-  Measured 2026-11-01 per eye on the game's present thread: 1.14 ms at 1080p,
-  4.67 ms at 4K (after non-temporal stores; before 1.58 / 6.6 ms). Matters
-  at 4K; amdgpu userptr risk on shmem pages: try a host-pointer import first.
+- Readback: the CPU copy into /dev/shm costs per eye on the game's present
+  thread 1.14 ms at 1080p, 4.67 ms at 4K (2026-11-01, after non-temporal
+  stores; before 1.58 / 6.6 ms). The GPU cannot write into the frame file:
+  probe 2026-11-01 (RADV, Navi31, headless GPU), `VK_EXT_external_memory_host`
+  import of a /dev/shm MAP_SHARED mapping fails with
+  `VK_ERROR_INVALID_EXTERNAL_HANDLE`, anonymous private memory imports fine
+  (1080p copy 0.39 ms). Likely cause: libdrm creates the userptr BO with
+  `AMDGPU_GEM_USERPTR_ANONONLY`, so file-backed (shmem, memfd) pages are
+  refused. Anonymous memory is not shareable with the reader, and
+  process_vm_readv / pidfd_getfd need ptrace rights (Yama, Flatpak PID
+  namespace). Left: export the readback memory as a dma-buf and hand the fd
+  to vrdual-xr over a unix socket (the reader then imports it, no CPU copy
+  on either side). That changes the passive-layer rule (a socket in the app
+  process): maintainer's decision first.
 - Readback: 10-bit and FP16 swapchains go through a blit to 8-bit since
   2026-10-21; HDR colour spaces (PQ / scRGB above 1) are not tone-mapped.
 - `vrdual gpus` "behind-switch" heuristic counts bridge hops (>4); the Navi31
