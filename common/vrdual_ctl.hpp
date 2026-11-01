@@ -113,11 +113,12 @@ inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
 // game: only a [global] save writes them, so a profile never pins an old IPD.
 inline std::string ctl_save(const vrdual_ctl& v, bool global) {
     std::string sec = global || !v.app[0] ? "global" : std::string("app:") + v.app;
+    std::vector<std::pair<std::string, std::string>> kvs;
     for (auto k : kLiveKeys) {
         if (sec != "global" && (!strcmp(k, "ipd") || !strcmp(k, "ipd_near") || !strcmp(k, "near_dist") || !strcmp(k, "far_dist"))) continue;
-        if (!save_key(config_path(), sec, k, live_value(v, k))) return "";
+        kvs.push_back({k, live_value(v, k)});
     }
-    return sec;
+    return save_keys(config_path(), sec, kvs) ? sec : "";
 }
 
 // Per-eye shader parameters, read by the patched vertex shader:

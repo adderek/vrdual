@@ -9,7 +9,11 @@
 //   [app:vrdual-cube]          # matches VkApplicationInfo name or exe basename
 //   hfov = 90
 #pragma once
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -179,14 +183,37 @@ inline Settings load_settings(const std::vector<std::string>& app_names) {
     return st;
 }
 
-// Sets key=value inside [section], keeping comments and every other line.
-inline bool save_key(const std::string& path, const std::string& section, const std::string& key, const std::string& value) {
+inline std::vector<std::string> read_lines(const std::string& path) {
     std::vector<std::string> lines;
+    std::ifstream f(path);
+    std::string l;
+    while (std::getline(f, l)) lines.push_back(l);
+    return lines;
+}
+
+// Replaces the file in one step (temp file + rename): a game starting while
+// the config is saved reads the old or the new file, never a truncated one.
+// A symlinked config (dotfiles) stays a symlink: the target is replaced.
+inline bool write_lines(const std::string& path, const std::vector<std::string>& lines) {
+    std::string real = path;
+    if (char* r = realpath(path.c_str(), nullptr)) { real = r; free(r); }
+    for (size_t s = real.find('/', 1); s != std::string::npos; s = real.find('/', s + 1))  // mkdir -p of the directory
+        if (mkdir(real.substr(0, s).c_str(), 0755) != 0 && errno != EEXIST) return false;
+    std::string tmp = real + ".tmp." + std::to_string(getpid());
     {
-        std::ifstream f(path);
-        std::string l;
-        while (std::getline(f, l)) lines.push_back(l);
+        std::ofstream o(tmp, std::ios::trunc);
+        for (auto& l : lines) o << l << "\n";
+        o.flush();
+        if (!o) { unlink(tmp.c_str()); return false; }
     }
+    struct stat st;
+    if (stat(real.c_str(), &st) == 0) chmod(tmp.c_str(), st.st_mode & 07777);
+    if (rename(tmp.c_str(), real.c_str()) != 0) { unlink(tmp.c_str()); return false; }
+    return true;
+}
+
+// Sets key=value inside [section] of `lines`, keeping comments and every other line.
+inline void set_key(std::vector<std::string>& lines, const std::string& section, const std::string& key, const std::string& value) {
     std::string want = lower(section);
     int sec_start = -1, sec_end = int(lines.size()), key_line = -1;
     std::string cur = "global";
@@ -216,24 +243,22 @@ inline bool save_key(const std::string& path, const std::string& section, const 
         lines.push_back("[" + section + "]");
         lines.push_back(kv);
     }
-    if (auto slash = path.rfind('/'); slash != std::string::npos) {
-        std::string dir = path.substr(0, slash);
-        std::string cmd = "mkdir -p '" + dir + "'";
-        if (system(cmd.c_str()) != 0) return false;
-    }
-    std::ofstream o(path, std::ios::trunc);
-    for (auto& l : lines) o << l << "\n";
-    return bool(o);
+}
+
+// Sets several keys of [section] with one write of the file.
+inline bool save_keys(const std::string& path, const std::string& section, const std::vector<std::pair<std::string, std::string>>& kvs) {
+    std::vector<std::string> lines = read_lines(path);
+    for (auto& kv : kvs) set_key(lines, section, kv.first, kv.second);
+    return write_lines(path, lines);
+}
+
+inline bool save_key(const std::string& path, const std::string& section, const std::string& key, const std::string& value) {
+    return save_keys(path, section, {{key, value}});
 }
 
 // Removes key from [section] (no-op if absent), keeping every other line.
 inline bool remove_key(const std::string& path, const std::string& section, const std::string& key) {
-    std::vector<std::string> lines;
-    {
-        std::ifstream f(path);
-        std::string l;
-        while (std::getline(f, l)) lines.push_back(l);
-    }
+    std::vector<std::string> lines = read_lines(path);
     std::string want = lower(section), cur = "global";
     bool hit = false;
     for (size_t n = 0; n < lines.size();) {
@@ -247,10 +272,7 @@ inline bool remove_key(const std::string& path, const std::string& section, cons
         }
         ++n;
     }
-    if (!hit) return true;
-    std::ofstream o(path, std::ios::trunc);
-    for (auto& l : lines) o << l << "\n";
-    return bool(o);
+    return !hit || write_lines(path, lines);
 }
 
 // Anchor/IPD -> eye displacement along view +X in meters.

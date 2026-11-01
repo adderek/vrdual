@@ -704,6 +704,15 @@ _selftest_nogpu() {
         grep -q '/issues/new?template=game-report.yml&title=%5Bgame%5D%20mirrorsedge.exe&game=mirrorsedge.exe&exe=mirrorsedge.exe&gpu=AMD%20Radeon' <<<\"\$p\" &&
         grep -q '&version=vrdual%20.*%2C%20built%20.*%28layer%20' <<<\"\$p\" &&
         grep -q '&notes=Played%2010%20min.*built-in' <<<\"\$p\" || { echo \"\$r\"; echo \"\$p\"; false; }"
+    # Saves replace the file in one step: a game starting meanwhile never reads
+    # a truncated config (the old in-place rewrite did, ~1 % of reads here).
+    label="config save: readers never see a partial file; a symlinked config stays a symlink, its mode kept"
+    check bash -c "d='$tmp/cfgsave'; mkdir -p \$d/real; c=\$d/real/vrdual.conf
+        { echo '[global]'; echo 'ipd = 0.07'; for i in \$(seq 2000); do echo \"# filler line \$i\"; done; } >\$c; chmod 600 \$c; ln -s \$c \$d/link.conf
+        export VRDUAL_CONFIG=\$d/link.conf
+        ( for i in \$(seq 100); do '$B/vrdual-ctl' map-set --global gamepad y none 2>/dev/null && '$B/vrdual-ctl' map-set --global gamepad y default 2>/dev/null || exit 1; done ) & w=\$!
+        bad=0; while kill -0 \$w 2>/dev/null; do grep -q '^ipd = 0.07' \$d/link.conf || bad=\$((bad+1)); done
+        wait \$w && ((bad == 0)) && [[ -L \$d/link.conf && \$(stat -c %a \$c) == 600 && \$(ls \$d/real) == vrdual.conf ]] || { echo \"partial reads: \$bad\"; ls -la \$d \$d/real; false; }"
     label="docs/CONFIG.md lists every config key"
     check bash -c "VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show | awk '{print \$1}' | while read -r k; do grep -q \"\\\`\$k\\\`\" '$VRDUAL_ROOT/docs/CONFIG.md' || { echo \"missing: \$k\"; exit 1; }; done"
 
