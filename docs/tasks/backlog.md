@@ -47,9 +47,9 @@
 - Site / showcase media (owner's ranking 2026-11-01, best first): HospitalTycoon-3,
   HogwartsLegacy_1, DukeNukem4ever_1, Mafia, HogwartsLegacy_2,
   AssasinsCreedOrigins. `HospitalTycoon-3.gif`: the subtitle line at the
-  bottom spoils it, re-record or crop. The landing page diagram is abstract
-  (top view); wanted: a picture of an older game whose 3D comes out of the
-  screen. Side-by-side PNGs are not in git (2-10 MB): compressed JPEGs could
+  bottom spoils it, re-record or crop. Landing page "how it works" picture:
+  done 2026-11-01 (`site/img/promo.webp`, generated, no third-party game
+  characters). Side-by-side PNGs are not in git (2-10 MB): compressed JPEGs could
   go on the per-game pages.
 - LEGO games: per-eye shading errors visible in the LEGO Marvel GIFs (a
   screen-space effect computed for one eye); find and fix the shader.

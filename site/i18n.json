@@ -36,7 +36,9 @@
   "gallery_note": "Każdy GIF przełącza obraz lewego i prawego oka; w goglach głębia jest stabilna.",
   "honest_h": "Nie zawsze najlepsza droga",
   "honest_p": "vrdual działa z grami, które nic nie wiedzą o VR. Dedykowany mod VR do jednej gry (np. <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>) może dać tej grze więcej: śledzenie głowy w silniku, kontrolery ruchu, stały HUD. Lista gier podaje takie drogi, jeśli je znamy.",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Gotowe konfiguracje do niektórych gier najpierw trafiają do <a href=\"https://github.com/sponsors/adderek\">sponsorów</a>; wszystko można skonfigurować samemu, za darmo."
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Gotowe konfiguracje do niektórych gier najpierw trafiają do <a href=\"https://github.com/sponsors/adderek\">sponsorów</a>; wszystko można skonfigurować samemu, za darmo.",
+  "promo_alt": "Gra na monitorze przechodzi przez vrdual na Linuksie, dzieli się na strumień lewego i prawego oka i trafia do gogli VR, z których wylatuje smok. Na dole: jedna karta graficzna albo dwie, około dwa razy szybciej.",
+  "promo_cap": "Gra rysuje jak zwykle; vrdual na Linuksie zamienia każdą klatkę w obraz dla lewego i prawego oka. Jedna karta renderuje je na zmianę, dwie jednocześnie, mniej więcej dwa razy szybciej."
  },
  "de": {
   "desc": "Echtes Stereo-3D für normale Spiele im VR-Headset unter Linux: Jedes Auge bekommt sein eigenes gerendertes Bild. Keine Mods. Eine Grafikkarte reicht.",
@@ -75,7 +77,9 @@
   "gallery_note": "Jedes GIF wechselt zwischen linkem und rechtem Auge; im Headset ist die Tiefe ruhig.",
   "honest_h": "Nicht immer der beste Weg",
   "honest_p": "vrdual funktioniert mit Spielen, die nichts von VR wissen. Ein eigener VR-Mod für ein Spiel (zum Beispiel <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>) kann für dieses Spiel mehr leisten: Head-Tracking in der Engine, Bewegungscontroller, ein festes HUD. Die Spieleliste nennt solche Wege, soweit wir sie kennen.",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Fertige Konfigurationen für einige Spiele gehen zuerst an <a href=\"https://github.com/sponsors/adderek\">Sponsoren</a>; alles lässt sich auch selbst einstellen, kostenlos."
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Fertige Konfigurationen für einige Spiele gehen zuerst an <a href=\"https://github.com/sponsors/adderek\">Sponsoren</a>; alles lässt sich auch selbst einstellen, kostenlos.",
+  "promo_alt": "Ein Spiel auf dem Monitor läuft durch vrdual unter Linux, wird in einen Strom für das linke und das rechte Auge geteilt und erreicht ein VR-Headset, aus dem ein Drache fliegt. Unten: eine Grafikkarte oder zwei, etwa doppelt so schnell.",
+  "promo_cap": "Das Spiel zeichnet wie gewohnt; vrdual unter Linux macht aus jedem Bild eine Ansicht für das linke und das rechte Auge. Eine Grafikkarte rendert sie abwechselnd, zwei gleichzeitig, etwa doppelt so schnell."
  },
  "es": {
   "desc": "Estéreo 3D real para juegos normales en un visor VR en Linux: cada ojo recibe su propia imagen renderizada. Sin mods. Basta una tarjeta gráfica.",
@@ -114,7 +118,9 @@
   "gallery_note": "Cada GIF alterna las vistas del ojo izquierdo y derecho; en el visor la profundidad es estable.",
   "honest_h": "No siempre es la mejor opción",
   "honest_p": "vrdual funciona con juegos que no saben nada de VR. Un mod VR dedicado a un juego (por ejemplo <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>) puede ofrecer más para ese juego: seguimiento de cabeza en el motor, mandos de movimiento, un HUD fijo. La lista de juegos indica esas alternativas cuando las conocemos.",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Las configuraciones listas para algunos juegos llegan primero a los <a href=\"https://github.com/sponsors/adderek\">patrocinadores</a>; todo se puede configurar a mano, gratis."
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Las configuraciones listas para algunos juegos llegan primero a los <a href=\"https://github.com/sponsors/adderek\">patrocinadores</a>; todo se puede configurar a mano, gratis.",
+  "promo_alt": "Un juego en el monitor pasa por vrdual en Linux, se divide en un flujo para el ojo izquierdo y otro para el derecho y llega a un visor VR del que sale volando un dragón. Abajo: una GPU, o dos GPU a casi el doble de velocidad.",
+  "promo_cap": "El juego dibuja como siempre; vrdual en Linux convierte cada fotograma en una vista para el ojo izquierdo y otra para el derecho. Una GPU las renderiza por turnos; dos GPU a la vez, casi el doble de rápido."
  },
  "fr": {
   "desc": "Une vraie stéréo 3D pour des jeux ordinaires dans un casque VR sous Linux : chaque œil reçoit sa propre image rendue. Sans mods. Une seule carte graphique suffit.",
@@ -153,7 +159,9 @@
   "gallery_note": "Chaque GIF alterne les vues de l'œil gauche et de l'œil droit ; dans le casque, la profondeur est stable.",
   "honest_h": "Pas toujours la meilleure option",
   "honest_p": "vrdual fonctionne avec des jeux qui ignorent tout de la VR. Un mod VR dédié à un jeu (par exemple <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>) peut faire davantage pour ce jeu : suivi de la tête dans le moteur, manettes de mouvement, HUD fixe. La liste des jeux indique ces alternatives quand nous les connaissons.",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Les configurations prêtes à l'emploi de certains jeux vont d'abord aux <a href=\"https://github.com/sponsors/adderek\">sponsors</a> ; tout peut être configuré à la main, gratuitement."
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Les configurations prêtes à l'emploi de certains jeux vont d'abord aux <a href=\"https://github.com/sponsors/adderek\">sponsors</a> ; tout peut être configuré à la main, gratuitement.",
+  "promo_alt": "Un jeu sur le moniteur passe par vrdual sous Linux, se sépare en un flux pour l'œil gauche et un pour l'œil droit et atteint un casque VR d'où s'échappe un dragon. En bas : une carte graphique, ou deux, environ deux fois plus vite.",
+  "promo_cap": "Le jeu dessine normalement ; vrdual sous Linux transforme chaque image en une vue pour l'œil gauche et une pour l'œil droit. Une carte les rend à tour de rôle ; deux les rendent en même temps, environ deux fois plus vite."
  },
  "pt-BR": {
   "desc": "Estéreo 3D de verdade para jogos comuns em um headset VR no Linux: cada olho recebe sua própria imagem renderizada. Sem mods. Uma placa de vídeo basta.",
@@ -192,7 +200,9 @@
   "gallery_note": "Cada GIF alterna as visões do olho esquerdo e do direito; no headset a profundidade é estável.",
   "honest_h": "Nem sempre o melhor caminho",
   "honest_p": "O vrdual funciona com jogos que não sabem nada de VR. Um mod VR dedicado a um jogo (por exemplo <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>) pode fazer mais por esse jogo: rastreamento de cabeça no motor, controles de movimento, um HUD fixo. A lista de jogos indica esses caminhos quando os conhecemos.",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Configurações prontas para alguns jogos vão primeiro para os <a href=\"https://github.com/sponsors/adderek\">patrocinadores</a>; tudo pode ser configurado à mão, de graça."
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Configurações prontas para alguns jogos vão primeiro para os <a href=\"https://github.com/sponsors/adderek\">patrocinadores</a>; tudo pode ser configurado à mão, de graça.",
+  "promo_alt": "Um jogo no monitor passa pelo vrdual no Linux, se divide em um fluxo para o olho esquerdo e outro para o direito e chega a um headset VR, de onde sai voando um dragão. Embaixo: uma placa de vídeo, ou duas, cerca de duas vezes mais rápido.",
+  "promo_cap": "O jogo desenha normalmente; o vrdual no Linux transforma cada quadro em uma visão para o olho esquerdo e outra para o direito. Uma placa as renderiza alternadamente; duas ao mesmo tempo, cerca de duas vezes mais rápido."
  },
  "ru": {
   "desc": "Настоящее стерео 3D для обычных игр в VR-шлеме на Linux: каждый глаз получает собственное отрендеренное изображение. Без модов. Достаточно одной видеокарты.",
@@ -231,7 +241,9 @@
   "gallery_note": "Каждый GIF чередует изображения левого и правого глаза; в шлеме глубина стабильна.",
   "honest_h": "Не всегда лучший вариант",
   "honest_p": "vrdual работает с играми, которые ничего не знают о VR. Специальный VR-мод для конкретной игры (например, <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>) может дать ей больше: отслеживание головы в движке, контроллеры движения, неподвижный HUD. В списке игр указаны такие варианты, если мы о них знаем.",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Готовые конфигурации для некоторых игр сначала получают <a href=\"https://github.com/sponsors/adderek\">спонсоры</a>; всё можно настроить вручную, бесплатно."
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · Готовые конфигурации для некоторых игр сначала получают <a href=\"https://github.com/sponsors/adderek\">спонсоры</a>; всё можно настроить вручную, бесплатно.",
+  "promo_alt": "Игра на мониторе проходит через vrdual на Linux, делится на поток для левого и для правого глаза и попадает в VR-шлем, из которого вылетает дракон. Внизу: одна видеокарта или две, примерно вдвое быстрее.",
+  "promo_cap": "Игра рисует как обычно; vrdual на Linux превращает каждый кадр в изображение для левого и правого глаза. Одна видеокарта рендерит их по очереди, две — одновременно, примерно вдвое быстрее."
  },
  "ja": {
   "desc": "Linux で普通のゲームを VR ヘッドセットで本物のステレオ 3D に：左右の目それぞれに別々の映像をレンダリングします。MOD 不要。GPU は 1 枚で十分です。",
@@ -270,7 +282,9 @@
   "gallery_note": "各 GIF は左右の目の映像を交互に表示しています。ヘッドセットでは奥行きは安定しています。",
   "honest_h": "いつも最適とは限りません",
   "honest_p": "vrdual は VR を知らないゲームで動きます。特定のゲーム専用の VR MOD（例：<a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>）なら、そのゲームでより多くのことができます：エンジン内のヘッドトラッキング、モーションコントローラー、固定 HUD。分かっている場合は、ゲーム一覧にそうした選択肢を載せています。",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · 一部のゲーム向けの設定済みコンフィグはまず<a href=\"https://github.com/sponsors/adderek\">スポンサー</a>に提供されます。すべて手動で、無料で設定できます。"
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · 一部のゲーム向けの設定済みコンフィグはまず<a href=\"https://github.com/sponsors/adderek\">スポンサー</a>に提供されます。すべて手動で、無料で設定できます。",
+  "promo_alt": "モニター上のゲームが Linux 上の vrdual を通って左目用と右目用のストリームに分かれ、VR ヘッドセットに届き、そこからドラゴンが飛び出しています。下：GPU 1 枚、または約 2 倍速い GPU 2 枚。",
+  "promo_cap": "ゲームはいつも通り描画し、Linux 上の vrdual が各フレームを左目用と右目用の映像にします。GPU 1 枚なら交互に、2 枚なら同時にレンダリングし、約 2 倍速くなります。"
  },
  "zh-CN": {
   "desc": "在 Linux 上让普通游戏在 VR 头显中呈现真正的立体 3D：每只眼睛获得各自渲染的画面。无需模组。一块显卡就够了。",
@@ -309,6 +323,8 @@
   "gallery_note": "每个 GIF 交替显示左右眼画面；在头显中纵深是稳定的。",
   "honest_h": "并非总是最佳选择",
   "honest_p": "vrdual 适用于对 VR 一无所知的游戏。专为某款游戏制作的 VR 模组（例如 <a href=\"https://github.com/tig3rmast3r/witcher3-vr\">witcher3-vr</a>）能为该游戏做得更多：引擎内的头部追踪、体感控制器、固定的 HUD。我们知道时，游戏列表会列出这些选择。",
-  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · 部分游戏的现成配置会先提供给<a href=\"https://github.com/sponsors/adderek\">赞助者</a>；所有设置都可以免费手动完成。"
+  "foot": "Apache-2.0 · <a href=\"https://github.com/adderek/vrdual\">github.com/adderek/vrdual</a> · 部分游戏的现成配置会先提供给<a href=\"https://github.com/sponsors/adderek\">赞助者</a>；所有设置都可以免费手动完成。",
+  "promo_alt": "显示器上的游戏经过 Linux 上的 vrdual，分成左眼和右眼两路画面，送入 VR 头显，一条龙从头显中飞出。下方：一块显卡，或速度约两倍的两块显卡。",
+  "promo_cap": "游戏照常绘制；Linux 上的 vrdual 把每一帧变成左眼和右眼两个画面。一块显卡轮流渲染，两块显卡同时渲染，速度约为两倍。"
  }
 }
