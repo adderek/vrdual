@@ -1,5 +1,10 @@
 # M3 — HMD output via OpenXR (no headset needed to start)
 
+**Status 2026-10-18:** done as `vrdual-xr` (`compositor/xr.cpp`, not a
+`--openxr` compositor mode): Monado's simulated HMD (selftest "openxr"
+checks) and the Quest 3S via WiVRn. In the HMD there is a text notice
+overlay (`overlay_time`); left: the calibration UI in the HMD (PLAN §H).
+
 **Goal:** the compositor submits L/R frames to an OpenXR runtime instead of (or
 in addition to) the SBS window. Develop against Monado's simulated HMD; later
 switch the runtime to WiVRn → Meta Quest 3S. Nothing in the code should be

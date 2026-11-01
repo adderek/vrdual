@@ -1,5 +1,10 @@
 # M5 — real applications
 
+**Status 2026-11-01:** done in substance: games through Steam / Proton /
+Heroic, the compatibility table is [GAMES.md](../GAMES.md) (generated from
+`site/games.json`), per-game settings in `[app:NAME]` profiles. Open: the
+failures listed there per game.
+
 **Goal:** run something that is not our test app. Order: a Vulkan demo
 (`vkcube` once vulkan-tools is installed; Sascha Willems samples), a native
 Vulkan game, then a DXVK/VKD3D-Proton title.

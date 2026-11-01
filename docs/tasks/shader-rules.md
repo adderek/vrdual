@@ -53,8 +53,9 @@ data: `[app:NAME]` sections and later the per-game profile files (TODO 11).
    restarts and a resolution change; GAMES.md). Added on the way:
    `hud_depth_scope = rules` (only `hud` rule shaders get `hud_depth`; one
    hunt for the HUD instead of one per post pass), `?` answer, settings copy
-   for Flatpak Steam refreshed on `hunt rule` / `save`. Left: Find a HUD shader with `_ hunt`, put it into `shader_rules`.
-   Then: is there a better key that survives a Proton update (DXVK keeps
+   for Flatpak Steam refreshed on `hunt rule` / `save`; a `hud` rule for
+   Mirror's Edge's crosshair found with `_ hunt find hud` (GAMES.md). Left:
+   key stability in a D3D11 / D3D12 game. Then: is there a better key that survives a Proton update (DXVK keeps
    the DXBC's SHA-1 in its shader key; not visible to a Vulkan layer as far
    as known)?
 3. HUD scale (borrowed-features #2) for `hud` rule shaders only.
