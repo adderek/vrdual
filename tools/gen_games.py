@@ -7,7 +7,7 @@ gen_games.py --check   validate games.json and the landing page translations
                        (site/i18n.json); exit 1 if GAMES.md is out of date
 
 The same games.json is the data of the GitHub Pages viewer (site/). Public
-material only: sponsor configurations never go here (TODO 18).
+material only: unpublished notes never go here (TODO 18).
 """
 import json
 import re
@@ -19,9 +19,9 @@ DATA = ROOT / "site" / "games.json"
 DOC = ROOT / "docs" / "GAMES.md"
 FIELDS = ["game", "store", "path", "status", "settings", "notes"]  # the GAMES.md columns
 # Site only: one-GPU status ("" = untested), other VR routes, files in
-# screenshots/ tracked in git (gif = wiggle, mp4 = video), and whether
-# sponsors get a ready-made configuration.
-EXTRA = {"single": str, "alt": str, "media": list, "sponsor": bool}
+# screenshots/ tracked in git (gif = wiggle, mp4 = video), and whether a
+# tuned configuration exists that is not written up yet.
+EXTRA = {"single": str, "alt": str, "media": list, "writeup_pending": bool}
 SHOTS = ROOT / "screenshots"
 STATUS = {"works", "runs", "broken", "no effect", "retest"}
 BEGIN, END = "<!-- games:begin (generated from site/games.json by tools/gen_games.py) -->", "<!-- games:end -->"
@@ -42,7 +42,7 @@ def load():
             errs.append(f"{where}: want exactly the keys {FIELDS + list(EXTRA)} in that order")
             continue
         if not all(isinstance(g[f], str) for f in FIELDS) or not all(isinstance(g[k], t) for k, t in EXTRA.items()):
-            errs.append(f"{where}: wrong value types (strings; media a list, sponsor true/false)")
+            errs.append(f"{where}: wrong value types (strings; media a list, writeup_pending true/false)")
         elif g["single"] not in STATUS | {""}:
             errs.append(f"{where}: single {g['single']!r} not in {sorted(STATUS)} or empty")
         elif any(not isinstance(m, str) or "/" in m or not (SHOTS / m).is_file() for m in g["media"]):

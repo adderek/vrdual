@@ -90,7 +90,8 @@ Tycoon. Broken: Portal (Zink bug), Tomb Raider I (DOSBox, 2D).
 
 vrdual is developed in spare time. If it lets you play something in VR,
 consider supporting it: [GitHub Sponsors](https://github.com/sponsors/adderek),
-[Liberapay](https://liberapay.com/adderek/) or [Ko-fi](https://ko-fi.com/adderek).
+[Liberapay](https://liberapay.com/adderek/) or [Ko-fi](https://ko-fi.com/adderek). Donations are a gift:
+no perks in return, everything is published for everyone.
 
 When reporting a problem, include the output of `./vrdual version` (it also
 shows whether Steam still loads an older layer) and the game's log.

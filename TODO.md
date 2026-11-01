@@ -13,16 +13,11 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 8. [Guided IPD calibration](docs/tasks/guided-calibration.md): small, independent
 9. [Borrowed from vorpX/FlatVR](docs/tasks/borrowed-features.md): HUD depth, cinema/curved screen, screen grab (done), HUD scale (needs HUD vs post-process distinction), edge peek; depth reprojection (Z3D) = M7 on branch `single-gpu`
 10. [Backlog: small defects and hardening](docs/tasks/backlog.md)
-11. Game profiles for sponsors (owner's decision 2026-10-20): curated per-game
-    settings (`kAppProfiles` today: built into the binary) become a sponsor
-    feature. Needs a separate data source the code loads (e.g. a profiles file
-    from a private repository, which GitHub Sponsors tiers can grant access to)
-    (the public code is Apache-2.0 since 2026-10-20: anything in it can be
-    copied, so gated profiles must live outside this repository).
-    Model since 2026-10-21: sponsorware, see `docs/PLAN.md` §J (early per
-    feature and per game, public after 3 months). First step:
-    `vrdual profiles sync` into a local cache, then auto-pick by exe name
-    (store ids as aliases, PLAN §K).
+11. Game profiles as data files: curated per-game settings (`kAppProfiles`
+    today: built into the binary) move to public data files the code loads,
+    so the table can grow without rebuilding (support model: donations only,
+    `docs/PLAN.md` §J, 2026-11-01). First step: `vrdual profiles sync` into
+    a local cache, then auto-pick by exe name (store ids as aliases, PLAN §K).
 12. Non-Steam launchers (PLAN §K): GOG native via `vrdual run`, Heroic /
     Lutris / umu wrapper command, `heroic-install` if Heroic is a Flatpak;
     store/build column in `docs/GAMES.md`.
@@ -40,21 +35,19 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 16. Skip intro videos (owner's idea 2026-10-23): `vrdual intro off|on GAME`
     renames the logo videos listed in the game's profile (`.orig` suffix,
     reversible; Steam file verification restores them). Data per game lives in
-    the sponsor profiles (first: Overlord, `Video/Title_*.bik`); the command
-    itself is public.
+    the profile files (item 11; first: Overlord, `Video/Title_*.bik`).
 17. [Shader rules](docs/tasks/shader-rules.md) (from witcher3-vr,
     2026-10-31): per-shader `noshift | hud | hide` by SPIR-V hash in
     `shader_rules`, live bisection `_ hunt` to find a shader. Step 1 done;
     next: try it in a DXVK game (key stability), then HUD scale.
 18. Public docs on GitHub Pages (owner's decision 2026-11-01): public
-    material only; sponsor material never goes on Pages (public on a normal
-    account), it stays in the private sponsor repo. Plan: `docs/games.json`
-    as the source of the GAMES.md table (generator + `vrdual ci` check) and of
-    a static viewer (filter / sort); per game `sponsor_config` and `public_on`
-    (PLAN §J 3-month clock); sponsor data in the same schema, viewed locally.
+    material only; unpublished notes stay local until written up. Plan:
+    `docs/games.json` as the source of the GAMES.md table (generator +
+    `vrdual ci` check) and of a static viewer (filter / sort); per game
+    `writeup_pending` (tuned configuration not written up yet).
     Owner enables Pages (Settings → Pages → GitHub Actions). Step 1 done
     2026-11-01: `site/games.json` + generator + ci check, viewer in `site/`,
-    workflow `pages.yml`. Next: sponsor data in the same schema, `_ site`.
+    workflow `pages.yml`. Next: write up the pending configurations, `_ site`.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

@@ -51,5 +51,5 @@ a stereo texture; the driver, seeing the signature, gives each eye its half.
    without, both GPU modes.
 
 **Done when** Alice's shadows and screen-space effects line up in both eyes
-(calib-style measurement or captured frames), one and two GPUs. Fits PLAN §J
-"legacy-game tweaks" as an early (sponsor) feature.
+(calib-style measurement or captured frames), one and two GPUs. Part of the
+legacy-game tweaks.

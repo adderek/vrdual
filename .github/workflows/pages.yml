@@ -1,6 +1,6 @@
 # Public site (GitHub Pages, source "GitHub Actions"): site/ plus the
 # tracked screenshots/ (wiggle GIFs, videos).
-# Public material only; sponsor material never goes here (TODO 18).
+# Public material only; unpublished notes never go here (TODO 18).
 name: pages
 on:
   push:

@@ -32,9 +32,9 @@ loadGames().then(games => {
     ${g.media.length ? `<div class="media">${g.media.map(mediaHtml).join("")}</div>
       <p class="muted">Wiggle GIFs alternate the left and right eye views to show depth on a flat screen; in the headset each eye sees its own view.</p>`
       : '<p class="muted">No GIFs or videos yet.</p>'}
-    <h2>For sponsors</h2>
-    <p>${g.sponsor ? `A ready-made configuration (tested settings, fixes for the problems already worked through) is available to <a href="https://github.com/sponsors/adderek">sponsors</a>. Nothing is locked: everything can be configured by hand, free (<a href="${REPO}CONFIG.md">CONFIG.md</a>).`
-      : `No extra sponsor material for this game; everything known is on this page.`}</p>
+    <h2>Configuration</h2>
+    <p>${g.writeup_pending ? `A tuned configuration (tested settings, fixes for the problems already worked through) exists but is not written up yet; it will be published here. Until then everything can be configured by hand (<a href="${REPO}CONFIG.md">CONFIG.md</a>).`
+      : `Everything known about this game is on this page.`}</p>
     <h2>Details</h2><dl>${rows}</dl>`;
 }).catch(e => { document.getElementById("g").textContent = "games.json: " + e; });
 </script>

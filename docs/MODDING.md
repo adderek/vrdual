@@ -60,7 +60,7 @@ filled in yet); the Steam copy of Madness Returns does not contain it.
 - **Models**: generic mesh replacement without engine knowledge is fragile.
   Cheaper: injected tessellation in the style of ATI TruForm (PN triangles):
   smoother silhouettes, no new detail.
-- Per-game tuning profiles fit the sponsorware model (early access per game).
+- Per-game tuning profiles fit the profile data files (TODO 11).
 
 ## Sources
 

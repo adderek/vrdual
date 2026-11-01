@@ -43,7 +43,7 @@
   2026-11-01): `_ shaders new LOG` turning the "not in catalog" lines into
   catalog lines; record the translator (DXVK / vkd3d version) in the catalog
   so an all-new run says "translator changed" rather than "mod?"; a Witcher 3
-  catalog with descriptions (sponsors, `~/src/vrdual-sponsors`).
+  catalog with descriptions.
 - Site / showcase media (owner's ranking 2026-11-01, best first): HospitalTycoon-3,
   HogwartsLegacy_1, DukeNukem4ever_1, Mafia, HogwartsLegacy_2,
   AssasinsCreedOrigins. `HospitalTycoon-3.gif`: the subtitle line at the

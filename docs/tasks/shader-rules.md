@@ -14,7 +14,7 @@ shaders in a game need another one. The `w == 1` heuristic catches the HUD
 and full-screen passes alike, so `hud_depth` shifts post-process passes too
 (seam at one edge) and HUD scale (borrowed-features #2) is blocked. Rules
 keyed by shader hash keep the code generic and put the game knowledge into
-data: `[app:NAME]` sections and later the sponsor profiles (PLAN §J).
+data: `[app:NAME]` sections and later the per-game profile files (TODO 11).
 
 ## Design
 
@@ -58,7 +58,7 @@ data: `[app:NAME]` sections and later the sponsor profiles (PLAN §J).
    the DXBC's SHA-1 in its shader key; not visible to a Vulkan layer as far
    as known)?
 3. HUD scale (borrowed-features #2) for `hud` rule shaders only.
-4. Rules in the sponsor profiles (`vrdual profiles sync`, TODO 11).
+4. Rules in the per-game profile files (`vrdual profiles sync`, TODO 11).
 
 ## Not taken over (and why)
 

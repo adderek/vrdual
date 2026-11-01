@@ -104,39 +104,29 @@ optional guided calibration flow that shows one post at a time, asks
 Culling for the original camera, an eye passing through a near wall, parallax
 occlusion mapping and other screen-space post effects. Revisit after B2.
 
-## J. Sponsors and early access (decided 2026-10-21)
+## J. Support: donations only (decided 2026-11-01)
 
-No DRM: no keys, device limits or per-device e-mail login. The public code is
-Apache-2.0, a fork removes any check, and data files get copied anyway.
-Sponsors pay for time and service, not for exclusive access.
+Donations (GitHub Sponsors, Liberapay, Ko-fi) are gifts: a donor gets
+nothing in return. No tier grants access, priority, votes or material; a
+thank-you (a name in a list, if wanted) is all. Nobody pays to see anything
+earlier.
 
-- Early access lives in a private repo attached to a GitHub Sponsors tier
-  (GitHub grants and revokes access itself; auth = the user's GitHub account
-  via `gh`). Builds of the early channel are release assets there.
-- Two dimensions of early:
-  - feature: a new capability (e.g. legacy-game tweaks: shader injection,
-    resolution, textures);
-  - game: per-game work (profile, fix or game-specific feature for one game).
-- Everything early becomes public (Apache-2.0) **3 months after its first
-  early release**. No funding goal to speed it up. The clock starts at release,
-  not at "maturity" (subjective, could be postponed forever); an immature
-  feature goes public behind an experimental flag, off by default.
-- A dud is published too: anything that was in early goes public at the
-  3-month mark even if dropped, as archived code (`attic/` or a tag; not
-  built, not maintained) with a note on why it failed. No silent removal:
-  the promise stays checkable without exceptions.
-- Bug fixes are never early: they go public at once. VR basics (world scale,
-  FOV, HUD distance, stability) are public, not early.
-- No CLA: early code is written by the owner only, so it can carry a
-  source-available licence (no redistribution, converts to Apache-2.0 at the
-  change date). Outside PRs go to the public repo.
-- Fetching is a host-side CLI job (`vrdual profiles sync` into a local cache);
-  the layer stays passive and the Steam wrapper only reads the cache.
-- To keep merges cheap, early features plug into small public extension points
-  (shader hooks, overlay panels, config sections) from their own directories;
-  going public means moving the directory.
-- Store-neutral: a profile bought for one game works for that game from any
-  store (Steam, GOG, Epic, ...). Sponsorship never depends on a store.
+- Everything is public (Apache-2.0) when the author considers it ready. Work
+  in progress kept locally (per-game notes, unfinished features) is
+  unpublished, not gated: there is no way to buy access to it.
+- Bug fixes and VR basics (world scale, FOV, HUD distance, stability) go
+  public at once.
+- No DRM: no keys, device limits or logins.
+- Per-game profiles are data files loaded host-side (`vrdual profiles sync`
+  into a local cache); the layer stays passive and the Steam wrapper only
+  reads the cache. Store-neutral: a profile works for its game from any store.
+- Larger features plug into small public extension points (shader hooks,
+  overlay panels, config sections) from their own directories.
+
+History: a sponsorware model (early access for a Sponsors tier, public after
+3 months; decided 2026-10-21) was dropped on 2026-11-01 before launch; no
+tier was ever offered. Paid early access, if ever reopened, is a separate
+decision and a separate channel, never mixed with donations.
 
 ## K. Stores and launchers
 
@@ -191,8 +181,7 @@ GDPR duties: an IP or install id is personal data). GitHub is the backend.
   and "Feature ideas", one discussion per game/feature, ranked by native
   upvotes. `vrdual request` searches for an existing one first, else opens a
   prefilled `discussions/new?category=…&title=…&body=…` URL in the browser
-  (no token, no `gh`). Sponsor weight: private sponsor repo or a label, by
-  hand while the volume is small.
+  (no token, no `gh`). Ranked by upvotes only; donations carry no weight.
 - "No profile" moment: when a game starts without a profile, the host side
   (CLI/overlay, never the layer) offers to report it, prefilled with what the
   user would not type: exe, store id, engine (DXVK/vkd3d/Zink), Mesa, GPU,

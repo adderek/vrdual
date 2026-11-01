@@ -11,7 +11,7 @@ function details(g) {
   const s = slug(g);
   const rows = [["store: test", g.store], ["path", g.path], ["settings", g.settings], ["notes", g.notes]]
     .filter(r => r[1]).map(([h, v]) => `<dt>${h}</dt><dd>${md(v)}</dd>`).join("");
-  const sp = g.sponsor ? `<p class="sponsor">Ready-made configuration for <a href="https://github.com/sponsors/adderek">sponsors</a> (or tune it yourself, <a href="${REPO}CONFIG.md">CONFIG.md</a>).</p>` : "";
+  const sp = g.writeup_pending ? `<p class="pending">Tuned configuration, write-up pending (until then tune it yourself, <a href="${REPO}CONFIG.md">CONFIG.md</a>).</p>` : "";
   const media = g.media.length ? `<div class="media" data-media="${esc(s)}"><button type="button" class="load">Show ${g.media.length} wiggle GIF / video</button></div>` : "";
   return `<tr class="det" id="d-${esc(s)}"><td colspan="5"><dl>${rows}</dl>${sp}${media}<p><a href="game.html?g=${encodeURIComponent(s)}">All materials for this game →</a></p></td></tr>`;
 }
@@ -33,7 +33,7 @@ function render() {
       const n = rows.filter(x => grpOf(x) === prev).length;
       head = `<tr class="grp"><th colspan="5" scope="rowgroup">${stHtml(prev)} <span class="muted">${colName} · ${n} game${n === 1 ? "" : "s"}</span></th></tr>`;
     }
-    const marks = (g.media.length ? '<span class="cam" title="wiggle GIF / video">◐</span>' : "") + (g.sponsor ? '<span class="spb" title="ready-made configuration for sponsors">★</span>' : "");
+    const marks = (g.media.length ? '<span class="cam" title="wiggle GIF / video">◐</span>' : "") + (g.writeup_pending ? '<span class="spb" title="tuned configuration, write-up pending">★</span>' : "");
     return head + `<tr class="row${o ? " open" : ""}${modeSt(g) === "broken" ? " broken" : ""}" data-s="${esc(s)}" tabindex="0" aria-expanded="${o}">
       <td data-h="game"><div class="gcell"><span><span class="tw">▸</span> ${esc(g.game)}</span>${marks ? `<span class="marks">${marks}</span>` : ""}</div></td>
       <td data-h="two GPUs" class="${mode === "dual" ? "hl" : ""}">${stHtml(g.status)}</td>

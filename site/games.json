@@ -9,7 +9,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Age of Wonders (1999)",
@@ -21,7 +21,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Alice: Madness Returns (19680)",
@@ -33,7 +33,7 @@
   "single": "runs",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Alien: Isolation",
@@ -45,7 +45,7 @@
   "single": "",
   "alt": "MotherVR (Windows only)",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Aliens: Colonial Marines (49540)",
@@ -57,7 +57,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Assassin's Creed Origins",
@@ -71,7 +71,7 @@
   "media": [
    "AssasinsCreedOrigins.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Beyond Blue",
@@ -83,7 +83,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Botany Manor",
@@ -95,19 +95,19 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Call of Juarez: Gunslinger (204450)",
   "store": "Steam: positive",
   "path": "Proton, DXVK d3d9 (32-bit)",
   "status": "works",
-  "settings": "ready-made configuration for sponsors (or tune it yourself)",
+  "settings": "tuned configuration, write-up pending (until then tune it yourself)",
   "notes": "game leaves alpha 0 (black in the HMD before the layer forced alpha 1); weak depth at default settings; mirror memory sync 24 ms → 0.13 ms/submit with cached write tracking; confirmed 2026-10-21, fast 2026-10-22",
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": true
+  "writeup_pending": true
  },
  {
   "game": "Carmageddon TDR 2000",
@@ -119,7 +119,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Chasm: The Rift",
@@ -131,7 +131,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Civilization V (8930)",
@@ -145,19 +145,19 @@
   "media": [
    "CivV_1.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Control",
   "store": "Epic (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), D3D11 (`Control_DX11.exe`, DXVK) or D3D12 (`Control_DX12.exe`, vkd3d-proton), Northlight, 64-bit",
   "status": "works",
-  "settings": "DX11: Heroic \"Alternative EXE\" = `Control_DX11.exe`; DX12: ready-made configuration for sponsors (or tune it yourself); gamescope 1920x1080 (Heroic)",
+  "settings": "DX11: Heroic \"Alternative EXE\" = `Control_DX11.exe`; DX12: tuned configuration, write-up pending (until then tune it yourself); gamescope 1920x1080 (Heroic)",
   "notes": "DX11 and DX12 both run with the mirror on (2026-10-27); DX12 confirmed working correctly in the HMD 2026-10-29. `Control.exe` starts `Control_DX12.exe`; without the right configuration DX12 crashes at start: vkd3d's first `vkCreateSemaphore` (swapchain setup) jumps to NULL in winevulkan (`SIGSEGV ip (nil)`, `err:vulkan:vkCreateSemaphore Exception 0xc0000005 in Unix call`)",
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": true
+  "writeup_pending": true
  },
  {
   "game": "Crysis 3 Remastered (2096610)",
@@ -169,7 +169,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Deus Ex: Human Revolution (28050)",
@@ -181,7 +181,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Disney•Pixar WALL-E",
@@ -193,7 +193,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Duke Nukem Forever (57900)",
@@ -207,7 +207,7 @@
   "media": [
    "DukeNukem4ever_1.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "The Elder Scrolls III: Morrowind",
@@ -219,7 +219,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Fable Anniversary (288470)",
@@ -234,7 +234,7 @@
    "FableAnniversary_1.gif",
    "FableAnniversary_2.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Fallout: New Vegas (22380)",
@@ -246,7 +246,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Fell in love with coser 5",
@@ -258,7 +258,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Firewatch (383870)",
@@ -270,7 +270,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Galactic Civilizations III",
@@ -282,7 +282,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Grim Fandango Remastered",
@@ -294,14 +294,14 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Hogwarts Legacy (990080)",
   "store": "Steam: positive",
   "path": "Proton, D3D12 (UE4)",
   "status": "works",
-  "settings": "ready-made configuration for sponsors (or tune it yourself)",
+  "settings": "tuned configuration, write-up pending (until then tune it yourself)",
   "notes": "impressive stereo; fast since the cached-memory write tracking (2026-10-22; before: mirror memory sync ~12 ms/submit); early screenshots showed only the GUI (game image black), the 2026-10-23 ones are fine; no native VR (a UEVR mod exists for Windows); confirmed 2026-10-21",
   "single": "",
   "alt": "UEVR (generic UE4/UE5 mod, Windows)",
@@ -309,7 +309,7 @@
    "HogwartsLegacy_1.gif",
    "HogwartsLegacy_2.gif"
   ],
-  "sponsor": true
+  "writeup_pending": true
  },
  {
   "game": "Hospital Tycoon (11590)",
@@ -326,7 +326,7 @@
    "HospitalTycoon-1.gif",
    "HospitalTycoon-2.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "LEGO Batman 3 (313690)",
@@ -338,7 +338,7 @@
   "single": "",
   "alt": "none found",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "LEGO Builder's Journey",
@@ -350,7 +350,7 @@
   "single": "",
   "alt": "vorpX (classic mode only, reported)",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "LEGO Harry Potter 1-4 (21130)",
@@ -364,7 +364,7 @@
   "media": [
    "LegoHarry.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "LEGO Marvel Super Heroes (249130)",
@@ -381,7 +381,7 @@
    "LegoMarvel2.gif",
    "LegoMarvel3.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "LIMBO",
@@ -393,7 +393,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Little Nightmares (424840)",
@@ -405,7 +405,7 @@
   "single": "",
   "alt": "UEVR (generic, Windows); Little Nightmares VR: Altered Echoes (separate game)",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Magicka (42910)",
@@ -419,7 +419,7 @@
   "media": [
    "Magicka_1.gif"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Maid of Sker",
@@ -431,7 +431,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Medal of Honor (47790)",
@@ -443,21 +443,21 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Mirror's Edge (17410)",
   "store": "Steam: positive",
   "path": "Proton, D3D9 (UE3)",
   "status": "works",
-  "settings": "`world_scale = 50`, `hud_depth = 1`, `hfov = 106.26` at 16:9; ready-made configuration for sponsors (or tune it yourself); launch in a 1920x1080 gamescope window (below)",
+  "settings": "`world_scale = 50`, `hud_depth = 1`, `hfov = 106.26` at 16:9; tuned configuration, write-up pending (until then tune it yourself); launch in a 1920x1080 gamescope window (below)",
   "notes": "confirmed 2026-10-20; stereo works but less impressive than expected. 2026-10-31: first game set up with [shader rules](tasks/shader-rules.md): with the default `hud_depth_scope = all`, `hud_depth` also shifts the full-screen post passes (stale strip at one edge, flicker in the letterbox bars); `hud_depth_scope = rules` plus a `hud` rule for the crosshair (`_ hunt find hud`) fixes that. One crash in that session, cause unknown",
   "single": "",
   "alt": "",
   "media": [
    "MirrorsEdge.gif"
   ],
-  "sponsor": true
+  "writeup_pending": true
  },
  {
   "game": "Never Alone (Kisima Ingitchuna)",
@@ -469,7 +469,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Oddworld: Abe's Oddysee",
@@ -481,7 +481,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "OpenTTD",
@@ -493,7 +493,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Overlord (11450)",
@@ -505,7 +505,7 @@
   "single": "runs",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Planet Zoo (703080)",
@@ -517,7 +517,7 @@
   "single": "",
   "alt": "none found",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Portal (400)",
@@ -529,7 +529,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Portal 2 (620)",
@@ -541,19 +541,19 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Portal: Revolution (601360)",
   "store": "Steam: positive",
   "path": "Proton Experimental, Windows-only Source mod build (`bin/win64/revolution.exe`)",
   "status": "works",
-  "settings": "Properties → Compatibility → force Proton (Experimental); gamescope 1920x1080 (below); pad: ready-made configuration for sponsors (or tune it yourself)",
+  "settings": "Properties → Compatibility → force Proton (Experimental); gamescope 1920x1080 (below); pad: tuned configuration, write-up pending (until then tune it yourself)",
   "notes": "without forced Proton Steam starts the `.exe` natively in the Steam Linux Runtime and it exits after ~2 s (looks like a crash at start, the layer never loads); runs with Proton Experimental, 2026-10-30",
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": true
+  "writeup_pending": true
  },
  {
   "game": "Portal with RTX (2012840)",
@@ -565,7 +565,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Psychonauts (3830)",
@@ -577,7 +577,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Quantum Conundrum (200010)",
@@ -589,7 +589,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "RollerCoaster Tycoon 3: Complete Edition",
@@ -601,7 +601,7 @@
   "single": "",
   "alt": "none found",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Shadow Warrior (233130)",
@@ -613,7 +613,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Skyrim (72850)",
@@ -625,7 +625,7 @@
   "single": "",
   "alt": "Skyrim VR (separate official release)",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Tomb Raider GOTY (2013, 203160)",
@@ -637,7 +637,7 @@
   "single": "",
   "alt": "generic stereo tools only",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Tomb Raider I (224960)",
@@ -649,7 +649,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Tomb Raider II (225300)",
@@ -661,7 +661,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Tomb Raider III (225320)",
@@ -673,7 +673,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "A Total War Saga: TROY",
@@ -685,7 +685,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Unravel (1225560)",
@@ -697,7 +697,7 @@
   "single": "",
   "alt": "Geo-11 (generic DX11 stereo, Windows), reported to work",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "The Witcher 3 GOTY (next-gen DX12 build)",
@@ -712,7 +712,7 @@
    "Witcher3.gif",
    "Witcher3.mp4"
   ],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "X: Beyond the Frontier (2840)",
@@ -724,7 +724,7 @@
   "single": "",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  },
  {
   "game": "Zen Bound 2 (61600)",
@@ -736,6 +736,6 @@
   "single": "runs",
   "alt": "",
   "media": [],
-  "sponsor": false
+  "writeup_pending": false
  }
 ]
