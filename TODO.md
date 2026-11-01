@@ -89,6 +89,24 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     cycles through (gamepad, mouse stick / motion / aim / move, tune, map);
     left-out ones are skipped, also by the short-menu `mouse_mode` cycle.
     All off = the controllers do nothing (no uinput devices, no tune).
+22. Research (owner's question 2026-11-02): frame generation and extra
+    effects with our approach.
+    - Two GPUs: the game's own FG (FSR 3 FG, DLSS FG) runs inside the
+      mirror on each GPU with that eye's frames and motion vectors, so in
+      principle each eye interpolates itself. Open: does B replay it
+      (optical flow / compute paths, NVIDIA-only DLSS on AMD B), do both
+      present the same frame count so L[F]/R[F] pairing holds (backlog)?
+    - One GPU (alternate eyes): the game's FG interpolates between L and R
+      (garbage). Needs FG outside the game, per eye stream: in `vrdual-xr`
+      on the exported frames (image-only interpolation like lsfg-vk /
+      Lossless Scaling: no game motion vectors needed, artefacts at
+      disocclusions), or OpenXR runtime reprojection (head motion only).
+    - Effects that break in stereo (shadows, SSAO, deferred lights rebuilt
+      from depth with the game's unshifted matrices): fix by turning them
+      off and drawing our own per eye (needs the depth buffer: find the
+      depth attachment, export it like the colour), by NVSTEREO (item 15),
+      or per-shader rules (item 17). Also check stacking existing Vulkan
+      post layers (vkBasalt, ReShade on Linux) under ours, per eye.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
