@@ -964,6 +964,27 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
         say "SKIP  two-GPU checks (need one GPU with a monitor and one without)"
     fi
 
+    # Mirror shadows cover the whole allocation: a new mapping with another
+    # range (offset 64, then 0) shows what the memory holds, not zeros.
+    if (( two )); then
+        rm -f /dev/shm/vrdual-$sess-*
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            "$B/vrdual-cube" --scene calib --remap --title "selftest remap" >"$tmp/rm.log" 2>&1 &
+        for i in $(seq 100); do grep -q 'exporting' "$tmp/rm.log" && break; sleep 0.1; done
+        label="mirror: re-map with another range keeps the contents (shadow per allocation), ipd 64mm"
+        check bash -c "grep -q 'remap: new mapping shows the earlier contents' '$tmp/rm.log' &&
+            '$B/vrdual-compositor' --session $sess --snapshot '$tmp/rm.png' --at 60 --timeout 20 >/dev/null 2>&1 &&
+            $M '$tmp/rm.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/rm.log' || { grep -E 'remap|mirror' '$tmp/rm.log'; false; }"
+        kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+        # vkWaitSemaphores(WAIT_ANY) returns when one semaphore is reached: the
+        # write-back must not wait for the other one's unfinished submit (was 1 s).
+        label="mirror: vkWaitSemaphores ANY returns at once (no write-back wait for the other semaphore), fill read back"
+        check bash -c "out=\$(env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            '$B/vrdual-cube' --scene calib --wait-any --frames 30 --title 'selftest wait-any' 2>&1) &&
+            ms=\$(grep -oP 'wait-any: 0 after \K[0-9.]+(?= ms; fill read back)' <<<\"\$out\") && awk -v m=\"\$ms\" 'BEGIN{exit !(m < 100)}' &&
+            ! grep -q STOPPED <<<\"\$out\" || { grep -E 'wait-any|mirror' <<<\"\$out\"; false; }"
+    fi
+
     # VRDUAL_KEEP_EXT names whole extensions: keeping present_id2 must not keep
     # present_id (a substring match did).
     label="VRDUAL_KEEP_EXT: whole names only (present_id2 kept, present_id still hidden)"

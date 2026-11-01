@@ -81,10 +81,14 @@ struct Mem {
     char* bmap = nullptr;    // same for B
     bool a_released = false; // transient: A unmapped right after the app's vkMapMemory
     VkDeviceSize off = 0, len = 0;
-    char* shadow = nullptr;  // what the app maps (not for `cached`)
-    char* last = nullptr;    // what A and B hold, as last pushed
-    size_t cap = 0;          // bytes mmap'd for shadow/last
-    VkDeviceSize cap_off = 0;
+    char* shadow = nullptr;  // what the app maps (not for `cached`), at the mapping's offset
+    char* last = nullptr;    // what A and B hold, as last pushed, at the mapping's offset
+    // Both cover the whole allocation and live until vkFreeMemory: a new
+    // mapping with another range must show (and diff against) what the
+    // memory holds, not zeros (a zero written then never reached A or B).
+    char* shadow_base = nullptr;
+    char* last_base = nullptr;
+    size_t cap = 0;          // bytes mmap'd for each of shadow_base / last_base
     bool tracked = false;    // shadow registered for dirty tracking
     int wp = -1;             // cached: write-tracking slot
     bool synced = false;     // tracked and fully pushed once: scans list every later write
@@ -436,8 +440,15 @@ static void wb_poll(MDev* md, VkSemaphore sem = VK_NULL_HANDLE, uint64_t val = 0
     }
 }
 
+// After a successful wait. WAIT_ANY: only one value is known to be reached,
+// so each semaphore's real counter is used (the waited-for value would make
+// wb_poll wait up to 1 s for submits that have not finished).
 static void wb_semaphores(MDev* md, const VkSemaphoreWaitInfo* wi) {
-    for (uint32_t i = 0; i < wi->semaphoreCount; ++i) wb_poll(md, wi->pSemaphores[i], wi->pValues[i]);
+    for (uint32_t i = 0; i < wi->semaphoreCount; ++i) {
+        uint64_t v = wi->pValues[i];
+        if ((wi->flags & VK_SEMAPHORE_WAIT_ANY_BIT) && md->a.GetSemaphoreCounterValue(md->dd->device, wi->pSemaphores[i], &v) != VK_SUCCESS) continue;
+        wb_poll(md, wi->pSemaphores[i], v);
+    }
 }
 static void hook_after_QueueWaitIdle(MDev* md, VkQueue, VkResult r) {
     if (r == VK_SUCCESS) wb_poll(md);
@@ -869,7 +880,14 @@ static void push_one(MDev* md, uint64_t amem, Mem& m) {
         m.wp = -1, m.synced = false;
     }
     if (m.wp >= 0 && m.synced) wp::take(m.wp, m.amap, len, rs);
-    bool scanned = m.tracked && dirty_scan(m.shadow, (len + 4095) & ~size_t(4095), rs);
+    // the scan starts on the page holding the mapping's first byte; its
+    // ranges are shifted back to mapping offsets
+    size_t lead = size_t(m.off) & 4095, from = rs.size();
+    bool scanned = m.tracked && dirty_scan(m.shadow - lead, (lead + len + 4095) & ~size_t(4095), rs);
+    for (size_t i = from; scanned && lead && i < rs.size(); ++i) {
+        size_t b = std::max(rs[i].first, lead), e = rs[i].first + rs[i].second;
+        rs[i] = {b - lead, e > b ? e - b : 0};
+    }
     for (auto& r : rs) r.second = std::min(r.second, len - std::min(r.first, len));  // last page
     if (m.tracked && !scanned) m.tracked = m.synced = false;
     uint64_t t1 = now_ns();
@@ -934,9 +952,9 @@ static void push_memory(MDev* md) {
 }
 
 static void free_shadow(Mem& m) {
-    if (m.shadow) munmap(m.shadow, m.cap);
-    if (m.last) munmap(m.last, m.cap);
-    m.shadow = m.last = nullptr;
+    if (m.shadow_base) munmap(m.shadow_base, m.cap);
+    if (m.last_base) munmap(m.last_base, m.cap);
+    m.shadow = m.last = m.shadow_base = m.last_base = nullptr;
     m.cap = 0;
     m.tracked = m.synced = false;  // munmap unregistered it
 }
@@ -1126,21 +1144,21 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory m
     bool tmp = transient_maps();
     void* bp = nullptr;
     if (!tmp && md->b.MapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem), off, len, 0, &bp) < 0) { mirror_fail(md, "vkMapMemory failed on B"); return r; }
-    size_t cap = (size_t(len) + 4095) & ~size_t(4095);
-    if (m.cap < cap || m.cap_off != off) {
-        free_shadow(m);
-        m.last = anon(cap);
-        m.shadow = m.cached ? nullptr : anon(cap);
-        if (!m.last || (!m.cached && !m.shadow)) {
+    if (!m.last_base) {
+        size_t cap = (size_t(m.size) + 4095) & ~size_t(4095);
+        m.last_base = anon(cap);
+        m.shadow_base = m.cached ? nullptr : anon(cap);
+        m.cap = cap;
+        if (!m.last_base || (!m.cached && !m.shadow_base)) {
             free_shadow(m);
             if (bp) md->b.UnmapMemory(md->bdev, u2h<VkDeviceMemory>(m.bmem));
             mirror_fail(md, "out of memory for shadow mapping");
             return r;  // the app gets A's own pointer; other shadows keep reaching A
         }
-        m.cap = cap;
-        m.cap_off = off;
-        m.tracked = m.shadow && dirty_register(m.shadow, cap);
+        m.tracked = m.shadow_base && dirty_register(m.shadow_base, cap);
     }
+    m.shadow = m.shadow_base ? m.shadow_base + off : nullptr;
+    m.last = m.last_base + off;
     m.synced = false;  // a new mapping starts with a full diff
     m.amap = (char*)*pp;
     if (!m.cached && m.readback) {  // the app may read what the GPU wrote before this mapping

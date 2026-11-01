@@ -46,6 +46,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <unistd.h>
 #include <vulkan/vulkan.h>
+#include <time.h>
 
 #include <cerrno>
 #include <cmath>
@@ -106,6 +107,12 @@ static M4 perspective(float aspect, float n, float f) {
 
 struct PC { M4 mvp; float color[4]; VkDeviceAddress verts; };
 
+static double now_s() {
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
 int main(int argc, char** argv) {
     int frames = 0, W = 960, H = 720;
     std::string title = "vrdual-cube", scene = "cubes";
@@ -113,7 +120,7 @@ int main(int argc, char** argv) {
     bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
     int late_verts = 0;
-    bool cached = false, verts_file = false, readback = false, list_exts = false;
+    bool cached = false, verts_file = false, readback = false, list_exts = false, remap = false, wait_any = false;
     std::string want_fmt;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -122,6 +129,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) scene = argv[++i];
         else if (!strcmp(argv[i], "--bda")) bda = true;
         else if (!strcmp(argv[i], "--list-exts")) list_exts = true;
+        else if (!strcmp(argv[i], "--remap")) remap = true;
+        else if (!strcmp(argv[i], "--wait-any")) wait_any = true;
         else if (!strcmp(argv[i], "--tess")) tess = true;
         else if (!strcmp(argv[i], "--geom")) geom = true;
         else if (!strcmp(argv[i], "--nopos-vs")) nopos = true;
@@ -144,7 +153,7 @@ int main(int argc, char** argv) {
     const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&nexts);
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "vrdual-cube";
-    app.apiVersion = bda ? VK_API_VERSION_1_4 : VK_API_VERSION_1_1;
+    app.apiVersion = bda || wait_any ? VK_API_VERSION_1_4 : VK_API_VERSION_1_1;
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = nexts;
@@ -208,12 +217,13 @@ int main(int argc, char** argv) {
     dci.pEnabledFeatures = &feats;
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     f12.bufferDeviceAddress = VK_TRUE;
+    f12.timelineSemaphore = wait_any;
     VkPhysicalDeviceVulkan14Features f14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
     f14.maintenance5 = VK_TRUE;
     f14.pipelineRobustness = VK_TRUE;
     f12.pNext = &f14;
-    if (bda) {
-        if (props.apiVersion < VK_API_VERSION_1_4) { fprintf(stderr, "--bda needs a Vulkan 1.4 device\n"); return 1; }
+    if (bda || wait_any) {
+        if (props.apiVersion < VK_API_VERSION_1_4) { fprintf(stderr, "--bda / --wait-any need a Vulkan 1.4 device\n"); return 1; }
         dci.pNext = &f12;
     }
     VkDevice dev;
@@ -459,6 +469,18 @@ int main(int argc, char** argv) {
     } else {
         vkMapMemory(dev, vmem, 0, VK_WHOLE_SIZE, 0, &p);
     }
+    if (remap && !bda) {  // mirror check: garbage written through a mapping at offset 64, then the
+        vkUnmapMemory(dev, vmem);  // vertices through a new mapping at 0 (zero words among them must arrive)
+        void* q;
+        vkMapMemory(dev, vmem, 64, VK_WHOLE_SIZE, 0, &q);
+        memset(q, 0xff, verts.size() * 4 - 64);
+        vkUnmapMemory(dev, vmem);
+        vkMapMemory(dev, vmem, 0, VK_WHOLE_SIZE, 0, &p);
+        const uint32_t* w = (const uint32_t*)p;  // the new mapping shows the memory as it is
+        size_t n = verts.size(), bad = 0;
+        for (size_t i = 16; i < n; ++i) bad += w[i] != 0xffffffffu;
+        fprintf(stderr, "vrdual-cube: remap: %s (%zu of %zu words differ)\n", bad ? "new mapping lost the earlier contents" : "new mapping shows the earlier contents", bad, n - 16);
+    }
     if (late_verts) memset(p, 0, verts.size() * 4);
     else memcpy(p, verts.data(), verts.size() * 4);
     VkBuffer dbuf = vbuf;  // the buffer the draws read
@@ -561,6 +583,64 @@ int main(int argc, char** argv) {
     VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, fam};
     VkCommandPool pool;
     CK(vkCreateCommandPool(dev, &cpci, nullptr, &pool));
+    if (wait_any) {
+        // A fill into host-visible memory waits on timeline t[0] (signalled by
+        // the host later) and signals t[1] = 1; the host signals t[2] = 2.
+        // vkWaitSemaphores(ANY, t[1] >= 1, t[2] >= 2) must return at once
+        // (mirror: no wait for the unfinished fill's write-back), and the fill
+        // must reach the mapping once t[0] is signalled.
+        VkSemaphore t[3];
+        VkSemaphoreTypeCreateInfo stci{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr, VK_SEMAPHORE_TYPE_TIMELINE, 0};
+        VkSemaphoreCreateInfo tsci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &stci};
+        for (auto& x : t) CK(vkCreateSemaphore(dev, &tsci, nullptr, &x));
+        VkBufferCreateInfo wbci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        wbci.size = 4096;
+        wbci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        VkBuffer wb;
+        CK(vkCreateBuffer(dev, &wbci, nullptr, &wb));
+        VkMemoryRequirements wmr;
+        vkGetBufferMemoryRequirements(dev, wb, &wmr);
+        VkMemoryAllocateInfo wai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, wmr.size,
+                                 memtype(wmr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT)};
+        VkDeviceMemory wm;
+        CK(vkAllocateMemory(dev, &wai, nullptr, &wm));
+        CK(vkBindBufferMemory(dev, wb, wm, 0));
+        volatile uint32_t* wp;
+        CK(vkMapMemory(dev, wm, 0, VK_WHOLE_SIZE, 0, (void**)&wp));
+        VkCommandBuffer wcb;
+        VkCommandBufferAllocateInfo wcai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, pool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1};
+        CK(vkAllocateCommandBuffers(dev, &wcai, &wcb));
+        VkCommandBufferBeginInfo wbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        vkBeginCommandBuffer(wcb, &wbi);
+        vkCmdFillBuffer(wcb, wb, 0, 4096, 0x12345678u);
+        VkMemoryBarrier hb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+        vkCmdPipelineBarrier(wcb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &hb, 0, nullptr, 0, nullptr);
+        vkEndCommandBuffer(wcb);
+        uint64_t one = 1;
+        VkPipelineStageFlags tst = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        VkTimelineSemaphoreSubmitInfo ts1{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO, nullptr, 1, &one, 1, &one};
+        VkSubmitInfo s1{VK_STRUCTURE_TYPE_SUBMIT_INFO, &ts1, 1, &t[0], &tst, 1, &wcb, 1, &t[1]};
+        CK(vkQueueSubmit(queue, 1, &s1, VK_NULL_HANDLE));
+        VkSemaphoreSignalInfo sig2{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, t[2], 2};
+        CK(vkSignalSemaphore(dev, &sig2));
+        VkSemaphore ws[2] = {t[1], t[2]};
+        uint64_t wv[2] = {1, 2};
+        VkSemaphoreWaitInfo wwi{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, VK_SEMAPHORE_WAIT_ANY_BIT, 2, ws, wv};
+        double t0 = now_s();
+        VkResult wr = vkWaitSemaphores(dev, &wwi, 5000000000ull);
+        double any_ms = (now_s() - t0) * 1e3;
+        VkSemaphoreSignalInfo sig0{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, t[0], 1};
+        CK(vkSignalSemaphore(dev, &sig0));
+        VkSemaphoreWaitInfo w1{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, 0, 1, &t[1], &one};
+        VkResult wr1 = vkWaitSemaphores(dev, &w1, 5000000000ull);
+        fprintf(stderr, "vrdual-cube: wait-any: %d after %.1f ms; fill %s\n", wr, any_ms, wr1 == VK_SUCCESS && wp[0] == 0x12345678u && wp[1023] == 0x12345678u ? "read back" : "not read back");
+        vkDeviceWaitIdle(dev);
+        vkFreeCommandBuffers(dev, pool, 1, &wcb);
+        vkUnmapMemory(dev, wm);
+        vkDestroyBuffer(dev, wb, nullptr);
+        vkFreeMemory(dev, wm, nullptr);
+        for (auto x : t) vkDestroySemaphore(dev, x, nullptr);
+    }
     VkCommandBuffer cmds[FIF];
     VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, pool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, FIF};
     CK(vkAllocateCommandBuffers(dev, &cbai, cmds));
