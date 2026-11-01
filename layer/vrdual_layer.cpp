@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cctype>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
@@ -75,6 +76,8 @@ struct Config {
     std::vector<Rule> rules;   // shader_rules
     bool hud_rules_only = false;  // hud_depth_scope = rules
     std::string shader_dump;      // directory for unpatched shaders (debugging)
+    std::string shader_catalog;   // file of known shader keys (empty = off)
+    std::unordered_set<uint64_t> catalog;
     bool sparse = false;
     bool export_frames = true;
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
@@ -226,6 +229,24 @@ static void load_config(const VkApplicationInfo* app) {
     c.skip_w1 = st.i("skip_w1") != 0;
     c.hud_rules_only = st.s("hud_depth_scope") == "rules";
     c.shader_dump = st.s("shader_dump");
+    c.shader_catalog = st.s("shader_catalog");
+    c.catalog.clear();
+    if (!c.shader_catalog.empty()) {
+        // Lines "KEY  anything" (KEY = 16 hex digits); '#' lines, blank lines and
+        // other text are skipped.
+        if (FILE* f = fopen(c.shader_catalog.c_str(), "re")) {
+            char line[512];
+            while (fgets(line, sizeof line, f)) {
+                char* e;
+                unsigned long long k = strtoull(line, &e, 16);
+                if (e - line == 16 && (!*e || isspace((unsigned char)*e))) c.catalog.insert(k);
+            }
+            fclose(f);
+            logf("shader_catalog: %zu key(s) from %s", c.catalog.size(), c.shader_catalog.c_str());
+        } else {
+            logf("shader_catalog: cannot read %s, every shader counts as new", c.shader_catalog.c_str());
+        }
+    }
     c.rules.clear();
     {
         std::stringstream ss(st.s("shader_rules"));
@@ -1009,6 +1030,24 @@ static bool note_shader(uint64_t h, int rule) {
     return true;
 }
 
+// shader_catalog: logs the first sight of each VS/TES/GS key that is not in
+// the catalog (a mod, a game / translator update, or a part of the game not
+// catalogued yet); counts for the summary at device destroy.
+struct CatalogSeen { std::mutex m; std::unordered_set<uint64_t> seen; size_t known = 0, fresh = 0; };
+static CatalogSeen& cat_seen() { static auto* c = new CatalogSeen; return *c; }  // never freed
+
+static void catalog_note(uint64_t h, const char* state) {
+    if (g_cfg.shader_catalog.empty()) return;
+    CatalogSeen& c = cat_seen();
+    {
+        std::lock_guard<std::mutex> l(c.m);
+        if (!c.seen.insert(h).second) return;
+        if (g_cfg.catalog.count(h)) { c.known++; return; }
+        c.fresh++;
+    }
+    logf("shader %016llx: not in catalog (%s)", (unsigned long long)h, state);
+}
+
 static int rule_for(uint64_t h) {
     char hex[17];
     snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
@@ -1030,7 +1069,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     o.hud = rule == 3;
     if (rule == 2) {  // noshift: the original (vertex shaders only, else the rule matched by chance)
         code.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
-        if (spv::patch_vertex(code, o).patched) { ep.ruled++; note_shader(h, rule); }
+        if (spv::patch_vertex(code, o).patched) { ep.ruled++; note_shader(h, rule); catalog_note(h, "noshift"); }
         return false;
     }
     if (ep.params) {
@@ -1060,12 +1099,14 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
                 }
             }
             logf("shader module not patched: %s%s%s", pr.why.c_str(), f.empty() ? "" : ", dumped to ", f.c_str());
+            catalog_note(h, ("not patched: " + pr.why).c_str());
         }
         return false;
     }
     ep.patched++;
     if (rule) ep.ruled++;
     note_shader(h, rule);
+    catalog_note(h, "patched");
     return true;
 }
 
@@ -1167,6 +1208,12 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroyDevice(VkDevice dev, const VkAlloca
     DeviceData* dd = dev_of(key(dev));
     logf("device destroyed: %d vertex shaders patched, %d modules untouched, %llu frames", dd->ep.patched, dd->ep.skipped, (unsigned long long)dd->frame);
     if (!g_cfg.rules.empty()) logf("shader_rules: %d shader(s) matched %zu rule(s)%s", dd->ep.ruled, g_cfg.rules.size(), dd->ep.ruled ? "" : " (stale keys? game or Proton updated)");
+    if (!g_cfg.shader_catalog.empty()) {
+        CatalogSeen& c = cat_seen();
+        std::lock_guard<std::mutex> l(c.m);
+        logf("shader_catalog: %zu shader(s) seen, %zu new, %zu of %zu catalog key(s) unseen", c.seen.size(), c.fresh,
+             g_cfg.catalog.size() - c.known, g_cfg.catalog.size());
+    }
     if (dd->md) mirror::destroy_twin(dd);
     for (auto& kv : dd->swapchains)
         for (auto& rb : kv.second.rb) free_readback(dd->d, dev, rb);

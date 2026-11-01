@@ -25,10 +25,16 @@
   buffer → staging), `vrdual-xr`'s fence wait every frame, the R/B swizzle
   loop (never triggered in the logs), the mirror's `g_hmap` lock as a
   `shared_mutex` (measure contention first).
-- Witcher 3 DX12 (vkd3d) logs 88× `shader module not patched: no float32
-  type` for modules with a VS/TES/GS entry point (sharkoon, 2026-10-31). Dump
-  one (no dump option yet: add one that writes the unpatched module next to the shader keys file, then spirv-dis) and check whether it
-  draws visible geometry (e.g. float16-only or integer-position shaders) or
-  is harmless (depth-only / stream-out).
+- Done 2026-11-01: Witcher 3 DX12 unpatched modules (219 log lines, 12
+  distinct, `shader_dump` on sharkoon) are all harmless: empty VS (no
+  outputs), VS that only pass vertex IDs or tessellation control data, the
+  HairWorks TES (isolines, position as a plain varying for the GS), an empty
+  GS and a stream-out GS (Xfb, points). None writes gl_Position for the
+  rasterizer.
+- Shader catalog, next steps (`shader_catalog` reading + log done
+  2026-11-01): `_ shaders new LOG` turning the "not in catalog" lines into
+  catalog lines; record the translator (DXVK / vkd3d version) in the catalog
+  so an all-new run says "translator changed" rather than "mod?"; a Witcher 3
+  catalog with descriptions (sponsors, `~/src/vrdual-sponsors`).
 - Frame generation (DLSS FG / FSR FG) with two GPUs: untested (does each
   GPU generate its own frames, does pairing L[F]/R[F] hold?).

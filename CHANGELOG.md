@@ -43,6 +43,10 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   vertex shaders differently (key = hash of the SPIR-V); `_ hunt find` finds
   a shader in the running game by live bisection (hide half, ask). Idea from
   witcher3-vr's per-build shader fingerprints.
+- `shader_catalog = FILE` (known shader keys of a game) logs each shader not
+  in it once and sums up seen / new / unseen at exit: shows what a mod or an
+  update changed. `shader_dump = DIR` writes unpatched shaders for
+  `spirv-dis`.
 - Heroic (Epic/GOG through umu): wrapper command, per-game Proton logs,
   launchers (Ubisoft Connect, EA app) passive with `stereo = 0`.
   Assassin's Creed Origins runs smoothly in the headset.

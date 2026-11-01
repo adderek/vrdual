@@ -40,6 +40,7 @@ static const Key kKeys[] = {
     {"skip_w1", "1", "leave w == 1 vertices (HUD/post/ortho) unshifted"},
     {"sparse", "0", "1 = sparse binding/residency visible to the app (D3D12 feature level 12_0 needs it); mirror replays the binds"},
     {"shader_rules", "", "per-shader treatment, comma list KEY:noshift|hud|hide (KEY = hex prefix of the shader hash, 8-16 digits; find it with `_ hunt`)"},
+    {"shader_catalog", "", "file of known shader keys (KEY = 16 hex digits first on a line, rest free text): shaders not in it are logged once as new"},
     {"shader_dump", "", "directory: unpatched shaders that have a vertex / tess eval / geometry entry point are written there as KEY.spv (debugging)"},
     {"hud_depth_scope", "all", "which draws hud_depth moves: all (every w == 1 vertex) | rules (only shaders with a hud rule; post-process passes stay put)"},
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},

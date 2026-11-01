@@ -929,6 +929,17 @@ vrdual_selftest() {
         grep -q \"not patched: .*, dumped to \$f\\$\" '$tmp/hs.log' || { grep 'not patched' '$tmp/hs.log'; ls '$tmp/dump'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
+    # 3c''''. shader_catalog: the cube VS is known, the nopos VS is new, one
+    # catalog key is never seen; summary at exit (--frames).
+    rm -f /dev/shm/vrdual-$sess-*
+    { echo "# selftest"; echo "$("$B/spvpatch" --hash "$tmp/glsl.spv")  vs  patched  cube"; echo "0123456789abcdef  vs  gone"; } >"$tmp/cat.tsv"
+    label="shader_catalog: unknown shader logged once as new, summary counts seen / new / unseen"
+    check bash -c "env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            VRDUAL_SHADER_CATALOG='$tmp/cat.tsv' timeout 60 '$B/vrdual-cube' --scene calib --nopos-vs --frames 5 --title 'selftest catalog' >'$tmp/cat.log' 2>&1 &&
+        grep -q 'shader_catalog: 2 key(s)' '$tmp/cat.log' &&
+        [[ \$(grep -c 'not in catalog' '$tmp/cat.log') == 1 ]] && grep -q 'not in catalog (not patched: no vec4 type)' '$tmp/cat.log' &&
+        grep -q 'shader_catalog: 2 shader(s) seen, 1 new, 1 of 2 catalog key(s) unseen' '$tmp/cat.log' || { grep 'catalog' '$tmp/cat.log'; false; }"
+
     # 3c'''. Tessellation / geometry stages (HairWorks, DX11 terrain): only
     # the last pre-raster stage shifts (the VS before it gets the gate spec
     # constant false); a doubled shift would measure 128 mm.
