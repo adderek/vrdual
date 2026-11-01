@@ -15,7 +15,7 @@ keep it), PLAN §F (decision: OpenXR + WiVRn; ALVR/Link rejected and why).
 1. Check what is available on Arch: `monado` (AUR?), `openxr` loader, `wivrn-server`.
    Ask the user before installing anything system-wide (no sudo for the agent).
 2. New compositor mode `--openxr`: `xrCreateInstance` (Vulkan enable2),
-   session on **GPU `0b:00.0`** (CPU-direct, will also encode for WiVRn),
+   session on the **headless GPU** (CPU-direct here, will also encode for WiVRn),
    one swapchain per eye (or one array swapchain), frame loop
    `xrWaitFrame/BeginFrame/EndFrame`, `XrCompositionLayerProjection` with the
    two eye views; pose = `xrLocateViews` (log it now, it feeds M4).

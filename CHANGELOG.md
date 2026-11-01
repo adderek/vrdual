@@ -91,7 +91,7 @@ Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
   line was cut, e.g. `hfov 9`); shows the screen width.
 - `vrdual-xr` staging in cached memory (the edge mask read write-combined
   memory: 89 ms per frame, 10 Hz in the headset); stats split a headset frame
-  into xrWaitFrame and our phases. `wivrn_gpu` puts the server on 0b.
+  into xrWaitFrame and our phases. `wivrn_gpu` puts the server on the headless GPU.
 - `vrdual xr` re-creates the headset swapchain when the frame format changes
   (an RGBA game after a BGRA one at the same size showed red and blue swapped).
 - `mouse_mode = move`: moving the right controller across the screen moves

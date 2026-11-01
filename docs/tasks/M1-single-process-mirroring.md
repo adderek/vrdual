@@ -6,7 +6,7 @@ This removes the two-instance limitation (input/RNG/timing divergence), which is
 why real games cannot work today.
 
 **Context:** PLAN §B (B2) and §C (which GPU the app sees: default fast GPU
-`0b:00.0`, make it a switch, measure). Current layer: `layer/vrdual_layer.cpp`.
+(CPU-direct slot), make it a switch, measure). Current layer: `layer/vrdual_layer.cpp`.
 
 **Approach sketch**
 1. Start with the API surface of `testapp/main.cpp` only (instance, device,

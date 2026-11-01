@@ -86,9 +86,15 @@ Results in `docs/GAMES.md`, `site/games.json` and the docs come from this
 machine unless a row says otherwise. Read them with its topology in mind:
 
 - Two RX 7900 XTX (RADV, Mesa 26), Arch Linux, GNOME on Wayland.
-  - `0000:06:00.0`: behind the B550 chipset, **PCIe Gen3 x4**, no PCIe
-    atomics, drives the desktop.
-  - `0000:0b:00.0`: CPU-direct **Gen4 x16**, headless.
+  - **display GPU**: drives the monitor and the desktop; the app's GPU under
+    `auto` (left eye, mirror device A). Here behind the B550 chipset,
+    **PCIe Gen3 x4**, no PCIe atomics.
+  - **headless GPU**: no monitor; right eye, mirror twin, WiVRn server. Here
+    CPU-direct **Gen4 x16**.
+  - Role follows the monitor cable, link speed follows the slot; the pairing
+    above is today's wiring, not a rule. Docs name GPUs by role (or by slot
+    when bandwidth matters), never by PCI address; selftest detects both from
+    sysfs. Current addresses: `./vrdual gpus` (local notes: AGENTS.local.md).
   - DRM cardN and ROCm indices are swapped relative to each other here (hence
     the PCI-address rule below).
 - Portrait desktop monitor (X reports `DP-2 2880x5120`): fullscreen games pick
