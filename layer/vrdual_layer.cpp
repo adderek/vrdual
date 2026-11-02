@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <map>
 #include <cmath>
 #include <cctype>
 #include <cerrno>
@@ -376,8 +377,8 @@ struct EyeBuf {
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     float* params = nullptr;  // mapping
-    float cur[40] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4,
-                              // auto_noshift keys 16 x uint32 (addr + 96)
+    float cur[56] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4,
+                              // auto_noshift keys 32 x uint32 (addr + 96)
     uint64_t auto_seq = ~0ull;  // auto_noshift table version in cur
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
@@ -1002,7 +1003,7 @@ static float g_aspect = 16.0f / 9;  // exported swapchain (head offset y needs P
 // auto_noshift's live key table (vrdual_passes.hpp), process-wide: both eyes'
 // param buffers, mirror B too.
 namespace passes {
-struct AutoKeys { std::mutex m; uint32_t keys[16] = {}; std::atomic<uint64_t> seq{0}; };
+struct AutoKeys { std::mutex m; uint32_t keys[32] = {}; std::atomic<uint64_t> seq{0}; };
 static AutoKeys& auto_keys() { static auto* a = new AutoKeys; return *a; }  // never freed
 }
 
@@ -1020,7 +1021,7 @@ static void push_params(EyeBuf& ep) {
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
-    static_assert(sizeof e.v == 20 * sizeof(float) && sizeof ep.cur == 40 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation, + hunt + key table");
+    static_assert(sizeof e.v == 20 * sizeof(float) && sizeof ep.cur == 56 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation, + hunt + key table");
     memcpy(ep.cur, e.v, 8 * sizeof(float));
     uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
     memcpy(ep.cur + 8, hunt, sizeof hunt);

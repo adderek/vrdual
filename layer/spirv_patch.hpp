@@ -32,8 +32,8 @@
 // w == 1 treatment, `hide` stores (0,0,0,0) (nothing drawn). Live mode also
 // reads a uvec4 (lo, hi, mode, 0) at addr+32 and, if lo <= key <= hi (key =
 // high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift | 3 hud
-// at runtime: the hunt for a shader's key. Then 4 uvec4 at addr+96: up to 16
-// keys the layer found drawn only in shadow passes (auto_noshift); a shader
+// at runtime: the hunt for a shader's key. Then 8 uvec4 at addr+96: up to 32
+// keys the layer found drawn only in off-screen passes (auto_noshift); a shader
 // whose key is among them is not shifted (0 = empty entry; key 0 never checks).
 //
 // Gate: the result is selected against the original by a specialization
@@ -255,7 +255,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
-    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_tab[4] = {};
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_tab[8] = {};
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -283,7 +283,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             c_rot[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_rot[k], rl, rh});
         }
         for (uint32_t k = 1; k < 4; ++k) { c_m[k] = fresh(); emit(globals, OpConstant, {t_uint, c_m[k], k}); }
-        for (int k = 0; o.key && k < 4; ++k) {  // auto_noshift key table
+        for (int k = 0; o.key && k < 8; ++k) {  // auto_noshift key table
             uint64_t a = o.addr + 96 + 16 * k;
             uint32_t tl = fresh(), th = fresh();
             emit(globals, OpConstant, {t_uint, tl, uint32_t(a)});
@@ -458,7 +458,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 uint32_t res = v2;
                 if (o.key) {  // auto_noshift: own key in the table -> unshifted (the hunt below still applies)
                     uint32_t any = 0;
-                    for (int k = 0; k < 4; ++k) {
+                    for (int k = 0; k < 8; ++k) {
                         uint32_t tq = fresh(), tv = fresh();
                         emit(out, OpBitcast, {p_psb4, tq, c_tab[k]});
                         emit(out, OpLoad, {t_uvec4, tv, tq, MemAccessAligned, 16});

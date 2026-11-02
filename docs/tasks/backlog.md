@@ -34,13 +34,24 @@
   VS, `noshift` it, compare. Fix candidates: a `noshift` rule per game, or
   auto-noshift for depth-only render passes (no color attachment, extent not
   the swapchain's). Same risk in other top-down games (RTS, 4X) and any game
-  with shadow maps. Done 2026-11-02 as `auto_noshift = 1` (opt-in,
-  live key table, also in the mirror; selftest `--shadow`). Left: try it in
-  Civ V (expect `auto_noshift: N shader(s)` in the log and shadows under
-  the units), then consider it as the default or in the Civ V profile.
-  Not covered: shadow passes that also write colour (variance / colour
-  shadow maps), cascades rendered into a viewport of an atlas the size of
-  the screen, a shadow VS shared with the main pass (then a rule is needed).
+  with shadow maps. Done 2026-11-02 as `auto_noshift = 1` (opt-in, live key
+  table, also in the mirror; selftest `--shadow`). Civ V findings
+  2026-11-02 (Linux build, GL via Zink, mirror): no depth-only passes at all
+  (every FBO has colour), 3D view at 1368x768 into a 1920x1080 swapchain,
+  off-screen passes at 2048² (shadows), 1024², 512², 256², 128², 64²,
+  320x190. Its shadow map is orthographic (w == 1): the shadows and the
+  right eye's seams between terrain tiles both moved with `hud_depth`
+  (correct at 0). Hence the rule is now "off-screen" (extent neither the
+  swapchain's nor the main view's), colour or not. Left: confirm in Civ V.
+  Not covered: a shadow atlas the size of the main view, a shader shared
+  between the main view and an off-screen pass (then a rule).
+- Civ V: the selection circle under a unit differs a lot between the eyes
+  (screenshot 2026-11-02); likely a decal projected on the terrain from
+  depth (effect kind 2 in framegen-effects.md). Candidate for a per-game
+  fix (setting or shader rule).
+- Civ V crashed once 2026-11-02 14:19 in the game's own code
+  (`cvLandmarkVisSystem::LandmarkRenderJob`, TBB worker, SEGV_MAPERR), mirror
+  mode, 32-bit; not seen again yet. If it repeats: compare without vrdual.
 - Layer logs every live change on both eyes; consider rate limiting.
 - Review items 2026-10-31 left until a measurement says otherwise (xr.log:
   our work 2.5–4 ms per frame; upload fence wait 0.3–0.6 ms, staging

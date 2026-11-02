@@ -113,11 +113,11 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
    range in the param buffer (`addr + 32`: lo, hi, mode, from the control
    block's `hunt_*`) and applies that mode at runtime, which `_ hunt find`
    uses to bisect for one shader (docs/tasks/shader-rules.md). It also
-   checks its key against 16 entries at `addr + 96`: `auto_noshift` fills
-   them with the keys the layer saw drawn only in shadow passes (depth only,
-   an extent neither the swapchain's nor a colour pass's), which then stay
-   unshifted (`layer/vrdual_passes.hpp`; perspective shadow maps, which the
-   `w == 1` skip does not catch).
+   checks its key against 32 entries at `addr + 96`: `auto_noshift` fills
+   them with the keys the layer saw drawn only in off-screen passes (extent
+   neither the swapchain's nor the main view's), which then stay unshifted
+   and ignore `hud_depth` (`layer/vrdual_passes.hpp`: shadow maps, baked
+   textures; their `w == 1` vertices would otherwise get the HUD shift).
 3. **Frame export** — at `vkQueuePresentKHR` the swapchain image is copied to a
    host buffer and published into a 4-slot seqlocked ring in `/dev/shm`.
 4. **Lockstep** — frame N is held until the other eye has published N, so two

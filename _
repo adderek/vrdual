@@ -1377,7 +1377,7 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
         else
             label="auto_noshift: shadow-pass shader found live, not shifted: eyes agree, half way between"
             check bash -c "[[ -n '$xl' && '$xl' == '$xr' ]] && (( $xl >= 118 && $xl <= 122 )) &&
-                grep -q 'auto_noshift: 1 shader(s) drawn only in shadow passes, not shifted: [0-9a-f]*@512x512' '$tmp/sh1-left.log' || { echo 'left $xl right $xr'; false; }"
+                grep -q 'auto_noshift: 1 shader(s) drawn only in off-screen passes, not shifted: [0-9a-f]*@512x512' '$tmp/sh1-left.log' || { echo 'left $xl right $xr'; false; }"
         fi
         kill "${sp[@]}" 2>/dev/null; wait "${sp[@]}" 2>/dev/null
     done
