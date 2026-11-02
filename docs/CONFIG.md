@@ -12,6 +12,7 @@ Game profiles: curated values for specific games, one file per game in
 [game]
 exe = mirrorsedge.exe     # names matched like [app:NAME], comma list
 steam = 17410             # optional alias: matches $SteamAppId (any exe of that game)
+intro = Video/Title_*.bik # optional: logo videos, globs relative to the install dir
 [settings]
 world_scale = 50
 ```
@@ -23,6 +24,12 @@ sync` refresh the copies, `./vrdual profiles` lists and checks the files.
 Tools started through `vrdual` read the checkout's `profiles/`.
 `./vrdual-ctl show APP` marks the values `profile FILE`. Button maps
 (`map_*`) are not read from profiles yet.
+
+`./vrdual intro off|on|status GAME` (GAME = profile file name, exe or Steam
+id) renames the profile's `intro` files to `NAME.orig` and back, so the game
+starts without its logo videos; the install dir comes from Flatpak Steam
+(`--dir DIR` otherwise). Steam's "verify integrity of game files" restores
+them too.
 
 - The environment variable is the key in upper case: `screen` → `VRDUAL_SCREEN`,
   `hud_depth` → `VRDUAL_HUD_DEPTH`, `map_a` → `VRDUAL_MAP_A`.

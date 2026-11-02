@@ -166,6 +166,60 @@ vrdual_shaders() {
     say "$n new key(s) -> $cat"
 }
 
+# Flatpak Steam game APPID: "NAME<TAB>INSTALL_DIR<TAB>LIBRARY" (exit 1 if not installed).
+steam_game() {
+    local root="$STEAM_FLATPAK/.local/share/Steam" lib m
+    for lib in $(grep -oP '"path"\s+"\K[^"]+' "$root/steamapps/libraryfolders.vdf" 2>/dev/null) "$root"; do
+        m=$lib/steamapps/appmanifest_$1.acf
+        [[ -f $m ]] || continue
+        printf '%s\t%s\t%s\n' "$(grep -oP '"name"\s+"\K[^"]+' "$m" | head -1)" "$lib/steamapps/common/$(grep -oP '"installdir"\s+"\K[^"]+' "$m" | head -1)" "$lib"
+        return 0
+    done
+    return 1
+}
+
+# Intro videos (TODO 16): `intro off|on|status GAME [--dir DIR]`. GAME = a
+# profile (file name, exe or Steam appid) whose [game] intro lists globs
+# relative to the install dir (Flatpak Steam, or --dir). off renames each
+# match to NAME.orig, on renames back; prints "on|off<TAB>PATH" per file.
+# Steam's "verify integrity of game files" restores them as well.
+vrdual_intro() {
+    local act=${1:-} game=${2:-} dir="" f p prof="" pats steam
+    [[ ${3:-} == --dir && -n ${4:-} ]] && dir=$4
+    [[ $act =~ ^(off|on|status)$ && -n $game && ( $# -eq 2 || -n $dir ) ]] || { say "usage: vrdual intro off|on|status GAME [--dir INSTALL_DIR]"; return 2; }
+    local lg=${game,,}
+    for f in "$VRDUAL_ROOT"/profiles/*.conf; do
+        p=$(awk -F= '/^\[/ { s = $0 } s == "[game]" && /=/ { k = $1; gsub(/[ \t]/, "", k); v = $2; gsub(/^[ \t]+|[ \t]+$/, "", v); print k "=" v }' "$f")
+        local base=${f##*/}; base=${base%.conf}
+        local exes=,$(sed -n 's/^exe=//p' <<<"$p" | tr -d ' ' | tr 'A-Z' 'a-z'),
+        if [[ ${base,,} == "$lg" || $exes == *",$lg,"* || $(sed -n 's/^steam=//p' <<<"$p") == "$game" ]]; then prof=$f; break; fi
+    done
+    [[ -n $prof ]] || { say "no profile for '$game' in $VRDUAL_ROOT/profiles"; return 1; }
+    pats=$(sed -n 's/^intro=//p' <<<"$p" | tr ',' ' ')
+    [[ -n $pats ]] || { say "${prof##*/}: no intro videos listed ([game] intro = GLOB, ...)"; return 1; }
+    steam=$(sed -n 's/^steam=//p' <<<"$p")
+    if [[ -z $dir ]]; then
+        [[ -n $steam ]] && dir=$(steam_game "$steam" | cut -f2) || true
+        [[ -d $dir ]] || { say "${prof##*/}: game not found in Flatpak Steam${steam:+ (appid $steam)}; give --dir INSTALL_DIR"; return 1; }
+    fi
+    local n=0 pat o
+    local -a pl
+    read -ra pl <<<"$pats"  # not `for pat in $pats`: that would glob against the current dir
+    shopt -s nullglob
+    for pat in "${pl[@]}"; do
+        for f in "$dir"/$pat "$dir"/$pat.orig; do
+            [[ -f $f ]] || continue
+            o=$f
+            if [[ $act == off && $f != *.orig ]]; then mv -n -- "$f" "$f.orig" && o=$f.orig
+            elif [[ $act == on && $f == *.orig ]]; then mv -n -- "$f" "${f%.orig}" && o=${f%.orig}; fi
+            [[ $o == *.orig ]] && printf 'off\t%s\n' "${o%.orig}" || printf 'on\t%s\n' "$o"
+            n=$((n + 1))
+        done
+    done
+    shopt -u nullglob
+    (( n )) || { say "no file matches $pats in $dir"; return 1; }
+}
+
 # Performance record helper (TODO 19). `perf GAME` (Steam appid or exe name):
 # what a perf entry needs that the machine knows, as "key<TAB>value" lines:
 # game, logs, Proton / DXVK / vkd3d, vrdual mode and GPUs, non-default
@@ -186,12 +240,7 @@ vrdual_perf() {
         [[ -n $log ]] && { appid=${log##*/steam-}; appid=${appid%.log}; }
     fi
     [[ -n $log || -n $appid ]] || { say "no Proton log for '$game' in $STEAM_FLATPAK (native games: not supported yet)"; return 1; }
-    for lib in $(grep -oP '"path"\s+"\K[^"]+' "$root/steamapps/libraryfolders.vdf" 2>/dev/null) "$root"; do
-        [[ -f $lib/steamapps/appmanifest_$appid.acf ]] || continue
-        name=$(grep -oP '"name"\s+"\K[^"]+' "$lib/steamapps/appmanifest_$appid.acf" | head -1)
-        dir=$lib/steamapps/common/$(grep -oP '"installdir"\s+"\K[^"]+' "$lib/steamapps/appmanifest_$appid.acf" | head -1)
-        break
-    done
+    [[ -n $appid ]] && IFS=$'\t' read -r name dir lib < <(steam_game "$appid") || true
     [[ -z $exe && -n $log ]] && exe=$(grep -oP "^\[vrdual:[^]]*\] app='[^']*' exe='\S+ \K[^']+(?=' profile=)" "$log" | tail -1)
     printf 'game\t%s\nappid\t%s\nexe\t%s\n' "${name:-?}" "${appid:-?}" "${exe:-?}"
     if [[ -n $log ]]; then
@@ -845,6 +894,12 @@ _selftest_nogpu() {
         SteamAppId=17410 VRDUAL_CONFIG=/nonexistent '$B/vrdual-ctl' show Game.exe | grep -q '^world_scale *50 *# profile mirror-s-edge' &&
         printf '[global]\\nworld_scale = 3\\nhud_depth = 7\\n[app:mirrorsedge.exe]\\nworld_scale = 40\\n' >'$tmp/prof.conf' &&
         o=\$(VRDUAL_CONFIG='$tmp/prof.conf' '$B/vrdual-ctl' show mirrorsedge.exe) && grep -q '^world_scale *40 ' <<<\"\$o\" && grep -q '^hud_depth *1 *# profile' <<<\"\$o\""
+    label="intro off / on: the profile's intro globs renamed to .orig and back (by exe, appid, file name), other files untouched, twice = no change"
+    check bash -c "d='$tmp/introgame'; mkdir -p \$d/Video && : >\$d/Video/Title_Game.bik && : >\$d/Video/Title_Dev.bik && : >\$d/Video/Attract.bik
+        i() { '$VRDUAL_ROOT/vrdual' intro \$1 \$2 --dir \$d 2>/dev/null; }
+        [[ \$(i off overlord.i386 | cut -f1 | sort -u) == off ]] && [[ \$(i off 11450 | wc -l) == 2 ]] && [[ -f \$d/Video/Title_Game.bik.orig && ! -e \$d/Video/Title_Game.bik && -f \$d/Video/Attract.bik ]] &&
+        [[ \$(i on overlord | cut -f1 | sort -u) == on ]] && [[ -f \$d/Video/Title_Dev.bik && ! -e \$d/Video/Title_Dev.bik.orig ]] &&
+        [[ \$(i status overlord) == \$'on\t'\$d/Video/Title_Dev.bik\$'\n'\$'on\t'\$d/Video/Title_Game.bik ]] && ! i off psychonauts && ! i off nosuchgame || { ls -R \$d; false; }"
     label="build info: vrdual version lists tools and layers; SOURCE_DATE_EPOCH fixes the time"
     check bash -c "v=\$('$VRDUAL_ROOT/vrdual' version) && grep -q \$'^tools\tvrdual .*, built .* on ' <<<\"\$v\" &&
         grep -q 'build/libVkLayer_vrdual.so.*, built ' <<<\"\$v\" &&
@@ -1619,6 +1674,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
   profiles [list|sync]          game profiles (profiles/*.conf): list and check them, or copy
                                   them where games read them (vrdual install does it too)
+  intro off|on|status GAME      rename the game's logo videos away (.orig) or back; listed in its
+                                  profile ([game] intro); Steam's file check restores them too
   perf APPID|EXE                what a performance record needs (Proton/DXVK, mode, GPUs, config,
                                   game fps of the last xr session, game config files, mod hints)
   shaders new LOG [CATALOG]     shaders a game met that are not in its shader_catalog (from the
@@ -1666,7 +1723,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles|shaders|perf) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles|shaders|perf|intro) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;

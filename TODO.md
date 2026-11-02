@@ -34,10 +34,10 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     integration): `nvapi.dll` stand-in, per-eye stereo parameter texture,
     NVIDIA's shift model; fixes shadows / screen-space effects, one and two
     GPUs. Research first (logging-only stand-in).
-16. Skip intro videos (owner's idea 2026-10-23): `vrdual intro off|on GAME`
-    renames the logo videos listed in the game's profile (`.orig` suffix,
-    reversible; Steam file verification restores them). Data per game lives in
-    the profile files (item 11; first: Overlord, `Video/Title_*.bik`).
+16. Skip intro videos (owner's idea 2026-10-23): done 2026-11-02, `vrdual
+    intro off|on|status GAME` renames the profile's `[game] intro` globs to
+    `.orig` and back; first profile: Overlord (`profiles/overlord.conf`). Left:
+    intro lists for more games (each needs the install checked by hand).
 17. [Shader rules](docs/tasks/shader-rules.md) (from witcher3-vr,
     2026-10-31): per-shader `noshift | hud | hide` by SPIR-V hash in
     `shader_rules`, live bisection `_ hunt` to find a shader. Step 1 done;

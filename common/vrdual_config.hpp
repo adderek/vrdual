@@ -114,6 +114,7 @@ inline std::string data_home() {
 //   [game]
 //   exe = mirrorsedge.exe          # names matched like [app:NAME], comma list
 //   steam = 17410                  # optional alias: matches $SteamAppId
+//   intro = Video/Title_*.bik      # optional: logo videos (`vrdual intro`, read by `_` only)
 //   [settings]
 //   world_scale = 50
 // Precedence: defaults < [global] < profile < [app:NAME] < env.
