@@ -486,8 +486,10 @@ static void refresh_auto(Track& t, VkExtent2D sc) {
     int best = n.count(sce) ? n[sce] : 0;
     for (auto& e : n)
         if (e.second > best) best = e.second, main = e.first;
-    if (main != t.main.exchange(main))
+    if (main != t.main.exchange(main)) {
         logf("auto_noshift: main view %ux%u (swapchain %ux%u)", uint32_t(main >> 32), uint32_t(main), sc.width, sc.height);
+        t.off_ext.clear();  // log the off-screen extents again for this main view
+    }
 }
 
 // ------------------------------------------------------ depth export ------

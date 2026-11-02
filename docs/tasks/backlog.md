@@ -48,6 +48,14 @@
   units: keys at 1024² / 64² also drawn elsewhere). Now the pass decides: a
   flag written before each render pass. Left: confirm unit shadows in
   Civ V; measure the cost of the two barriers per pass in a heavy game.
+  Result 2026-11-02 (owner, headset): the rest of Civ V is fine now (HUD,
+  selection circle, terrain), unit shadows still differ per eye although
+  every off-screen pass incl. 2048² / 1024² is unshifted. So the shadow map
+  is right and the lookup is wrong: the main view resolves shadows from
+  depth with the game's unshifted matrices (effect kind 2,
+  framegen-effects.md). Fix only per game: patch that pixel shader's
+  unprojection (find it with a hunt on pixel shaders, not supported yet),
+  or turn shadows down in the game.
   Not covered: a shadow atlas the size of the main view.
 - Civ V, right eye only (mirror B): thin dark lines along terrain tile
   edges, also at IPD 0, gone at times with hud_depth 0 (2026-11-02). Partly
