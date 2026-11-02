@@ -232,17 +232,30 @@ static void load_config(const VkApplicationInfo* app) {
     c.shader_catalog = st.s("shader_catalog");
     c.catalog.clear();
     if (!c.shader_catalog.empty()) {
-        // Lines "KEY  anything" (KEY = 16 hex digits); '#' lines, blank lines and
-        // other text are skipped.
+        // Lines "KEY  anything" (KEY = 16 hex digits); "# translator NAME
+        // VERSION" = the engine (DXVK, vkd3d, Zink...) the keys came from;
+        // other '#' lines, blank lines and other text are skipped.
+        char now[160] = "none";  // keys hash the translated SPIR-V: a translator update renews them all
+        if (app && app->pEngineName)
+            snprintf(now, sizeof now, "%.120s %u.%u.%u", app->pEngineName, VK_API_VERSION_MAJOR(app->engineVersion),
+                     VK_API_VERSION_MINOR(app->engineVersion), VK_API_VERSION_PATCH(app->engineVersion));
         if (FILE* f = fopen(c.shader_catalog.c_str(), "re")) {
             char line[512];
+            std::string was;
             while (fgets(line, sizeof line, f)) {
+                if (!strncmp(line, "# translator ", 13)) {
+                    was = line + 13;
+                    while (!was.empty() && isspace((unsigned char)was.back())) was.pop_back();
+                    continue;
+                }
                 char* e;
                 unsigned long long k = strtoull(line, &e, 16);
                 if (e - line == 16 && (!*e || isspace((unsigned char)*e))) c.catalog.insert(k);
             }
             fclose(f);
-            logf("shader_catalog: %zu key(s) from %s", c.catalog.size(), c.shader_catalog.c_str());
+            logf("shader_catalog: %zu key(s) from %s, translator %s", c.catalog.size(), c.shader_catalog.c_str(), now);
+            if (!was.empty() && was != now)
+                logf("shader_catalog: translator changed (catalog: %s, now: %s): every key may be new, not a mod", was.c_str(), now);
         } else {
             logf("shader_catalog: cannot read %s, every shader counts as new", c.shader_catalog.c_str());
         }

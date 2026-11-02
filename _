@@ -137,6 +137,35 @@ vrdual_profiles() {
     esac
 }
 
+# Shader catalog (shader_catalog, docs/CONFIG.md). `shaders new LOG [CATALOG]`:
+# the "not in catalog" lines of a layer log (Proton log, game.log) as catalog
+# lines "KEY  STATE  new DATE" on stdout, each key once. With CATALOG (created
+# if missing) only keys not in it yet, appended there, and its "# translator"
+# line set to the log's (DXVK / vkd3d / Zink version the keys belong to).
+vrdual_shaders() {
+    [[ ${1:-} == new && -n ${2:-} && $# -le 3 ]] || { say "usage: vrdual shaders new LOG [CATALOG]"; return 2; }
+    local log=$2 cat=${3:-} tr was new n
+    [[ -r $log ]] || { say "cannot read $log"; return 1; }
+    tr=$(grep -oP 'shader_catalog: .*, translator \K.*' "$log" | tail -1) || true
+    new=$(grep -oP 'shader \K[0-9a-f]{16}: not in catalog \(.*\)' "$log" |
+        awk -v d="$(date +%F)" -v cat="$cat" 'BEGIN { if (cat != "") while ((getline l < cat) > 0) { split(l, f, " "); have[f[1]] = 1 } }
+            { k = substr($1, 1, 16); if (have[k]++) next; st = $0; sub(/^[^(]*\(/, "", st); sub(/\)$/, "", st); printf "%s  %s  new %s\n", k, st, d }') || true
+    n=$(grep -c . <<<"$new") || true
+    [[ -n $new ]] && printf '%s\n' "$new"
+    if [[ -z $cat ]]; then
+        say "$n new key(s)${tr:+, translator $tr}"
+        return 0
+    fi
+    [[ -f $cat ]] || printf '# shader catalog: KEY  STATE  what it draws (shader_catalog in docs/CONFIG.md)\n' >"$cat" || return 1
+    was=$(grep -oP '^# translator \K.*' "$cat" | tail -1) || true
+    if [[ -n $tr && $tr != "$was" ]]; then
+        [[ -n $was ]] && say "translator changed: $was -> $tr (keys from $was may be gone; the summary line counts them as unseen)"
+        { grep -v '^# translator ' "$cat"; printf '# translator %s\n' "$tr"; } >"$cat.new.$$" && mv -f "$cat.new.$$" "$cat"
+    fi
+    [[ -n $new ]] && printf '%s\n' "$new" >>"$cat"
+    say "$n new key(s) -> $cat"
+}
+
 # Games in Flatpak Steam / Heroic read the copy `vrdual install` made, not the
 # host config: refresh the copies after a write (they apply at the next start).
 config_sync() {
@@ -1121,13 +1150,22 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     # 3c''''. shader_catalog: the cube VS is known, the nopos VS is new, one
     # catalog key is never seen; summary at exit (--frames).
     rm -f /dev/shm/vrdual-$sess-*
-    { echo "# selftest"; echo "$("$B/spvpatch" --hash "$tmp/glsl.spv")  vs  patched  cube"; echo "0123456789abcdef  vs  gone"; } >"$tmp/cat.tsv"
+    { echo "# selftest"; echo "# translator Old 1.2.3"; echo "$("$B/spvpatch" --hash "$tmp/glsl.spv")  vs  patched  cube"; echo "0123456789abcdef  vs  gone"; } >"$tmp/cat.tsv"
     label="shader_catalog: unknown shader logged once as new, summary counts seen / new / unseen"
     check bash -c "env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
             VRDUAL_SHADER_CATALOG='$tmp/cat.tsv' timeout 60 '$B/vrdual-cube' --scene calib --nopos-vs --frames 5 --title 'selftest catalog' >'$tmp/cat.log' 2>&1 &&
         grep -q 'shader_catalog: 2 key(s)' '$tmp/cat.log' &&
         [[ \$(grep -c 'not in catalog' '$tmp/cat.log') == 1 ]] && grep -q 'not in catalog (not patched: no vec4 type)' '$tmp/cat.log' &&
         grep -q 'shader_catalog: 2 shader(s) seen, 1 new, 1 of 2 catalog key(s) unseen' '$tmp/cat.log' || { grep 'catalog' '$tmp/cat.log'; false; }"
+    label="shader_catalog: translator logged, a catalog from another translator says so"
+    check grep -q 'shader_catalog: translator changed (catalog: Old 1.2.3, now: none): every key may be new' "$tmp/cat.log"
+    label="shaders new: log -> catalog lines (once per key), appended to a catalog only if missing, translator line updated"
+    check bash -c "d=\$(date +%F); l=\$('$VRDUAL_ROOT/vrdual' shaders new '$tmp/cat.log' 2>/dev/null) &&
+        [[ \$(wc -l <<<\"\$l\") == 1 ]] && grep -qP \"^[0-9a-f]{16}  not patched: no vec4 type  new \$d\\$\" <<<\"\$l\" &&
+        cp '$tmp/cat.tsv' '$tmp/cat2.tsv' && '$VRDUAL_ROOT/vrdual' shaders new '$tmp/cat.log' '$tmp/cat2.tsv' >/dev/null 2>&1 &&
+        [[ -z \$('$VRDUAL_ROOT/vrdual' shaders new '$tmp/cat.log' '$tmp/cat2.tsv' 2>/dev/null) ]] &&
+        grep -qxF \"\$l\" '$tmp/cat2.tsv' && [[ \$(grep -c '^# translator' '$tmp/cat2.tsv') == 1 ]] && grep -qx '# translator none' '$tmp/cat2.tsv' &&
+        [[ \$(wc -l <'$tmp/cat2.tsv') == 5 ]] || { cat '$tmp/cat2.tsv'; false; }"
 
     # 3c'''. Tessellation / geometry stages (HairWorks, DX11 terrain): only
     # the last pre-raster stage shifts (the VS before it gets the gate spec
@@ -1470,6 +1508,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
   profiles [list|sync]          game profiles (profiles/*.conf): list and check them, or copy
                                   them where games read them (vrdual install does it too)
+  shaders new LOG [CATALOG]     shaders a game met that are not in its shader_catalog (from the
+                                  layer log) as catalog lines; with CATALOG, appended there
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
   hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions);
                                   hunt MODE LO HI | off sets a key range, hunt shaders lists keys,
@@ -1513,7 +1553,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles|shaders) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
