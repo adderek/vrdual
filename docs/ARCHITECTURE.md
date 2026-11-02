@@ -112,7 +112,10 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
    live mode each patched shader also compares its key's high 32 bits with a
    range in the param buffer (`addr + 32`: lo, hi, mode, from the control
    block's `hunt_*`) and applies that mode at runtime, which `_ hunt find`
-   uses to bisect for one shader (docs/tasks/shader-rules.md). It also
+   uses to bisect for one shader (docs/tasks/shader-rules.md). With
+   `hunt_fragment` fragment shaders get the same check (mode hide only:
+   discard before each return, `patch_fragment`); a `hide` rule on a
+   fragment key discards always. It also
    reads a flag at `addr + 96`: with `auto_noshift` the layer writes it
    before every render pass (`vkCmdUpdateBuffer` between two barriers, in
    the app's command buffer and in B's twin), 1 for off-screen passes

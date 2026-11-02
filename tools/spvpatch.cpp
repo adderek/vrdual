@@ -2,6 +2,7 @@
 //   spvpatch in.spv out.spv baked A [B WF INV]
 //   spvpatch in.spv out.spv live 0xADDRESS
 //   ... [hud|hide] after the mode: shader rule variants
+//   a fragment shader goes through patch_fragment (live: the hunt; hide: always discard)
 //   spvpatch --hash in.spv: the shader key (16 hex digits) the layer uses
 //   spvpatch --fuzz N in.spv...: N random mutations (word flips, opcode/word
 //     count edits, truncation) of each input through every patch mode; built
@@ -50,6 +51,9 @@ static int fuzz(long n, int nfiles, char** files) {
             std::vector<uint32_t> in(w.begin(), w.end());
             in.shrink_to_fit();
             patched += spv::patch_vertex(in, o).patched;
+            std::vector<uint32_t> in2(w.begin(), w.end());
+            in2.shrink_to_fit();
+            patched += spv::patch_fragment(in2, o).patched;
         }
     }
     printf("fuzz: %ld mutants per file, %ld patched, no crash\n", n, patched);
@@ -85,6 +89,7 @@ int main(int argc, char** argv) {
         for (int k = 1; k < 4 && 4 + k < argc; ++k) o.params[k] = strtof(argv[4 + k], nullptr);
     }
     auto r = spv::patch_vertex(w, o);
+    if (!r.patched && r.why == spv::kNoEntry) r = spv::patch_fragment(w, o);
     if (!r.patched) { fprintf(stderr, "not patched: %s\n", r.why.c_str()); return 3; }
     f = fopen(argv[2], "wb");
     fwrite(w.data(), 4, w.size(), f);

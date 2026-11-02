@@ -85,6 +85,7 @@ struct Config {
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
     bool depth_export = false; // the game's depth buffer with each frame (vrdual_passes.hpp)
+    bool hunt_fragment = false; // fragment shaders join the hunt (spirv_patch.hpp patch_fragment)
     bool auto_noshift = false; // shaders drawn only in shadow passes not shifted (vrdual_passes.hpp)
     bool lockstep = true;
     bool live = true;          // wanted; per device it also needs bufferDeviceAddress
@@ -286,6 +287,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.cursor = st.i("cursor") != 0;
     c.depth_export = st.i("depth_export") != 0;
     c.auto_noshift = st.i("auto_noshift") != 0;
+    c.hunt_fragment = st.i("hunt_fragment") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
     c.lockstep_timeout_ms = st.i("lockstep_timeout_ms");
     c.live = st.i("live") != 0;
@@ -385,7 +387,7 @@ struct EyeBuf {
     float aspect = 0;  // of the exported swapchain when params were last pushed
     int pushed_eye = -1;  // alternate-eye rendering flips `eye` every frame
     float last[2][4] = {};  // per eye: last pushed v[0..3] (log only real changes)
-    int patched = 0, skipped = 0, ruled = 0;
+    int patched = 0, skipped = 0, ruled = 0, frag = 0;  // frag: fragment shaders (hunt_fragment, hide rules)
     uint32_t hunt[4] = {};  // last pushed hunt range (log changes)
 };
 
@@ -1073,7 +1075,7 @@ static void free_param_buffer(const Dispatch& d, VkDevice dev, EyeBuf& ep) {
 }
 
 // ------------------------------------------------------------- shaders -----
-// First sight of a vertex shader key: appended to /dev/shm/vrdual-SESSION-shaders
+// First sight of a shader key (vertex; fragment with hunt_fragment): appended to /dev/shm/vrdual-SESSION-shaders
 // (the list `_ hunt` bisects over; one write per line, so both eye processes
 // can append). Returns false if the key was seen before.
 static bool note_shader(uint64_t h, int rule) {
@@ -1133,6 +1135,21 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     o.key = uint32_t(h >> 32);
     o.hide = rule == 1;
     o.hud = rule == 3;
+    // Fragment shaders: patched only for the hunt (hunt_fragment, live) or a
+    // hide rule; the others are left alone (no cost, no risk).
+    if (rule == 1 || (g_cfg.hunt_fragment && ep.params)) {
+        code.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
+        spv::PatchOptions f = o;
+        f.addr = ep.params ? ep.addr : 0;
+        spv::PatchResult fr = spv::patch_fragment(code, f);
+        if (fr.patched) {
+            ep.frag++;
+            if (rule) ep.ruled++;
+            note_shader(h, rule);
+            return true;
+        }
+        if (fr.why != spv::kNoFragment) logf("fragment shader %016llx not patched: %s", (unsigned long long)h, fr.why.c_str());
+    }
     if (rule == 2) {  // noshift: the original (vertex shaders only, else the rule matched by chance)
         code.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
         if (spv::patch_vertex(code, o).patched) { ep.ruled++; note_shader(h, rule); catalog_note(h, "noshift"); }
@@ -1281,7 +1298,7 @@ static void free_copy_res(const Dispatch& d, VkDevice dev, CopyRes& cr) {
 
 static VKAPI_ATTR void VKAPI_CALL vrd_DestroyDevice(VkDevice dev, const VkAllocationCallbacks* alloc) {
     DeviceData* dd = dev_of(key(dev));
-    logf("device destroyed: %d vertex shaders patched, %d modules untouched, %llu frames", dd->ep.patched, dd->ep.skipped, (unsigned long long)dd->frame);
+    logf("device destroyed: %d vertex shaders patched, %d fragment shaders, %d modules untouched, %llu frames", dd->ep.patched, dd->ep.frag, dd->ep.skipped, (unsigned long long)dd->frame);
     if (!g_cfg.rules.empty()) logf("shader_rules: %d shader(s) matched %zu rule(s)%s", dd->ep.ruled, g_cfg.rules.size(), dd->ep.ruled ? "" : " (stale keys? game or Proton updated)");
     if (!g_cfg.shader_catalog.empty()) {
         CatalogSeen& c = cat_seen();
@@ -1397,7 +1414,7 @@ static const VkGraphicsPipelineCreateInfo* patch_inline(EyeBuf& ep, uint32_t n, 
     for (uint32_t i = 0; i < n; ++i)
         for (uint32_t s = 0; s < cis[i].stageCount && cis[i].pStages; ++s) {
             const VkPipelineShaderStageCreateInfo& st = cis[i].pStages[s];
-            if (st.module || !(st.stage & kPreRaster)) continue;
+            if (st.module || !(st.stage & (kPreRaster | VK_SHADER_STAGE_FRAGMENT_BIT))) continue;
             const VkBaseInStructure* sm = (const VkBaseInStructure*)st.pNext;
             std::vector<const VkBaseInStructure*> before;
             for (; sm && sm->sType != VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO; sm = sm->pNext) before.push_back(sm);

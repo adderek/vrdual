@@ -62,6 +62,10 @@ data: `[app:NAME]` sections and later the per-game profile files (TODO 11).
    Hunt in the headset done 2026-11-02 (TODO 20): `common/vrdual_hunt.hpp` is
    the one bisection, `vrdual-ctl hunt find` (stdin answers, `_ hunt find`)
    and vrdual-xr `input = hunt` (controllers, overlay panel) its front ends.
+   Fragment shaders 2026-11-02 (`hunt_fragment`, `patch_fragment`): hide
+   discards what one fragment shader draws, for effects computed there
+   (Civ V unit shadows); `hide` rules on fragment keys. Next: replacing a
+   shader by key (backlog).
 4. Rules in the per-game profile files (`vrdual profiles sync`, TODO 11).
 
 ## Not taken over (and why)

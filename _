@@ -820,7 +820,18 @@ _selftest_nogpu() {
             check bash -c "'$B/spvpatch' '$tmp/$sh.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv'"
         done
     done
-    label="spirv fragment refused"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+    label="spirv fragment baked: nothing to do (refused)"; check bash -c "! '$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' baked 0.1"
+    # fragment shaders (hunt_fragment, hide rules): discard before OpReturn;
+    # SPIR-V 1.6 has no OpKill, OpTerminateInvocation instead
+    glslc --target-env=vulkan1.3 "$VRDUAL_ROOT/testapp/cube.frag" -o "$tmp/frag16.spv"
+    for m in "live 0x123456789a0" "baked 0 hide"; do
+        label="spirv frag ${m%% *}${m##*[0-9]}"
+        # shellcheck disable=SC2086
+        check bash -c "'$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv' && spirv-dis '$tmp/p.spv' | grep -q OpKill"
+    done
+    label="spirv frag live: SPIR-V 1.0 and 1.6 (OpTerminateInvocation) validate"
+    check bash -c "'$B/spvpatch' '$tmp/frag.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env spv1.0 '$tmp/p.spv' &&
+        '$B/spvpatch' '$tmp/frag16.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env vulkan1.3 '$tmp/p.spv' && spirv-dis '$tmp/p.spv' | grep -q OpTerminateInvocation"
     # tessellation evaluation / geometry: the last pre-raster stage when present
     for sh in tese geom; do
         glslc "$VRDUAL_ROOT/testapp/cube.$sh" -o "$tmp/$sh.spv"
@@ -837,8 +848,8 @@ _selftest_nogpu() {
     # legal earlier through SPV_KHR_physical_storage_buffer (which the patch adds)
     label="spirv live output validates as SPIR-V 1.0 (glslc's default)"
     check bash -c "'$B/spvpatch' '$tmp/glsl.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env spv1.0 '$tmp/p.spv'"
-    label="spirv fuzz: 3x50000 mutated modules through every patch mode under ASan"
-    check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv" "$tmp/geom.spv"
+    label="spirv fuzz: 4x50000 mutated modules through every patch mode under ASan"
+    check "$B/spvpatch-asan" --fuzz 50000 "$tmp/glsl.spv" "$tmp/hlsl.spv" "$tmp/geom.spv" "$tmp/frag.spv"
     label="frame reader: producer re-init to a bigger size is refused until remap; no per-frame allocation; pairs straight into caller buffers"
     mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
     label="guided IPD calibration: simulated viewers 50-80 mm converge within 0.5 mm, near IPD found or left off"
@@ -1276,6 +1287,23 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     check bash -c "grep -q 'rule noshift' '$tmp/sr.log' || { cat '$tmp/sr.log'; exit 1; }
         for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-0 2>/dev/null) b=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-1 2>/dev/null)
             [[ -n \$a && \${a#* } == \${b#* } ]] && exit 0; sleep 0.1; done; echo \"\$a / \$b\"; false"
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+
+    # 3c'f. hunt_fragment: the fragment shader joins the shader list; hunting
+    # hide on its key alone discards what it draws on both eyes (mirror: A and
+    # B's twin), the vertex shader still runs; off brings the posts back.
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_HUNT_FRAGMENT=1 \
+        "$B/vrdual-cube" --scene calib --title "selftest hunt fragment" >"$tmp/hfr.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'exporting' "$tmp/hfr.log" 2>/dev/null && break; sleep 0.1; done
+    local fk; fk=$("$B/spvpatch" --hash "$tmp/frag.spv")
+    label="hunt_fragment: fragment key listed, hide on it alone -> both eyes background only"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; '$B/vrdual-ctl' --session $sess shaders | grep -qx $fk &&
+        '$B/vrdual-ctl' --session $sess hunt hide ${fk:0:8} ${fk:0:8} >/dev/null && snap '$tmp/hfr.png' &&
+        (( \$(convert '$tmp/hfr.png' -unique-colors -format %w info:) <= 2 )) || { '$B/vrdual-ctl' --session $sess shaders; tail -5 '$tmp/hfr.log'; false; }"
+    "$B/vrdual-ctl" --session $sess hunt off >/dev/null
+    label="hunt_fragment: hunt off, posts back, ipd 64mm"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hfr2.png' && $M '$tmp/hfr2.png' --ipd 0.064 --anchor center"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3c''. hud_depth_scope = rules: without a hud rule the HUD (w == 1) stays

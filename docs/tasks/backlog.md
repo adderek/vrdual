@@ -73,8 +73,8 @@
 - Fragment shader hunt + shader replacement (owner 2026-11-02, Civ V unit
   shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
   so hiding the shader that resolves shadows would hide the terrain too.
-  1. Record FS keys too; hunt mode `hide` on an FS = `OpKill` / output
-     unchanged colour, so only the effect disappears.
+  1. Done 2026-11-02: `hunt_fragment = 1` lists FS keys, hunt `hide` on an
+     FS discards (selftest 3c'f). Try in Civ V: unit shadows.
   2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
      offline) loaded instead of the game's module, 3Dmigoto ShaderFixes
      style (MODDING.md "Shaders"). Zink hashes depend on the Mesa version:

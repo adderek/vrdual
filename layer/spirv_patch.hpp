@@ -61,9 +61,10 @@ enum : uint32_t {
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253, OpEmitVertex = 218, OpEmitStreamVertex = 220,
     OpSpecConstantTrue = 48, OpDecorateId = 332, OpDecorateString = 5632, OpMemberDecorateString = 5633,
     OpDecorationGroup = 73, OpGroupDecorate = 74, OpGroupMemberDecorate = 75,
+    OpLabel = 248, OpBranchConditional = 250, OpKill = 252, OpSelectionMerge = 247, OpTerminateInvocation = 4416,
 };
 enum : uint32_t {
-    ExecModelVertex = 0, ExecModelTessEval = 2, ExecModelGeometry = 3, StorageOutput = 3, DecSpecId = 1, StoragePhysicalStorageBuffer = 5349, DecBuiltIn = 11,
+    ExecModelVertex = 0, ExecModelTessEval = 2, ExecModelGeometry = 3, ExecModelFragment = 4, StorageOutput = 3, DecSpecId = 1, StoragePhysicalStorageBuffer = 5349, DecBuiltIn = 11,
     BuiltInPosition = 0, AddrLogical = 0, AddrPhysicalStorageBuffer64 = 5348,
     CapPhysicalStorageBufferAddresses = 5347, MemAccessAligned = 2, GLSLFClamp = 43,
 };
@@ -80,6 +81,7 @@ struct PatchOptions {
 
 constexpr uint32_t kGateSpecId = 0x76726431;  // 'vrd1': spec constant gating the patch
 inline const char* const kNoEntry = "no vertex, tessellation evaluation or geometry entry point";
+inline const char* const kNoFragment = "no fragment entry point";
 
 // Shader key: FNV-1a 64 over the SPIR-V bytes as the app passed them.
 inline uint64_t shader_hash(const uint32_t* code, size_t words) {
@@ -481,6 +483,131 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     }
     if (!returns) { r.why = geom ? "no OpEmitVertex in geometry shader" : "no OpReturn in entry point"; return r; }
     if (!annot_done) { r.why = "no decorations"; return r; }  // unreachable: gl_Position is decorated
+    out[3] = bound;
+    in.swap(out);
+    r.patched = true;
+    return r;
+}
+
+// Fragment shader for the hunt and `hide` rules: before every OpReturn of a
+// Fragment entry point the invocation is discarded when
+//     o.hide (rule), or live: lo <= key <= hi && mode == 1 (uvec4 at addr+32)
+// i.e.  OpSelectionMerge %cont; OpBranchConditional %c %kill %cont;
+//       %kill: OpKill (OpTerminateInvocation from SPIR-V 1.6); %cont: OpReturn.
+// A returning block has no successors, so splitting it touches no OpPhi.
+// Hiding a fragment shader removes only what it draws (an effect pass, or the
+// objects using it) while their vertex shaders still run.
+inline PatchResult patch_fragment(std::vector<uint32_t>& in, const PatchOptions& o) {
+    PatchResult r;
+    if (in.size() < 5 || in[0] != 0x07230203u) { r.why = "not SPIR-V (or wrong endianness)"; return r; }
+    if (!o.hide && !o.addr) { r.why = "nothing to do"; return r; }
+    struct Inst { size_t off; uint32_t op, wc; };
+    std::vector<Inst> insts;
+    for (size_t i = 5; i < in.size();) {
+        uint32_t wc = in[i] >> 16, op = in[i] & 0xffff;
+        if (wc == 0 || i + wc > in.size() || wc < min_wc(op)) { r.why = "malformed instruction stream"; return r; }
+        insts.push_back({i, op, wc});
+        i += wc;
+    }
+    auto w = [&](const Inst& I, uint32_t k) { return in[I.off + k]; };
+    std::vector<uint32_t> entry_fns;
+    uint32_t t_bool = 0, t_uint = 0, t_uvec2 = 0, t_uvec4 = 0, addressing = AddrLogical;
+    bool has_psb_cap = false, has_psb_ext = false;
+    for (auto& I : insts) {
+        switch (I.op) {
+        case OpEntryPoint: if (w(I, 1) == ExecModelFragment) entry_fns.push_back(w(I, 2)); break;
+        case OpCapability: if (w(I, 1) == CapPhysicalStorageBufferAddresses) has_psb_cap = true; break;
+        case OpExtension: if (word_str(&in[I.off + 1], I.wc - 1) == "SPV_KHR_physical_storage_buffer") has_psb_ext = true; break;
+        case OpMemoryModel: addressing = w(I, 1); break;
+        case OpTypeBool: t_bool = w(I, 1); break;
+        case OpTypeInt: if (w(I, 2) == 32 && w(I, 3) == 0 && !t_uint) t_uint = w(I, 1); break;
+        }
+    }
+    if (entry_fns.empty()) { r.why = kNoFragment; return r; }
+    for (auto& I : insts) {
+        if (I.op != OpTypeVector || !t_uint || w(I, 2) != t_uint) continue;
+        if (w(I, 3) == 2 && !t_uvec2) t_uvec2 = w(I, 1);
+        if (w(I, 3) == 4 && !t_uvec4) t_uvec4 = w(I, 1);
+    }
+    bool live = o.addr != 0 && !o.hide;
+    if (live && addressing != AddrLogical && addressing != AddrPhysicalStorageBuffer64) { r.why = "unsupported addressing model for live mode"; return r; }
+
+    uint32_t bound = in[3];
+    auto fresh = [&]() { return bound++; };
+    auto emit = [](std::vector<uint32_t>& out, uint32_t op, std::initializer_list<uint32_t> ops) {
+        out.push_back(uint32_t(ops.size() + 1) << 16 | op);
+        out.insert(out.end(), ops);
+    };
+    std::vector<uint32_t> head_cap, head_ext, globals;
+    if (live && !has_psb_cap) emit(head_cap, OpCapability, {CapPhysicalStorageBufferAddresses});
+    if (live && !has_psb_ext) {
+        auto s = str_words("SPV_KHR_physical_storage_buffer");
+        head_ext.push_back(uint32_t(s.size() + 1) << 16 | OpExtension);
+        head_ext.insert(head_ext.end(), s.begin(), s.end());
+    }
+    if (!t_bool) { t_bool = fresh(); emit(globals, OpTypeBool, {t_bool}); }
+    uint32_t c_true = 0, c_addr = 0, p_psb4 = 0, c_key = 0, c_m1 = 0;
+    if (o.hide) { c_true = fresh(); emit(globals, OpConstantTrue, {t_bool, c_true}); }
+    if (live) {
+        if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
+        if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
+        if (!t_uvec4) { t_uvec4 = fresh(); emit(globals, OpTypeVector, {t_uvec4, t_uint, 4}); }
+        uint32_t lo = fresh(), hi = fresh();
+        emit(globals, OpConstant, {t_uint, lo, uint32_t(o.addr + 32)});
+        emit(globals, OpConstant, {t_uint, hi, uint32_t((o.addr + 32) >> 32)});
+        c_addr = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_addr, lo, hi});
+        p_psb4 = fresh(); emit(globals, OpTypePointer, {p_psb4, StoragePhysicalStorageBuffer, t_uvec4});
+        c_key = fresh(); emit(globals, OpConstant, {t_uint, c_key, o.key});
+        c_m1 = fresh(); emit(globals, OpConstant, {t_uint, c_m1, 1});
+    }
+    const uint32_t kill = in[1] >= 0x10600u ? OpTerminateInvocation : OpKill;
+
+    std::vector<uint32_t> out(in.begin(), in.begin() + 5);
+    out.reserve(in.size() + 64);
+    bool cap_done = false, ext_done = false, globals_done = false, in_entry = false;
+    int returns = 0;
+    for (auto& I : insts) {
+        if (!cap_done && I.op != OpCapability) { out.insert(out.end(), head_cap.begin(), head_cap.end()); cap_done = true; }
+        if (!ext_done && I.op != OpCapability && I.op != OpExtension) { out.insert(out.end(), head_ext.begin(), head_ext.end()); ext_done = true; }
+        if (I.op == OpMemoryModel && live) {
+            out.push_back(in[I.off]);
+            out.push_back(AddrPhysicalStorageBuffer64);
+            out.insert(out.end(), in.begin() + I.off + 2, in.begin() + I.off + I.wc);
+            continue;
+        }
+        if (I.op == OpFunction && !globals_done) { out.insert(out.end(), globals.begin(), globals.end()); globals_done = true; }
+        if (I.op == OpFunction) {
+            in_entry = false;
+            for (auto f : entry_fns) if (w(I, 2) == f) in_entry = true;
+        }
+        if (in_entry && I.op == OpReturn) {
+            uint32_t cnd = c_true;
+            if (live) {
+                uint32_t hq = fresh(), hv = fresh(), lo = fresh(), hi = fresh(), md = fresh(), ge = fresh(), le = fresh(), inr = fresh(), is = fresh();
+                cnd = fresh();
+                emit(out, OpBitcast, {p_psb4, hq, c_addr});
+                emit(out, OpLoad, {t_uvec4, hv, hq, MemAccessAligned, 16});
+                emit(out, OpCompositeExtract, {t_uint, lo, hv, 0});
+                emit(out, OpCompositeExtract, {t_uint, hi, hv, 1});
+                emit(out, OpCompositeExtract, {t_uint, md, hv, 2});
+                emit(out, OpUGreaterThanEqual, {t_bool, ge, c_key, lo});
+                emit(out, OpULessThanEqual, {t_bool, le, c_key, hi});
+                emit(out, OpLogicalAnd, {t_bool, inr, ge, le});
+                emit(out, OpIEqual, {t_bool, is, md, c_m1});
+                emit(out, OpLogicalAnd, {t_bool, cnd, inr, is});
+            }
+            uint32_t l_kill = fresh(), l_cont = fresh();
+            emit(out, OpSelectionMerge, {l_cont, 0});
+            emit(out, OpBranchConditional, {cnd, l_kill, l_cont});
+            emit(out, OpLabel, {l_kill});
+            emit(out, kill, {});
+            emit(out, OpLabel, {l_cont});
+            ++returns;
+        }
+        if (I.op == OpFunctionEnd) in_entry = false;
+        out.insert(out.end(), in.begin() + I.off, in.begin() + I.off + I.wc);
+    }
+    if (!returns) { r.why = "no OpReturn in fragment entry point"; return r; }
     out[3] = bound;
     in.swap(out);
     r.patched = true;
