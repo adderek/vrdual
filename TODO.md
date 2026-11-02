@@ -102,6 +102,8 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
       synthesis of the missing eye in `vrdual-xr`, which needs depth export
       first;
     - own shadows: not possible app-unaware; SSAO from depth is.
+    - depth export done 2026-11-02 (`depth_export = 1`, not in mirror mode
+      yet); next: DIBR of the missing eye in `vrdual-xr`.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

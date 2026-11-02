@@ -86,6 +86,7 @@ map_x = KEY_E
 | `hud_depth` | `0` | meters, 0 = infinity | show `w == 1` draws (HUD) at this distance; live mode only; **live** |
 | `live` | `1` | `0` `1` | live params (shader reads a GPU buffer); falls back to baked automatically |
 | `export` | `1` | `0` `1` | publish frames to `/dev/shm` |
+| `depth_export` | `0` | `0` `1` | also publish the game's depth buffer with each frame (float NDC z behind the pixels in the frame file, v5). The layer picks the depth image with the swapchain's size used by the most render passes and copies it at present; the game must store it (`storeOp` STORE: most engines do, post effects read it). One process per eye or one GPU; not in mirror mode yet. Base for depth reprojection and the missing eye's synthesis ([framegen-effects](tasks/framegen-effects.md)) |
 | `cursor` | `1` | `0` `1` | export the X11 cursor (position over the game window + image) with the frames; `vrdual xr` draws it (games using the system / hardware cursor, which the swapchain never contains) |
 | `cursor_depth` | `auto` | `auto` `hud` | auto = at the depth of the scene under the pointer (both eye images matched there; kept on flat areas); hud = at `hud_depth` |
 | `lockstep` | `1` | `0` `1` | hold each frame until the other eye has it |

@@ -349,6 +349,21 @@ pixels back column by column. Staging now prefers HOST_CACHED (2026-10-26).
 
 ### Input and head motion (in `vrdual-xr`)
 
+**Depth export** (`depth_export = 1`, frame file v5; `layer/vrdual_depth.hpp`):
+the layer tracks single-sample 2D depth attachments from `vkCreateImage`
+(adds `TRANSFER_SRC`), their views, render passes (depth attachment of the
+first subpass that has one, its final layout) and framebuffers; each render
+pass or dynamic rendering begin counts a use, and render pass ends, dynamic
+rendering and barriers record the image's layout (at record time: a
+heuristic, games repeat the pattern every frame). At present the most used
+depth image with the swapchain's extent is copied in the colour copy's
+command buffer (its layout → `TRANSFER_SRC` → back) and published as float
+NDC z right after the pixels of the slot (`depth_frame[slot]` = frame + 1).
+The hooks exist only on devices with depth export on (no cost otherwise);
+not on a mirror device yet. Readers: `eye_read_depth`, `vrdual-compositor
+--snapshot X --depth L.pfm`. The game has to store the depth (`storeOp`
+STORE); a pass that discards it exports garbage.
+
 The game is identified by `app` in the frame file header (v2; VkApplicationInfo
 name, else the exe), and its `[app:NAME]` settings select what the Touch
 controllers (OpenXR actions, Touch profile) and the head do. Only while game

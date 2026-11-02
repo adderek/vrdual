@@ -3,7 +3,7 @@
 // keys edit the session's live control block, both eyes follow next frame.
 //
 //   vrdual-compositor [--session S] [--swap] [--scale F]   (default: fit into half the screen)
-//   vrdual-compositor --snapshot out.png [--at N] [--timeout SEC]   (no window)
+//   vrdual-compositor --snapshot out.png [--depth left.pfm] [--at N] [--timeout SEC]   (no window)
 //   vrdual-compositor --record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]
 //                     SBS video through ffmpeg (no window); DIR: <app>_<time>_LR.mp4 in it,
 //                     the path is printed on stdout
@@ -252,7 +252,7 @@ static int record(Eye& L, Eye& R, bool swap, std::string out, double seconds, in
 }
 
 int main(int argc, char** argv) {
-    std::string session = "default", snapshot, rec, audio, keys;
+    std::string session = "default", snapshot, depth, rec, audio, keys;
     double seconds = 5;
     int fps = 60;
     bool half = false;
@@ -266,6 +266,7 @@ int main(int argc, char** argv) {
         else if (a == "--swap") swap = true;
         else if (a == "--scale" && i + 1 < argc) scale = strtof(argv[++i], nullptr);
         else if (a == "--snapshot" && i + 1 < argc) snapshot = argv[++i];
+        else if (a == "--depth" && i + 1 < argc) depth = argv[++i];
         else if (a == "--at" && i + 1 < argc) at = strtoull(argv[++i], nullptr, 10);
         else if (a == "--timeout" && i + 1 < argc) timeout = strtod(argv[++i], nullptr);
         else if (a == "--record" && i + 1 < argc) rec = argv[++i];
@@ -275,7 +276,7 @@ int main(int argc, char** argv) {
         else if (a == "--audio" && i + 1 < argc) audio = argv[++i];
         else if (a == "--keys" && i + 1 < argc) keys = argv[++i];
         else if (a == "--version") { printf("%s\n", VRDUAL_BUILD_INFO); return 0; }
-        else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--at N] [--timeout SEC]] [--record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]] [--keys \"K1 K2 ...\"]\n", argv[0]); return 2; }
+        else { fprintf(stderr, "usage: %s [--session S] [--swap] [--scale F] [--snapshot out.png [--depth left.pfm] [--at N] [--timeout SEC]] [--record out.mp4|DIR [--seconds N] [--fps N] [--half] [--audio SOURCE]] [--keys \"K1 K2 ...\"]\n", argv[0]); return 2; }
     }
     std::vector<SDL_Event> inject;
     if (!parse_keys(keys, inject)) return 2;
@@ -286,10 +287,19 @@ int main(int argc, char** argv) {
     if (!rec.empty()) return record(L, R, swap, rec, seconds, fps > 0 ? fps : 60, half, audio, timeout);
     if (!snapshot.empty()) {
         uint64_t F = 0;
+        std::vector<float> dl;  // --depth: the left eye's depth plane of the same frame
         for (;;) {
-            if (now_s() - t0 > timeout) { fprintf(stderr, "[compositor] timeout waiting for paired frame >= %llu\n", (unsigned long long)at); return 1; }
-            if (eye_map(L) && eye_map(R) && pair_newest(L, R, at, &F)) break;
+            if (now_s() - t0 > timeout) { fprintf(stderr, "[compositor] timeout waiting for paired frame >= %llu%s\n", (unsigned long long)at, depth.empty() ? "" : " with depth"); return 1; }
+            if (eye_map(L) && eye_map(R) && pair_newest(L, R, at, &F) && (depth.empty() || vrdual::eye_read_depth(L, F, dl))) break;
             usleep(2000);
+        }
+        if (!depth.empty()) {  // PFM, greyscale, little endian, rows bottom to top
+            FILE* f = fopen(depth.c_str(), "wb");
+            bool ok = f && fprintf(f, "Pf\n%u %u\n-1.0\n", L.w, L.h) > 0;
+            for (uint32_t y = L.h; ok && y-- > 0;) ok = fwrite(dl.data() + size_t(y) * L.w, 4, L.w, f) == L.w;
+            if (f) ok &= fclose(f) == 0;
+            fprintf(stderr, "[compositor] left depth of frame %llu -> %s %s\n", (unsigned long long)F, depth.c_str(), ok ? "ok" : "failed");
+            if (!ok) return 1;
         }
         if (!SDL_Init(0)) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
         SDL_Surface* s = sbs_surface(swap ? R : L, swap ? L : R);

@@ -132,12 +132,15 @@ post pass in the layer):
 1. Done 2026-11-02: `vrdual-xr` logs the runtime's extensions. Check
    `XR_KHR_composition_layer_depth` / `XR_FB_space_warp` with WiVRn in the
    next Quest session.
-2. **Depth export** (the shared base for DIBR, XR depth layers and our SSAO).
-   - Find the depth attachment of the final 3D pass. Heuristic: the depth
-     image with the swapchain's extent used by the most draws in the frame.
-   - Copy it at present like the colour (D32 / D24 to 16-bit), into the frame
-     file behind a header flag.
-   - Selftest: the calib scene's posts are at known distances.
+2. Done 2026-11-02: **depth export** (`depth_export = 1`, frame file v5,
+   ARCHITECTURE "Depth export"). The most used depth image with the
+   swapchain's extent (render pass begins), copied at present as float NDC z.
+   Selftest: the calib posts' depth matches their distances where the left
+   image shows them, one process per eye and one GPU. Left:
+   - mirror mode (B's twin image, copied in `present_twin`);
+   - render scale / dynamic resolution (depth extent ≠ swapchain extent);
+   - check in games: which image gets picked, layout right, cost per frame
+     (1080p: one more 8 MB copy; the export stats line covers it).
 3. DIBR of the missing eye for one GPU in `vrdual-xr` (needs 2).
 4. FSR 3 FG on two GPUs in a real game (needs the owner and a game).
 5. Optional: SSAO from depth (needs 2); vkBasalt stacking test.

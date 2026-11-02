@@ -322,7 +322,7 @@ int main(int argc, char** argv) {
     att[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     att[1] = att[0];
     att[1].format = VK_FORMAT_D32_SFLOAT;
-    att[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    att[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // kept, like engines whose post effects read it (depth_export)
     att[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     VkAttachmentReference cref{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, dref{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkSubpassDescription sub{};

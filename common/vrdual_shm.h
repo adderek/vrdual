@@ -9,8 +9,10 @@
 #include <stdint.h>
 
 #define VRDUAL_MAGIC 0x56524455u /* "VRDU" */
-#define VRDUAL_VERSION 4u
+#define VRDUAL_VERSION 5u
 #define VRDUAL_SLOTS 4u
+
+enum { VRDUAL_DEPTH_F32 = 1 };
 
 enum vrdual_pixfmt {
     VRDUAL_FMT_BGRA8 = 1,
@@ -44,6 +46,13 @@ struct vrdual_shm_header {
     int32_t cursor_x, cursor_y;      // pointer position, swapchain pixels (may lie outside)
     uint32_t cursor_w, cursor_h;     // image size, 0 = no cursor known
     uint32_t cursor_hot_x, cursor_hot_y;
+    // v5: depth plane (depth_export). depth_fmt 1: float32 per pixel, the
+    // game's depth buffer value (NDC z, 0..1, reversed or not as the game
+    // draws), width * height * 4 bytes right after the pixels in each slot
+    // (slot_bytes covers both). 0 = no plane.
+    uint32_t depth_fmt;
+    uint32_t depth_src;                         // VkFormat of the game's depth image (info)
+    volatile uint64_t depth_frame[VRDUAL_SLOTS]; // frame + 1 whose depth the slot holds, 0 = none (inside the slot's seqlock)
 };
 
 // Cursor image: premultiplied ARGB32 (B, G, R, A bytes), cursor_w * cursor_h

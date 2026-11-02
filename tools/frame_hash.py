@@ -13,7 +13,7 @@ import struct
 import sys
 
 SLOTS = 4
-HDR_BYTES = 4096 + 64 * 64 * 4  # VRDUAL_HDR_BYTES (v4)
+HDR_BYTES = 4096 + 64 * 64 * 4  # VRDUAL_HDR_BYTES (v4+)
 CURSOR = 304                    # offsetof(vrdual_shm_header, cursor_seq), static_assert in the layer
 cursor = sys.argv[1] == "--cursor"
 alpha = sys.argv[1] == "--alpha"
@@ -23,8 +23,8 @@ with open(sys.argv[-1], "rb") as f:
     slot_bytes, last = struct.unpack_from("<QQ", hdr, 32)
     if magic != 0x56524455 or not last:
         sys.exit("no frame")
-    if version != 4:
-        sys.exit("frame file version %d, expected 4" % version)
+    if version != 5:
+        sys.exit("frame file version %d, expected 5" % version)
     if cursor:
         seq, serial, cx, cy, cw, ch = struct.unpack_from("<IIiiII", hdr, CURSOR)
         print(cx, cy, cw, ch, serial)

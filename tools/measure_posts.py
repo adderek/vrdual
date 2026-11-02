@@ -6,7 +6,7 @@ parallel-camera pair the horizontal disparity (left-eye x minus right-eye x)
 of a post at distance d is  ipd(d) / d * eye_width / 2  pixels, where ipd(d)
 follows the near/far blend from common/vrdual_ctl.hpp.
 
-  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--head-yaw 5] [--hud-depth 1.5]
+  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--head-yaw 5] [--hud-depth 1.5] [--depth LEFT.pfm]
 
 --anchor also checks where the LEFT eye sees each post: the original camera
 sees post k at x = (1 + (-0.5 + 0.25k)) * eye_width / 2; the left eye adds
@@ -19,11 +19,17 @@ cos*d; disparity ipd(d) / z_h * eye_width / 2 (eye shift after the turn).
 The HUD bar (w == 1) is always measured too: disparity ipd / hud_depth *
 eye_width / 2, 0 without --hud-depth (HUD at infinity).
 
+--depth: the left eye's exported depth plane of the same frame (vrdual-compositor
+--depth): at each post's centre in the left image the depth, linearised with
+the scene's near 0.1 / far 100 m, must be the post's front face (0.98 d) within
+2 %: the plane holds the right image and lines up with the shifted pixels.
+
 Prints one line per post; exit 0 if every post is within tolerance, 1 if not,
 2 on usage/parse errors. Needs ImageMagick (`magick`) to decode the PNG.
 """
 import argparse
 import math
+import struct
 import subprocess
 import sys
 
@@ -69,6 +75,7 @@ def main():
     ap.add_argument("--head-x", type=float, default=0.0)
     ap.add_argument("--head-yaw", type=float, default=0.0)
     ap.add_argument("--hud-depth", type=float, default=0.0)
+    ap.add_argument("--depth")
     ap.add_argument("--tol-rel", type=float, default=0.04)
     ap.add_argument("--tol-px", type=float, default=1.0)
     a = ap.parse_args()
@@ -87,6 +94,18 @@ def main():
     if len(L) != 5 or len(R) != 5:
         print(f"expected 5 posts per eye on row {y}, got L={len(L)} R={len(R)}", file=sys.stderr)
         return 2
+
+    dep = None
+    if a.depth:
+        with open(a.depth, "rb") as f:
+            magic, size, scale = f.readline().split(), f.readline().split(), float(f.readline())
+            dw, dh = int(size[0]), int(size[1])
+            data = f.read(dw * dh * 4)
+        if magic != [b"Pf"] or dw != ew or dh != H or len(data) != dw * dh * 4:
+            print(f"depth: expected a {ew}x{H} greyscale PFM", file=sys.stderr)
+            return 2
+        vals = struct.unpack(("<" if scale < 0 else ">") + "%df" % (dw * dh), data)
+        dep = [vals[(dh - 1 - r) * dw:(dh - r) * dw] for r in range(dh)]  # PFM rows run bottom to top
 
     ok = True
     share = {"left": 0.0, "center": 0.5, "right": 1.0}
@@ -107,6 +126,12 @@ def main():
             lgood = abs(l - lwant) <= max(a.tol_px, a.tol_rel * want) + 0.5
             good &= lgood
             line += f"  left-eye x {l:6.1f} (expected {lwant:6.1f})"
+        if dep:
+            z = dep[y][int(round(l))]
+            dist = 0.1 * 100 / (100 - z * (100 - 0.1)) if z < 1 else float("inf")
+            dgood = abs(dist - 0.98 * d) <= 0.02 * d
+            good &= dgood
+            line += f"  depth {dist:6.2f} m (expected {0.98 * d:6.2f})"
         ok &= good
         print(line + ("  ok" if good else "  FAIL"))
 

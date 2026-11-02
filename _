@@ -976,10 +976,10 @@ EOF
         if grep -qx connected "$d"/drm/card*/card*-*/status 2>/dev/null; then gd=${gd:-${d##*/}}; else gh=${gh:-${d##*/}}; fi
     done
     [[ -n $gd && -n $gh ]] && two=1
-    snap() {  # newest paired frame at least 15 frames after now
+    snap() {  # newest paired frame at least 15 frames after now; more args go to the compositor (--depth F)
         local f
-        f=$("$B/vrdual-compositor" --session $sess --snapshot "$1" --at 0 --timeout 20 2>&1 | grep -oE 'frame [0-9]+' | cut -d' ' -f2)
-        [[ -n $f ]] && "$B/vrdual-compositor" --session $sess --snapshot "$1" --at $((f + 15)) --timeout 20 >/dev/null 2>&1
+        f=$("$B/vrdual-compositor" --session $sess --snapshot "$1" "${@:2}" --at 0 --timeout 20 2>&1 | grep -oE 'frame [0-9]+' | head -1 | cut -d' ' -f2)
+        [[ -n $f ]] && "$B/vrdual-compositor" --session $sess --snapshot "$1" "${@:2}" --at $((f + 15)) --timeout 20 >/dev/null 2>&1
     }
     set_live() { local kv; for kv in "$@"; do "$B/vrdual-ctl" --session $sess set ${kv/=/ } >/dev/null || return 1; done; }
     local M="python3 -I $VRDUAL_ROOT/tools/measure_posts.py"
@@ -988,7 +988,7 @@ EOF
     rm -f /dev/shm/vrdual-$sess-*
     local e
     for e in left right; do
-        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e \
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e VRDUAL_DEPTH_EXPORT=1 \
             "$B/vrdual-cube" --scene calib --title "selftest $e" >"$tmp/$e.log" 2>&1 &
     done
     for i in $(seq 100); do grep -q exporting "$tmp/left.log" && grep -q exporting "$tmp/right.log" && break; sleep 0.1; done
@@ -999,6 +999,9 @@ EOF
     label="export stats: copy wait and publish time per frame logged"
     check bash -c "for i in \$(seq 100); do grep -qE 'export: [0-9.]+ ms/frame waiting for the copy, [0-9.]+ ms/frame publishing' '$tmp/left.log' && exit 0; sleep 0.1; done; exit 1"
     label="default ipd 64mm";    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/a.png' && $M '$tmp/a.png' --ipd 0.064 --anchor center"
+    label="depth_export: render pass depth image picked, left depth plane = the posts' distances where the left image has them"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'depth_export: image .* format 126 ' '$tmp/left.log' &&
+        snap '$tmp/dep.png' --depth '$tmp/dep.pfm' && $M '$tmp/dep.png' --ipd 0.064 --anchor center --depth '$tmp/dep.pfm' || { grep depth_export '$tmp/left.log'; false; }"
     set_live ipd=0.2
     label="live ipd 200mm";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/b.png' && $M '$tmp/b.png' --ipd 0.2 --anchor center"
     set_live ipd=0.064 anchor=left
@@ -1315,12 +1318,13 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     for opt in --tess --geom "--tess --geom"; do
         rm -f /dev/shm/vrdual-$sess-*
         # shellcheck disable=SC2086
-        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_DEPTH_EXPORT=1 \
             "$B/vrdual-cube" --scene calib $opt --title "selftest stages" >"$tmp/ts.log" 2>&1 &
         for i in $(seq 100); do grep -q 'twin images' "$tmp/ts.log" && break; sleep 0.1; done
         label="mirror ${opt//--/}: last pre-raster stage shifted once, ipd 64mm"
         check bash -c "'$B/vrdual-compositor' --session $sess --snapshot '$tmp/ts.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
-            $M '$tmp/ts.png' --ipd 0.064 --anchor center && ! grep -q 'STOPPED\|not patched' '$tmp/ts.log' || { cat '$tmp/ts.log'; false; }"
+            $M '$tmp/ts.png' --ipd 0.064 --anchor center && ! grep -q 'STOPPED\|not patched' '$tmp/ts.log' &&
+            grep -q 'depth_export: not in mirror mode yet' '$tmp/ts.log' || { cat '$tmp/ts.log'; false; }"
         kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
     done
 
@@ -1329,13 +1333,13 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     # must keep working (a twin on the same GPU could not replay them).
     for opt in "" --bda; do
         rm -f /dev/shm/vrdual-$sess-*
-        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_DEPTH_EXPORT=1 \
             VRDUAL_RIGHT_GPU=pci:$gd "$B/vrdual-cube" --scene calib $opt --title "selftest one gpu" >"$tmp/one.log" 2>&1 &
         for i in $(seq 100); do grep -q 'exporting' "$tmp/one.log" && break; sleep 0.1; done
-        label="single GPU${opt:+ $opt}: alternate eyes on the display GPU, ipd 64mm"
+        label="single GPU${opt:+ $opt}: alternate eyes on the display GPU, ipd 64mm, left depth plane = the posts"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'alternate-eye rendering on .*$gd' '$tmp/one.log' &&
             grep -q 'one GPU: turn off temporal AA' '$tmp/one.log' &&
-            snap '$tmp/one.png' && $M '$tmp/one.png' --ipd 0.064 --anchor center || { cat '$tmp/one.log'; false; }"
+            snap '$tmp/one.png' --depth '$tmp/one.pfm' && $M '$tmp/one.png' --ipd 0.064 --anchor center --depth '$tmp/one.pfm' || { cat '$tmp/one.log'; false; }"
         if [[ -z $opt ]]; then  # HUD (w == 1) moved from infinity to 1.5 m
             set_live hud_depth=1.5
             label="hud_depth 1.5m: HUD disparity, posts unchanged"

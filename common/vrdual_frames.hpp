@@ -96,6 +96,23 @@ inline bool eye_read(Eye& e, uint64_t F, std::vector<uint8_t>& dst) {
     return eye_read_to(e, F, dst.data());
 }
 
+// Depth plane of frame F (header v5, depth_export): w * h floats, the game's
+// depth buffer values. False if the file has no plane, the slot holds no
+// depth for F, or it was torn.
+inline bool eye_read_depth(const Eye& e, uint64_t F, std::vector<float>& dst) {
+    const vrdual_shm_header* h = e.hdr;
+    size_t n = size_t(e.w) * e.h * 4, off = VRDUAL_HDR_BYTES + size_t(F % VRDUAL_SLOTS) * e.slot + n;
+    if (!h || h->depth_fmt != VRDUAL_DEPTH_F32 || 2 * n > e.slot || off + n > e.bytes) return false;
+    const vrdual_slot& s = h->slots[F % VRDUAL_SLOTS];
+    uint64_t s0 = s.seq;
+    __sync_synchronize();
+    if ((s0 & 1) || s.frame != F || h->depth_frame[F % VRDUAL_SLOTS] != F + 1) return false;
+    dst.resize(size_t(e.w) * e.h);
+    memcpy(dst.data(), (const char*)h + off, n);
+    __sync_synchronize();
+    return s.seq == s0 && s.frame == F && h->magic == VRDUAL_MAGIC && h->slot_bytes == e.slot;
+}
+
 // Seconds since the eye's newest frame was published (inf if none). Producers
 // stamp CLOCK_MONOTONIC, which is shared with Flatpak sandboxes.
 inline double eye_age_s(const Eye& e) {

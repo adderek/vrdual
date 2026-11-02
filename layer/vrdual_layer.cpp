@@ -82,6 +82,7 @@ struct Config {
     bool export_frames = true;
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
+    bool depth_export = false; // the game's depth buffer with each frame (vrdual_depth.hpp)
     bool lockstep = true;
     bool live = true;          // wanted; per device it also needs bufferDeviceAddress
     int lockstep_timeout_ms = 250;
@@ -280,6 +281,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.export_frames = st.i("export") != 0;
     c.cached_wp = st.i("cached_wp") != 0;
     c.cursor = st.i("cursor") != 0;
+    c.depth_export = st.i("depth_export") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
     c.lockstep_timeout_ms = st.i("lockstep_timeout_ms");
     c.live = st.i("live") != 0;
@@ -358,6 +360,8 @@ struct CopyRes {
         int eye = 0;
         Readback* rb = nullptr;
         size_t bytes = 0;
+        Readback* drb = nullptr;  // depth copy of the same frame, if any
+        VkFormat dfmt = VK_FORMAT_UNDEFINED;
     } pend[2];
 };
 
@@ -387,6 +391,7 @@ struct SwapchainData {
     uint32_t pixfmt = 0;  // 0 = not exportable
     uint32_t xwin = 0;    // X11 window of the surface (cursor export), 0 = unknown
     Readback rb[2];  // copy slots (CopyRes)
+    Readback drb[2]; // depth_export: the depth copies, same slots (allocated at the first pick)
     // mirror: device B stand-ins for the swapchain images
     std::vector<VkImage> b_images;
     std::vector<VkDeviceMemory> b_mem;
@@ -394,6 +399,7 @@ struct SwapchainData {
 };
 
 namespace mirror { struct MDev; }
+namespace depth { struct Track; }
 struct DeviceData;
 namespace mirror {
 static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda, bool replay);
@@ -418,6 +424,7 @@ struct DeviceData {
     uint64_t frame = 0;
     mirror::MDev* md = nullptr;  // mirror twin, if any
     bool aer = false;  // single GPU: alternate-eye rendering, ep.eye == frame & 1
+    depth::Track* dt = nullptr;  // depth_export (not on a mirror device)
 };
 
 // Never destroyed: driver threads can still call in while static destructors run at exit.
@@ -461,9 +468,9 @@ static Shm g_out[2], g_peer;
 
 static std::string shm_path(int eye) { return vrdual::shm_dir() + "/vrdual-" + g_cfg.session + "-" + std::to_string(eye); }
 
-static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const char* gpu_name, const char* pci) {
+static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const char* gpu_name, const char* pci, bool depth = false) {
     Shm& o = g_out[eye];
-    uint64_t slot = uint64_t(w) * h * 4;
+    uint64_t slot = uint64_t(w) * h * 4 * (depth ? 2 : 1);  // pixels, then the depth plane
     size_t bytes = vrdual_file_bytes(slot);
     if (o.hdr) { munmap(o.hdr, o.bytes); o.hdr = nullptr; }
     if (o.fd < 0) o.fd = open(shm_path(eye).c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
@@ -496,9 +503,12 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     snprintf(hd->pci, sizeof hd->pci, "%.31s", pci);
     snprintf(hd->app, sizeof hd->app, "%.63s", g_cfg.app.c_str());
     hd->cursor_w = hd->cursor_h = hd->cursor_serial = 0;
+    hd->depth_fmt = depth ? VRDUAL_DEPTH_F32 : 0;
+    hd->depth_src = 0;
+    for (auto& f : hd->depth_frame) f = 0;
     __sync_synchronize();
     hd->magic = VRDUAL_MAGIC;
-    logf("exporting %ux%u fmt=%u to %s", w, h, pixfmt, shm_path(eye).c_str());
+    logf("exporting %ux%u fmt=%u%s to %s", w, h, pixfmt, depth ? " + depth" : "", shm_path(eye).c_str());
     // Joined a block another process left (an earlier game in the same Steam
     // run): the process that shows frames wins, once, so the game gets its own
     // [app:] values. Helpers without a swapchain (launchers, xalia) never touch it.
@@ -537,7 +547,9 @@ static void copy_opaque(uint32_t* d, const uint32_t* p, size_t n) {
 }
 #endif
 
-static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
+namespace depth { static void to_float(float* d, const void* src, VkFormat f, size_t n); }
+// depth: the depth copy (texels of dfmt), nullptr = none this frame.
+static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n, const void* depth = nullptr, VkFormat dfmt = VK_FORMAT_UNDEFINED) {
     auto* hd = g_out[eye].hdr;
     if (!hd) return;
     auto& s = hd->slots[frame % VRDUAL_SLOTS];
@@ -548,6 +560,9 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n) {
     // everywhere) and present opaque, but WiVRn shows alpha 0 as black.
     auto* d = (uint32_t*)((char*)hd + VRDUAL_HDR_BYTES + (frame % VRDUAL_SLOTS) * hd->slot_bytes);
     copy_opaque(d, (const uint32_t*)pixels, n / 4);
+    bool dep = depth && hd->depth_fmt == VRDUAL_DEPTH_F32 && hd->slot_bytes >= 2 * n;
+    if (dep) depth::to_float((float*)((char*)d + n), depth, dfmt, n / 4), hd->depth_src = uint32_t(dfmt);
+    hd->depth_frame[frame % VRDUAL_SLOTS] = dep ? frame + 1 : 0;
     s.present_ns = now_ns();
     __sync_synchronize();
     s.seq++;
@@ -1168,6 +1183,8 @@ static VkResult create_patched_module(EyeBuf& ep, PFN_vkCreateShaderModule creat
     return create(dev, ci, alloc, out);
 }
 
+#include "vrdual_depth.hpp"
+
 static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, const VkDeviceCreateInfo* ci, const VkAllocationCallbacks* alloc, VkDevice* out) {
     InstanceData* id = inst_of(key(pd));
     auto* lci = (VkLayerDeviceCreateInfo*)ci->pNext;
@@ -1226,6 +1243,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
         if (g_cfg.ctl) vrdual::ctl_write(g_cfg.ctl, [](vrdual_ctl& c) { c.live = 0; });
     }
     if (g_cfg.mirror) dd->md = mirror::create_twin(dd, ci, bda.ok, bda.replay);
+    if (g_cfg.depth_export && g_cfg.eye >= 0 && g_cfg.export_frames) {
+        if (dd->md) logf("depth_export: not in mirror mode yet (one process per eye or one GPU), off");
+        else dd->dt = new depth::Track, logf("depth_export: tracking depth attachments");
+    }
     std::lock_guard<std::mutex> l(g_lock);
     g_devices[key(*out)] = dd;
     g_dev_gen.fetch_add(1, std::memory_order_release);
@@ -1260,14 +1281,17 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroyDevice(VkDevice dev, const VkAlloca
              g_cfg.catalog.size() - c.known, g_cfg.catalog.size());
     }
     if (dd->md) mirror::destroy_twin(dd);
-    for (auto& kv : dd->swapchains)
+    for (auto& kv : dd->swapchains) {
         for (auto& rb : kv.second.rb) free_readback(dd->d, dev, rb);
+        for (auto& rb : kv.second.drb) free_readback(dd->d, dev, rb);
+    }
     free_param_buffer(dd->d, dev, dd->ep);
     free_copy_res(dd->d, dev, dd->cr);
     dd->d.DestroyDevice(dev, alloc);
     std::lock_guard<std::mutex> l(g_lock);
     g_devices.erase(key(dev));
     g_dev_gen.fetch_add(1, std::memory_order_release);
+    delete dd->dt;
     delete dd;
 }
 
@@ -1526,6 +1550,7 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroySwapchainKHR(VkDevice dev, VkSwapch
         if (it != dd->swapchains.end()) {
             drop_pending(dd->d, dev, dd->cr, it->second.rb);
             for (auto& rb : it->second.rb) free_readback(dd->d, dev, rb);
+            for (auto& rb : it->second.drb) free_readback(dd->d, dev, rb);
             if (dd->md) mirror::destroy_swapchain_twin(dd, it->second);
             dd->swapchains.erase(it);
         }
@@ -1572,12 +1597,13 @@ static void finish_readback(const Dispatch& d, VkDevice dev, CopyRes& cr, int k)
     p.on = false;
     uint64_t t0 = now_ns();
     d.WaitForFences(dev, 1, &cr.fence[k], VK_TRUE, UINT64_MAX);
-    if (!p.rb->coherent) {
-        VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, p.rb->mem, 0, VK_WHOLE_SIZE};
-        d.InvalidateMappedMemoryRanges(dev, 1, &mr);
-    }
+    for (Readback* rb : {p.rb, p.drb})
+        if (rb && !rb->coherent) {
+            VkMappedMemoryRange mr{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, nullptr, rb->mem, 0, VK_WHOLE_SIZE};
+            d.InvalidateMappedMemoryRanges(dev, 1, &mr);
+        }
     uint64_t t1 = now_ns();
-    if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes);
+    if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes, p.drb ? p.drb->map : nullptr, p.dfmt);
     // where the game's present thread spends export time (g_shm_lock held)
     static uint64_t wait_ns = 0, pub_ns = 0, n = 0;
     wait_ns += t1 - t0;
@@ -1603,7 +1629,8 @@ static void drop_pending(const Dispatch& d, VkDevice dev, CopyRes& cr, const Rea
 // staged params, after everything submitted to this queue before (this
 // frame's draws) and visible to everything submitted after (the next frame's).
 static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, CopyRes& cr, int k, VkImage img, VkExtent2D ext, Readback& rb,
-                             uint32_t nwait, const VkSemaphore* waits, bool signal, bool wait, const EyeBuf* ep = nullptr) {
+                             uint32_t nwait, const VkSemaphore* waits, bool signal, bool wait, const EyeBuf* ep = nullptr,
+                             const depth::Pick* dp = nullptr, Readback* drb = nullptr) {
     VkCommandBuffer cb = cr.cmd[k];
     d.ResetCommandBuffer(cb, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -1652,6 +1679,7 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    if (dp && dp->img && drb) depth::record_copy(d, cb, *dp, ext, *drb);
     d.EndCommandBuffer(cb);
 
     std::vector<VkPipelineStageFlags> stages(nwait, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
@@ -1704,8 +1732,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         g_aspect = float(s->extent.width) / float(s->extent.height ? s->extent.height : 1);
         VkPhysicalDeviceProperties p;
         dd->inst->GetPhysicalDeviceProperties(dd->phys, &p);
-        shm_open_out(g_cfg.eye, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str());
-        if (dd->aer) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str());
+        shm_open_out(g_cfg.eye, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str(), dd->dt);
+        if (dd->aer) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str(), dd->dt);
     }
     if (dd->md) mirror::present_twin(dd, queue, family, pi, s, frame, own);
     if (!own || !ensure_copy_res(dd->d, dd->device, dd->set_loader_data, family, dd->cr)) {
@@ -1726,8 +1754,18 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         push_params(dd->ep);
     }
     finish_readback(dd->d, dd->device, dd->cr, k);  // slot free (normally done a frame ago)
+    depth::Pick dp;
+    if (dd->dt) {
+        dp = depth::pick(*dd->dt, s->extent);
+        if (dp.img && !s->drb[k].buf) {
+            VkPhysicalDeviceMemoryProperties mp;
+            dd->inst->GetPhysicalDeviceMemoryProperties(dd->phys, &mp);
+            if (!create_readback(dd->d, dd->device, mp, s->extent, s->drb[k])) logf("depth_export: readback alloc failed");
+        }
+        if (!s->drb[k].buf) dp = {};
+    }
     if (!copy_to_readback(dd->d, dd->device, queue, dd->cr, k, s->images[pi->pImageIndices[0]], s->extent, s->rb[k],
-                          pi->waitSemaphoreCount, pi->pWaitSemaphores, true, false, &dd->ep)) {
+                          pi->waitSemaphoreCount, pi->pWaitSemaphores, true, false, &dd->ep, &dp, &s->drb[k])) {
         if (dd->aer) { dd->ep.eye = eye; push_params(dd->ep); }
         write_params_cpu(dd->ep);
         el.unlock();
@@ -1739,7 +1777,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         cursor::update(s->xwin, s->extent, h, 2);
     }
     // Alternate-eye rendering: pair F = frames 2F (left) and 2F+1 (right).
-    dd->cr.pend[k] = {true, dd->aer ? frame / 2 : frame, sc_id(pi->pSwapchains[0]), dd->aer ? eye : g_cfg.eye, &s->rb[k], bytes};
+    dd->cr.pend[k] = {true, dd->aer ? frame / 2 : frame, sc_id(pi->pSwapchains[0]), dd->aer ? eye : g_cfg.eye, &s->rb[k], bytes,
+                      dp.img ? &s->drb[k] : nullptr, dp.fmt};
     finish_readback(dd->d, dd->device, dd->cr, k ^ 1);  // frame - 1
     el.unlock();
     if (frame && !dd->aer) lockstep_wait(frame - 1);
@@ -1808,6 +1847,8 @@ EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vrdual_GetDeviceProcAddr(VkDevic
     DeviceData* dd = dev ? dev_of(key(dev)) : nullptr;
     if (dd && dd->md)
         if (auto f = mirror::lookup(name)) return f;
+    if (dd && dd->dt)
+        if (auto f = depth::intercept(name)) return f;
     if (auto f = intercept_device(name)) return f;
     return dd ? dd->gdpa(dev, name) : nullptr;
 }
