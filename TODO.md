@@ -72,8 +72,13 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     - Where: a `perf` list per game in `site/games.json` (date, scene,
       settings, mods, mode, fps per eye, baseline), rendered on the game's
       page; private / unpublished configurations stay local (item 18).
-      First step: a `_ perf GAME` helper that gathers the config and log
-      parts and leaves the scene / FPS context to the owner.
+      First step done 2026-11-02: `vrdual perf APPID|EXE` (Flatpak Steam /
+      Proton games) prints what the machine knows as key/value lines: Proton,
+      DXVK / vkd3d, layer version, mode, GPUs, resolution, non-default config,
+      export / memory sync lines, game fps of the game's last `vrdual xr`
+      session, the game's config files (prefix = the player's settings,
+      install dir) and mod hints. Left: native games, writing the entry into
+      `site/games.json` and rendering it, the first real records.
 20. Shader hunt in the headset (owner's request 2026-11-02): `_ hunt find`
     driven by the controllers in `vrdual-xr`, no terminal. Each step asks
     in the overlay "did exactly the artefact we hunt disappear?" (note:

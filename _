@@ -166,6 +166,82 @@ vrdual_shaders() {
     say "$n new key(s) -> $cat"
 }
 
+# Performance record helper (TODO 19). `perf GAME` (Steam appid or exe name):
+# what a perf entry needs that the machine knows, as "key<TAB>value" lines:
+# game, logs, Proton / DXVK / vkd3d, vrdual mode and GPUs, non-default
+# config, the layer's export / memory sync lines, the game fps of the game's
+# last `vrdual xr` session, the game's own config files (Proton prefix,
+# install dir; newest first) and mod hints. The scene and the in-game
+# options changed come from the player; the baseline is a run with stereo = 0.
+vrdual_perf() {
+    local game=${1:-} root="$STEAM_FLATPAK/.local/share/Steam" appid="" exe="" log="" name="" lib="" dir="" f
+    [[ -n $game && $# -eq 1 ]] || { say "usage: vrdual perf APPID|EXE"; return 2; }
+    if [[ $game =~ ^[0-9]+$ ]]; then
+        appid=$game
+        [[ -f $STEAM_FLATPAK/steam-$appid.log ]] && log=$STEAM_FLATPAK/steam-$appid.log
+    else
+        exe=$game
+        # newest Proton log whose layer lines name this exe
+        log=$(grep -lF "exe='" "$STEAM_FLATPAK"/steam-*.log 2>/dev/null | xargs -r grep -liF -- " $exe'" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1) || true
+        [[ -n $log ]] && { appid=${log##*/steam-}; appid=${appid%.log}; }
+    fi
+    [[ -n $log || -n $appid ]] || { say "no Proton log for '$game' in $STEAM_FLATPAK (native games: not supported yet)"; return 1; }
+    for lib in $(grep -oP '"path"\s+"\K[^"]+' "$root/steamapps/libraryfolders.vdf" 2>/dev/null) "$root"; do
+        [[ -f $lib/steamapps/appmanifest_$appid.acf ]] || continue
+        name=$(grep -oP '"name"\s+"\K[^"]+' "$lib/steamapps/appmanifest_$appid.acf" | head -1)
+        dir=$lib/steamapps/common/$(grep -oP '"installdir"\s+"\K[^"]+' "$lib/steamapps/appmanifest_$appid.acf" | head -1)
+        break
+    done
+    [[ -z $exe && -n $log ]] && exe=$(grep -oP "^\[vrdual:[^]]*\] app='[^']*' exe='\S+ \K[^']+(?=' profile=)" "$log" | tail -1)
+    printf 'game\t%s\nappid\t%s\nexe\t%s\n' "${name:-?}" "${appid:-?}" "${exe:-?}"
+    if [[ -n $log ]]; then
+        printf 'log\t%s\t%s\n' "$log" "$(date -r "$log" '+%F %T')"
+        local L=$(grep -E '^Proton: |DXVK: v|vkd3d-proton|^\[vrdual' "$log")
+        awk -F'\t' 'BEGIN { OFS = "\t" }
+            /^Proton: / && !p++ { print "proton", $0; sub(/^proton\t/, "") }
+            /DXVK: v/ && !d++ { sub(/.*DXVK: /, ""); print "dxvk", $0 }
+            /vkd3d-proton/ && !v++ { sub(/^[^:]*: */, ""); print "vkd3d", $0 }' <<<"$L" | sed 's/^proton\tProton: /proton\t/'
+        local V=$(grep -E '^\[vrdual:(LR|L|R)\]' <<<"$L")
+        sed -nE 's/^\[vrdual:[^]]*\] vrdual (.*)$/vrdual_layer\t\1/p' <<<"$V" | tail -1
+        if grep -q 'mirror: twin device' <<<"$V"; then printf 'mode\tmirror\n'
+        elif grep -q 'alternate' <<<"$V"; then printf 'mode\tsingle GPU (alternate eyes)\n'
+        elif grep -qE '^\[vrdual:[LR]\]' <<<"$V"; then printf 'mode\tper-eye processes\n'
+        else printf 'mode\t? (no vrdual layer lines)\n'; fi
+        sed -nE 's/^\[vrdual:[^]]*\] (device created on .*|mirror: twin device on .*\(pci [^)]*\)).*/gpu\t\1/p' <<<"$V" | awk '!s[$0]++'
+        sed -nE 's/^\[vrdual:[^]]*\] exporting ([0-9]+x[0-9]+).*/resolution\t\1/p' <<<"$V" | tail -1
+        sed -nE "s/^\[vrdual:[^]]*\] app='[^']*' exe='[^']*' profile='([^']*)'.*/profile\t\1/p" <<<"$V" | tail -1
+        sed -nE 's/^\[vrdual:[^]]*\] (export: .*)/export\t\1/p' <<<"$V" | tail -1
+        sed -nE 's/^\[vrdual:[^]]*\] mirror: (memory sync .*)/memory_sync\t\1/p' <<<"$V" | tail -1
+    fi
+    [[ -n $exe && $exe != "?" ]] && "$B/vrdual-ctl" show "$exe" 2>/dev/null | awk '!/# default$/ { k = $1; v = $0; sub(/^[^ ]+ +/, "", v); src = v; sub(/ *# .*/, "", v); sub(/.*# /, "", src); print "config\t" k "\t" v "\t" src }' || true
+    # game fps of the last vrdual xr session of this exe (stats lines, frames
+    # arriving), over the rotated logs oldest first
+    local xl=${XDG_STATE_HOME:-$HOME/.local/state}/vrdual/xr.log
+    [[ -n $exe ]] && { cat "$xl".{4,3,2,1} "$xl" 2>/dev/null || true; } | awk -v app="$exe" -F'\t' '
+        index($0, "[xr] app '\''" app "'\''") { start = substr($0, 1, 19); n = 0; s = 0; mx = 0; last = ""; on = 1; next }
+        index($0, "[xr] app '\''") { on = 0 }
+        on && / new game frames \(/ {
+            f = $0; sub(/.* new game frames \(/, "", f); f += 0
+            if (f > 0) { n++; s += f; if (f > mx) mx = f; last = substr($0, 1, 19) }
+            line = $0 }
+        END { if (start == "") print "xr_session\tnone in xr.log (rotated out, or not played with vrdual xr)"
+              if (start != "") { printf "xr_session\t%s .. %s\n", start, last == "" ? "?" : last
+                  if (n) printf "xr_game_fps\t%.1f avg, %.1f max over %d stats lines (5 s each)\n", s / n, mx, n
+                  if (line != "") { sub(/^[^[]*/, "", line); print "xr_stats\t" line } } }'
+    # the game's own settings: Proton prefix user dirs and the install dir
+    local pfx=$lib/steamapps/compatdata/$appid/pfx/drive_c/users/steamuser
+    # (prefix: what the game wrote = the player's settings; install dir: defaults, mod configs)
+    lst() { sort -rn | head -"$2" | while IFS=$'\t' read -r t f; do printf 'game_config\t%s\t%s\t%s\n' "$1" "$f" "$(date -d "@${t%.*}" '+%F %T')"; done; }
+    [[ -n $appid && -d $pfx ]] && find -H "$pfx/Documents" "$pfx/AppData" "$pfx/Saved Games" -maxdepth 6 -type f \
+        \( -iname '*.ini' -o -iname '*.cfg' -o -iname '*.xml' -o -iname '*.json' -o -iname '*.conf' \) -size -1024k -printf '%T@\t%p\n' 2>/dev/null | lst prefix 20 || true
+    [[ -n $dir && -d $dir ]] && find "$dir" -maxdepth 3 -type f \( -iname '*.ini' -o -iname '*.cfg' \) -size -1024k -printf '%T@\t%p\n' 2>/dev/null | lst install 10 || true
+    # mods: mod folders, loaders, wrapper DLLs in the game dir (Proton's DXVK is not there)
+    [[ -n $dir && -d $dir ]] && find "$dir" -maxdepth 3 \( -type d \( -iname mods -o -iname mod -o -iname plugins -o -iname bepinex -o -iname 'reshade*' -o -iname enbseries \) \
+        -o -type f \( -iname dinput8.dll -o -iname dxgi.dll -o -iname d3d9.dll -o -iname d3d11.dll -o -iname version.dll -o -iname winmm.dll -o -iname '*.asi' -o -iname 'reshade*.ini' \) \) \
+        -printf 'mod_hint\t%p\n' 2>/dev/null | head -20 || true
+    say "player: add the scene (level, area), in-game options changed and a baseline run (stereo = 0); see TODO 19"
+}
+
 # Games in Flatpak Steam / Heroic read the copy `vrdual install` made, not the
 # host config: refresh the copies after a write (they apply at the next start).
 config_sync() {
@@ -839,6 +915,41 @@ vrdual_selftest() {
         out=\$(bash -c 'source ./_; vrdual_install --quiet' 2>&1) && [[ -z \$out ]] && printf x >>\$d/layer/libVkLayer_vrdual64.so &&
         bash -c 'source ./_; vrdual_install --quiet' 2>&1 | grep -q 'updated the layer' && cmp -s build/libVkLayer_vrdual.so \$d/layer/libVkLayer_vrdual64.so &&
         diff -rq profiles \$d/profiles && grep -q 'VRDUAL_PROFILES=.*\$d/profiles' \$d/run"
+    # 1c. vrdual perf on a fake Flatpak Steam tree: Proton log, manifest,
+    # prefix, install dir with a wrapper DLL and a mods dir, xr log.
+    label="perf: Proton/DXVK, mode, GPUs, config, game fps of the last xr session, prefix + install configs, mod hints"
+    local ph="$tmp/perfhome"; local pst="$ph/.var/app/com.valvesoftware.Steam"
+    mkdir -p "$pst/.local/share/Steam/steamapps/common/tg/mods" "$pst/.local/share/Steam/steamapps/compatdata/4242/pfx/drive_c/users/steamuser/Documents/My Games/TG" "$ph/state/vrdual"
+    printf '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n}\n' "$pst/.local/share/Steam" >"$pst/.local/share/Steam/steamapps/libraryfolders.vdf"
+    printf '"AppState"\n{\n\t"appid"\t\t"4242"\n\t"name"\t\t"Test Game"\n\t"installdir"\t\t"tg"\n}\n' >"$pst/.local/share/Steam/steamapps/appmanifest_4242.acf"
+    : >"$pst/.local/share/Steam/steamapps/common/tg/dxgi.dll"; echo x >"$pst/.local/share/Steam/steamapps/common/tg/tg.ini"
+    echo '[Video]' >"$pst/.local/share/Steam/steamapps/compatdata/4242/pfx/drive_c/users/steamuser/Documents/My Games/TG/settings.ini"
+    cat >"$pst/steam-4242.log" <<'EOF'
+Proton: 123 proton-9.0-4
+info:  DXVK: v2.7.1
+[vrdual:LR] vrdual v0.1.0, built 2026-11-02 10:00:00 +0100 on host (64-bit layer)
+[vrdual:LR] app='tg.exe' exe='wine64-preloader tg.exe' profile='tg.exe' session=default (joined control block)
+[vrdual:LR] device created on GPU A (pci 0000:01:00.0)
+[vrdual:LR] mirror: twin device on GPU B (pci 0000:02:00.0) via /x/libvulkan_radeon.so — hidden from the app
+[vrdual:LR] exporting 1920x1080 fmt=1 to /dev/shm/vrdual-default-0
+[vrdual:LR] export: 0.50 ms/frame waiting for the copy, 0.20 ms/frame publishing
+[vrdual:LR] mirror: memory sync 0.30 ms/submit avg over 68.0 MB mapped
+EOF
+    printf '%s\n' "2026-11-02 10:00:00.000 [xr] app 'tg.exe': input=off" \
+        "2026-11-02 10:00:05.000 [xr] 300 frames submitted, 150 new game frames (30.0/s), headset 60.0 Hz" \
+        "2026-11-02 10:00:10.000 [xr] 600 frames submitted, 300 new game frames (60.0/s), headset 60.0 Hz" \
+        "2026-11-02 10:00:15.000 [xr] app 'other.exe': input=off" \
+        "2026-11-02 10:00:20.000 [xr] 900 frames submitted, 900 new game frames (99.0/s), headset 60.0 Hz" >"$ph/state/vrdual/xr.log"
+    printf '[app:tg.exe]\nworld_scale = 7\n' >"$tmp/perf.conf"
+    check env HOME="$ph" XDG_STATE_HOME="$ph/state" VRDUAL_CONFIG="$tmp/perf.conf" bash -c "o=\$('$VRDUAL_ROOT/vrdual' perf 4242 2>/dev/null) &&
+        for w in \$'game\tTest Game' \$'exe\ttg.exe' \$'proton\t123 proton-9.0-4' \$'dxvk\tv2.7.1' \$'mode\tmirror' \$'gpu\tdevice created on GPU A (pci 0000:01:00.0)' \
+            \$'gpu\tmirror: twin device on GPU B (pci 0000:02:00.0)' \$'resolution\t1920x1080' \$'profile\ttg.exe' \$'xr_session\t2026-11-02 10:00:00 .. 2026-11-02 10:00:10' \
+            \$'xr_game_fps\t45.0 avg, 60.0 max over 2 stats lines (5 s each)' \$'mod_hint\t$pst/.local/share/Steam/steamapps/common/tg/dxgi.dll' \$'mod_hint\t$pst/.local/share/Steam/steamapps/common/tg/mods'; do
+            grep -qxF \"\$w\" <<<\"\$o\" || { echo \"missing: \$w\"; echo \"\$o\"; exit 1; }; done &&
+        grep -qP '^config\tworld_scale\t7\t.*\[app:tg.exe\]\$' <<<\"\$o\" && grep -qP '^export\texport: 0.50 ms/frame' <<<\"\$o\" &&
+        grep -qP '^game_config\tprefix\t.*/My Games/TG/settings.ini\t' <<<\"\$o\" && grep -qP '^game_config\tinstall\t.*/tg/tg.ini\t' <<<\"\$o\" &&
+        [[ \$('$VRDUAL_ROOT/vrdual' perf tg.exe 2>/dev/null) == \"\$o\" ]] || { echo \"\$o\"; false; }"
+
 
     # 2. End to end on both GPUs: static calibration scene, live changes via the control block.
     export VRDUAL_CONFIG="$tmp/empty.conf"; : >"$VRDUAL_CONFIG"
@@ -1508,6 +1619,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   config [show [APP]|init|path] config file (~/.config/vrdual/vrdual.conf) and effective values
   profiles [list|sync]          game profiles (profiles/*.conf): list and check them, or copy
                                   them where games read them (vrdual install does it too)
+  perf APPID|EXE                what a performance record needs (Proton/DXVK, mode, GPUs, config,
+                                  game fps of the last xr session, game config files, mod hints)
   shaders new LOG [CATALOG]     shaders a game met that are not in its shader_catalog (from the
                                   layer log) as catalog lines; with CATALOG, appended there
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
@@ -1553,7 +1666,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles|shaders) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles|shaders|perf) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
