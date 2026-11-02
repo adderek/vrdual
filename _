@@ -1514,6 +1514,9 @@ d = open(sys.argv[1], \"rb\").read(); i = d.index(b\"ENDHDR\\n\") + 7; w = 1408
 sys.exit(0 if max(d[i + 150 * w * 4: i + 151 * w * 4][3::4]) == 0 else 1)' '$tmp/ov.pam' || { grep overlay '$tmp/xr.log'; false; }"
         label="openxr: controller actions, input profile from the frame file"
         check bash -c "grep -q 'controller actions attached' '$tmp/xr.log' && grep -q \"app 'vrdual-cube': input=off .*head_lean=on (input: env VRDUAL_INPUT)\" '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
+        label="openxr: input_modes = none turns a configured gamepad off (controllers do nothing)"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_INPUT=gamepad VRDUAL_INPUT_MODES=none timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr-none.log' 2>&1;
+            grep -q 'gamepad not in input_modes (none): off' '$tmp/xr-none.log' && ! grep -q 'virtual device' '$tmp/xr-none.log' || { grep '\\[\\(xr\\|input\\)\\]' '$tmp/xr-none.log' | tail; false; }"
         label="openxr: input = map shows the button list (14-line panel)"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_INPUT=map VRDUAL_XR_OVERLAY_DUMP='$tmp/ovmap.pam' timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr-mapui.log' 2>&1;
             grep -q \"app 'vrdual-cube': input=map\" '$tmp/xr-mapui.log' && python3 -I -c '

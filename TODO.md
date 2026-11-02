@@ -90,10 +90,8 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     implementation, two front ends); needs the HMD overlay (M3) and an
     input mode for it (like `tune`).
 21. Controller modes the user never uses can be switched off (owner's
-    request 2026-11-02): e.g. `input_modes` listing the modes menu + a / b
-    cycles through (gamepad, mouse stick / motion / aim / move, tune, map);
-    left-out ones are skipped, also by the short-menu `mouse_mode` cycle.
-    All off = the controllers do nothing (no uinput devices, no tune).
+    request 2026-11-02): done 2026-11-02, `input_modes` (docs/CONFIG.md);
+    left: try it in the Quest.
 22. Research (owner's question 2026-11-02): frame generation and extra
     effects with our approach.
     - Two GPUs: the game's own FG (FSR 3 FG, DLSS FG) runs inside the

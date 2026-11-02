@@ -339,6 +339,43 @@ int main(int argc, char** argv) {
         expect(!scene_disparity(L.data(), R.data(), W, H, 160, 32, 0.5f, -0.5f, 40, &d), "cursor: flat patch -> no depth");
     }
 
+    {  // input_modes: menu + a / b and the mouse menu tap skip modes left out; none = nothing
+        auto chord = [](Mapper& m, bool fwd) {
+            Controls c; c.menu = true; m.step(c, 0.01);
+            (fwd ? c.a : c.b) = true; m.step(c, 0.01);
+            c = Controls{}; m.step(c, 0.01);
+            return m.controls();
+        };
+        auto tap = [](Mapper& m) { Controls c; c.menu = true; m.step(c, 0.1); c.menu = false; m.step(c, 0.1); return m.controls(); };
+        InputCfg k = cfg("gamepad");
+        k.modes = "gamepad, aim";
+        Mapper m(k);
+        std::string seq;  // one call per statement: operands of + are unsequenced
+        for (bool f : {true, true, true, false}) seq += (seq.empty() ? "" : "|") + chord(m, f);
+        expect(seq == "mouse: aim|off|gamepad|off", "input_modes gamepad,aim: menu + a / b cycles gamepad -> aim -> off -> gamepad, back to off");
+        k = cfg("mouse", "stick");
+        k.modes = "motion move";
+        Mapper m2(k);
+        expect(m2.controls() == "mouse: motion", "input_modes motion move: configured stick falls back to motion");
+        std::string t1 = tap(m2), t2 = tap(m2);
+        expect(t1 == "mouse: move" && t2 == "mouse: motion", "input_modes motion move: menu tap cycles motion <-> move only");
+        k = cfg("mouse", "aim");
+        k.modes = "aim";
+        Mapper m3(k);
+        int ch = m3.changes;
+        expect(tap(m3) == "mouse: aim" && m3.changes == ch, "input_modes aim: menu tap changes nothing");
+        k = cfg("gamepad");
+        k.modes = "none";
+        Mapper m4(k);
+        Controls c; c.a = true; c.rt = 1; c.lx = 1;
+        auto ev = m4.step(c, 0.01);
+        expect(m4.input() == "off" && ev.empty() && chord(m4, true) == "off", "input_modes none: input off, buttons and sticks send nothing, menu + a stays off");
+        k = cfg("tune");
+        k.modes = "mouse";
+        Mapper m5(k);
+        expect(m5.controls() == "mouse: stick" && mode_mask("all") == 0xff && mode_mask("none") == 1 && mode_mask("mouse,map") == 0xbd,
+               "input_modes mouse: tune falls back to the first mouse mode; all / none / mouse,map masks");
+    }
     {  // menu + a / b switches the control mode in every mode; the game sees neither button
         Mapper m(cfg("off"));
         Controls c;

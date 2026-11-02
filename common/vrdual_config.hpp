@@ -66,6 +66,7 @@ static const Key kKeys[] = {
     {"log", "1", "layer logging to stderr"},
     // input (vrdual-xr): VR controllers -> virtual pad / mouse / keys; map_<button> = KEY_*|BTN_*
     {"input", "gamepad", "controllers as: gamepad | mouse | tune (sticks: world_scale/hud_depth/hfov; grips: move/scale the screen) | map (edit button maps in the headset) | off. Last used per game wins over [global]; [app:NAME] wins over that"},
+    {"input_modes", "all", "control modes menu + a / b (and the mouse menu tap) cycle through: all | none | list of gamepad stick motion aim move tune map (mouse = the 4 mouse modes); none = controllers do nothing"},
     {"mouse_mode", "stick", "mouse from controllers: stick | motion | aim | move (menu button cycles)"},
     {"mouse_speed", "1", "pointer speed factor (per game in [app:NAME]; vrdual xr reloads it live)"},
     {"mouse_curve", "2.5", "stick response exponent (stick mode)"},

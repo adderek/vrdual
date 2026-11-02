@@ -1082,7 +1082,9 @@ static int run(int argc, char** argv) {
             chord_hold = c.menu && (chord_hold || c.a || c.b);
             vrdual::Controls cg = c;
             if (chord_hold) cg.menu = false;  // menu + a / b: no recentre at 1 s
-            if (grab.step(cg, t_now - t_input, tune_on))  // screen moves only in tune c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;  // grabbing: the game doesn't see them
+            if (mapper && mapper->none()) cg = vrdual::Controls{};  // input_modes = none: no grab, no recentre
+            // screen moves only in tune; grabbing: the game doesn't see the grab controls
+            if (grab.step(cg, t_now - t_input, tune_on)) c.lg = c.rg = c.lt = c.rt = c.lx = c.ly = c.rx = c.ry = 0;
             if (was && !grab.both)
                 fprintf(stderr, "[xr] screen moved: offset %+.2f %+.2f %+.2f m, orbit %+.0f %+.0f deg, scale %.2f x %.2f (screen_scale_x/y to keep)\n",
                         grab.off[0], grab.off[1], grab.off[2], grab.orbit[0] * 57.29578f, grab.orbit[1] * 57.29578f, grab.sx, grab.sy);
