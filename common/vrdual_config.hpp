@@ -53,6 +53,7 @@ static const Key kKeys[] = {
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
     {"export", "1", "publish frames to /dev/shm for the compositor"},
+    {"auto_noshift", "0", "shaders drawn only in shadow passes (depth only, another size than the screen and the colour passes) are not shifted per eye; live params only"},
     {"depth_export", "0", "also publish the game's depth buffer with each frame (one process per eye or one GPU; not in mirror mode yet)"},
     {"cursor", "1", "export the X11 cursor (position + image) with the frames; vrdual-xr draws it"},
     {"cursor_depth", "auto", "vrdual-xr cursor depth: auto (the scene under it) | hud (at hud_depth)"},

@@ -34,7 +34,13 @@
   VS, `noshift` it, compare. Fix candidates: a `noshift` rule per game, or
   auto-noshift for depth-only render passes (no color attachment, extent not
   the swapchain's). Same risk in other top-down games (RTS, 4X) and any game
-  with shadow maps.
+  with shadow maps. Done 2026-11-02 as `auto_noshift = 1` (opt-in,
+  live key table, also in the mirror; selftest `--shadow`). Left: try it in
+  Civ V (expect `auto_noshift: N shader(s)` in the log and shadows under
+  the units), then consider it as the default or in the Civ V profile.
+  Not covered: shadow passes that also write colour (variance / colour
+  shadow maps), cascades rendered into a viewport of an atlas the size of
+  the screen, a shadow VS shared with the main pass (then a rule is needed).
 - Layer logs every live change on both eyes; consider rate limiting.
 - Review items 2026-10-31 left until a measurement says otherwise (xr.log:
   our work 2.5–4 ms per frame; upload fence wait 0.3–0.6 ms, staging

@@ -30,7 +30,7 @@ automatically.
 | path | role |
 |---|---|
 | `layer/vrdual_layer.cpp` | the Vulkan layer: GPU filter, capability filter, BDA enable + param buffer, shader patch hook, swapchain readback, lockstep |
-| `layer/vrdual_depth.hpp` | depth export (`depth_export`): tracks depth attachments, render passes, layouts; copies the main depth image with each frame |
+| `layer/vrdual_passes.hpp` | render pass tracking: `depth_export` (the main depth image copied with each frame) and `auto_noshift` (shaders drawn only in shadow passes not shifted, live key table at param addr+96) |
 | `layer/vrdual_cursor.hpp` | X11 cursor (pointer over the game window + XFixes image) into the frame header, xcb via dlopen |
 | `layer/vrdual_mirror.hpp` | mirror mode: hidden twin device via the ICD, handle map, memory shadow/diff, sync, WSI twins |
 | `tools/gen_mirror.py` | generates `build/mirror_{dispatch,gen}.hpp` (dispatch table + ~400 replay wrappers) from vk.xml |

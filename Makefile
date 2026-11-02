@@ -12,7 +12,7 @@ LAYERFLAGS := -shared -fPIC -fvisibility=hidden -static-libstdc++ -static-libgcc
 # Version, build time and machine, evaluated when a binary is compiled (so
 # each one carries its own; see common/vrdual_version.h).
 BUILDINFO = -DVRDUAL_BUILD_INFO="\"$$(tools/build_info.sh)\""
-LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/vrdual_depth.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
+LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/vrdual_passes.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
 
 all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test
 

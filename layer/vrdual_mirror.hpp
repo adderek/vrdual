@@ -1722,6 +1722,7 @@ static VKAPI_ATTR void VKAPI_CALL m_CmdPushDescriptorSetWithTemplate2(VkCommandB
 static VKAPI_ATTR VkResult VKAPI_CALL m_CreateShaderModule(VkDevice dev, const VkShaderModuleCreateInfo* ci, const VkAllocationCallbacks* alloc, VkShaderModule* out) {
     MDev* md = mdev_of(key(dev));
     VkResult r = create_patched_module(md->dd->ep, md->a.CreateShaderModule, dev, ci, alloc, out);
+    if (r == VK_SUCCESS) passes::note_module(md->dd, ci, *out);
     if (r < 0 || !md->live) return r;
     Ctx& c = ctx_begin(md);
     VkShaderModuleCreateInfo bci = *ci;
@@ -1743,6 +1744,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_CreateGraphicsPipelines(VkDevice dev, Vk
     InlinePatch ip;
     const VkGraphicsPipelineCreateInfo* acis = patch_inline(md->dd->ep, n, cis, ip);
     VkResult r = md->a.CreateGraphicsPipelines(dev, cache, n, acis, alloc, out);
+    if (r >= 0) passes::note_pipelines(md->dd, n, cis, out);
     if (g_trace) {
         trace_call("vkCreateGraphicsPipelines (manual)");
         for (uint32_t i = 0; i < n; ++i)

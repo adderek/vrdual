@@ -112,7 +112,12 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
    live mode each patched shader also compares its key's high 32 bits with a
    range in the param buffer (`addr + 32`: lo, hi, mode, from the control
    block's `hunt_*`) and applies that mode at runtime, which `_ hunt find`
-   uses to bisect for one shader (docs/tasks/shader-rules.md).
+   uses to bisect for one shader (docs/tasks/shader-rules.md). It also
+   checks its key against 16 entries at `addr + 96`: `auto_noshift` fills
+   them with the keys the layer saw drawn only in shadow passes (depth only,
+   an extent neither the swapchain's nor a colour pass's), which then stay
+   unshifted (`layer/vrdual_passes.hpp`; perspective shadow maps, which the
+   `w == 1` skip does not catch).
 3. **Frame export** — at `vkQueuePresentKHR` the swapchain image is copied to a
    host buffer and published into a 4-slot seqlocked ring in `/dev/shm`.
 4. **Lockstep** — frame N is held until the other eye has published N, so two
@@ -349,7 +354,7 @@ pixels back column by column. Staging now prefers HOST_CACHED (2026-10-26).
 
 ### Input and head motion (in `vrdual-xr`)
 
-**Depth export** (`depth_export = 1`, frame file v5; `layer/vrdual_depth.hpp`):
+**Depth export** (`depth_export = 1`, frame file v5; `layer/vrdual_passes.hpp`):
 the layer tracks single-sample 2D depth attachments from `vkCreateImage`
 (adds `TRANSFER_SRC`), their views, render passes (depth attachment of the
 first subpass that has one, its final layout) and framebuffers; each render

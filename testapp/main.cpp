@@ -39,6 +39,12 @@
 // shader passed inline in the pipeline (maintenance5, no VkShaderModule),
 // behind another struct in the stage's pNext (DXVK chains subgroup-size info first).
 //
+// --shadow: each frame also draws the 0.5 m post into a depth-only 512x512
+// pass (a shadow map, from the camera for simplicity) with its own vertex
+// shader (same code, another generator word: another key), reads one row back
+// and logs where the post's left edge is ("shadow edge x=N"). Shifted per
+// eye, the eyes see it ~33 px apart; auto_noshift makes them agree.
+//
 // --scene calib: static posts at 0.5, 1, 2, 5 and 20 m (eye height), for IPD
 // calibration: look at one post, adjust until it sits at a believable distance
 // and fuses without strain. Posts are scaled so all look equally wide.
@@ -120,7 +126,7 @@ int main(int argc, char** argv) {
     bool bda = false, extra = false, mem_export = false, dev2_export = false;
     float clear_alpha = 1;
     int late_verts = 0, churn = 0;
-    bool cached = false, verts_file = false, readback = false, list_exts = false, remap = false, wait_any = false;
+    bool cached = false, verts_file = false, readback = false, list_exts = false, remap = false, wait_any = false, shadow = false;
     std::string want_fmt;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -141,6 +147,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--cached")) cached = true;
         else if (!strcmp(argv[i], "--verts-file")) verts_file = true;
         else if (!strcmp(argv[i], "--readback")) readback = true;
+        else if (!strcmp(argv[i], "--shadow")) shadow = true;
         else if (!strcmp(argv[i], "--swapchain-format") && i + 1 < argc) want_fmt = argv[++i];
         else if (!strcmp(argv[i], "--late-verts") && i + 1 < argc) late_verts = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--clear-alpha") && i + 1 < argc) clear_alpha = (float)atof(argv[++i]);
@@ -579,6 +586,71 @@ int main(int argc, char** argv) {
     }
     uint32_t nverts = uint32_t(verts.size() / 6);
 
+    // --shadow: depth-only pass, own pipeline, one row read back per frame slot
+    const uint32_t SM = 512, SROW = 320;  // the near post covers rows 256..384
+    VkRenderPass srp = VK_NULL_HANDLE;
+    VkFramebuffer sfb = VK_NULL_HANDLE;
+    VkPipeline spipe = VK_NULL_HANDLE;
+    VkImage simg = VK_NULL_HANDLE;
+    VkBuffer sbuf = VK_NULL_HANDLE;
+    const float* srow = nullptr;
+    if (shadow && !bda && !tess) {
+        VkImageCreateInfo sic = dic;
+        sic.extent = {SM, SM, 1};
+        sic.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        CK(vkCreateImage(dev, &sic, nullptr, &simg));
+        VkMemoryRequirements smr;
+        vkGetImageMemoryRequirements(dev, simg, &smr);
+        VkMemoryAllocateInfo sai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, smr.size, memtype(smr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+        VkDeviceMemory smem;
+        CK(vkAllocateMemory(dev, &sai, nullptr, &smem));
+        vkBindImageMemory(dev, simg, smem, 0);
+        VkImageViewCreateInfo svi = vci;
+        svi.image = simg;
+        svi.format = VK_FORMAT_D32_SFLOAT;
+        svi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+        VkImageView sview;
+        CK(vkCreateImageView(dev, &svi, nullptr, &sview));
+        VkAttachmentDescription sa = att[1];
+        sa.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        sa.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        VkSubpassDescription ssub{};
+        ssub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        VkAttachmentReference sref{0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+        ssub.pDepthStencilAttachment = &sref;
+        VkRenderPassCreateInfo srpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, nullptr, 0, 1, &sa, 1, &ssub, 0, nullptr};
+        CK(vkCreateRenderPass(dev, &srpci, nullptr, &srp));
+        VkFramebufferCreateInfo sfci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, nullptr, 0, srp, 1, &sview, SM, SM, 1};
+        CK(vkCreateFramebuffer(dev, &sfci, nullptr, &sfb));
+        std::vector<uint32_t> sv(kVert, kVert + sizeof kVert / 4);
+        sv[2] ^= 1;  // generator word: valid SPIR-V, another shader key
+        VkPipelineShaderStageCreateInfo sst{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT,
+                                            mkmod(sv.data(), sv.size() * 4), "main"};
+        VkViewport svp{0, 0, float(SM), float(SM), 0, 1};
+        VkRect2D ssc{{0, 0}, {SM, SM}};
+        VkPipelineViewportStateCreateInfo svps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, nullptr, 0, 1, &svp, 1, &ssc};
+        VkPipelineColorBlendStateCreateInfo scbs{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        VkGraphicsPipelineCreateInfo sg = gpci;
+        sg.stageCount = 1;
+        sg.pStages = &sst;
+        sg.pTessellationState = nullptr;
+        sg.pViewportState = &svps;
+        sg.pColorBlendState = &scbs;
+        sg.renderPass = srp;
+        CK(vkCreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &sg, nullptr, &spipe));
+        VkBufferCreateInfo sbci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, 2 * SM * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        CK(vkCreateBuffer(dev, &sbci, nullptr, &sbuf));
+        vkGetBufferMemoryRequirements(dev, sbuf, &smr);
+        VkMemoryAllocateInfo bai2{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, smr.size,
+                                  memtype(smr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+        VkDeviceMemory sbm;
+        CK(vkAllocateMemory(dev, &bai2, nullptr, &sbm));
+        vkBindBufferMemory(dev, sbuf, sbm, 0);
+        void* sp;
+        vkMapMemory(dev, sbm, 0, VK_WHOLE_SIZE, 0, &sp);
+        srow = (const float*)sp;
+    }
+
     // --- frame loop --------------------------------------------------------
     const int FIF = 2;
     VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, fam};
@@ -787,6 +859,11 @@ int main(int argc, char** argv) {
             else ++rb_bad;
             if (frame % 100 == 0) fprintf(stderr, "readback: %llu ok, %llu bad\n", (unsigned long long)rb_ok, (unsigned long long)rb_bad);
         }
+        if (srow && frame >= uint64_t(FIF) && frame % 10 == 0) {  // slot f filled FIF frames ago, its fence just waited
+            int x = -1;
+            for (uint32_t k = 0; k < SM && x < 0; ++k) if (srow[f * SM + k] < 0.9999f) x = int(k);
+            fprintf(stderr, "vrdual-cube: shadow edge x=%d\n", x);
+        }
         uint32_t ii;
         VkResult ar = vkAcquireNextImageKHR(dev, sc, UINT64_MAX, acquired[f], VK_NULL_HANDLE, &ii);
         if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) { fprintf(stderr, "acquire: %d\n", ar); break; }
@@ -817,6 +894,24 @@ int main(int argc, char** argv) {
             vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
             VkBufferImageCopy bic{2048 + VkDeviceSize(f) * 64, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {4, 4, 1}};
             vkCmdCopyImageToBuffer(cb, rimg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rbuf, 1, &bic);
+            VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+        }
+        if (spipe) {  // the near post into the "shadow map", then one row of it to the host
+            VkClearValue sc;
+            sc.depthStencil = {1, 0};
+            VkRenderPassBeginInfo sbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr, srp, sfb, {{0, 0}, {SM, SM}}, 1, &sc};
+            vkCmdBeginRenderPass(cb, &sbi, VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, spipe);
+            VkDeviceSize so = 0;
+            vkCmdBindVertexBuffers(cb, 0, 1, &dbuf, &so);
+            const Obj& o = objs[0];
+            PC pc{mul(perspective(1.0f, 0.1f, 100.0f), mul(translate(o.x, o.y, o.z), scale(o.sx, o.sy, o.sx))), {1, 1, 1, 1}, 0};
+            vkCmdPushConstants(cb, pl, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof pc, &pc);
+            vkCmdDraw(cb, nverts, 1, 0, 0);
+            vkCmdEndRenderPass(cb);
+            VkBufferImageCopy reg{VkDeviceSize(f) * SM * 4, 0, 0, {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1}, {0, int32_t(SROW), 0}, {SM, 1, 1}};
+            vkCmdCopyImageToBuffer(cb, simg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sbuf, 1, &reg);
             VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT};
             vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
         }
