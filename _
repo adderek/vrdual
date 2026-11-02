@@ -1401,7 +1401,7 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
         sp=()
         for e in left right; do
             env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=$e VRDUAL_GPU=pci:$gh \
-                VRDUAL_AUTO_NOSHIFT=$a "$B/vrdual-cube" --scene calib --shadow --title "selftest shadow $e" >"$tmp/sh$a-$e.log" 2>&1 &
+                VRDUAL_AUTO_NOSHIFT=$a VRDUAL_PASS_TRACE=60 "$B/vrdual-cube" --scene calib --shadow --title "selftest shadow $e" >"$tmp/sh$a-$e.log" 2>&1 &
             sp+=($!)
         done
         local re=$([[ $a == 1 ]] && echo 'auto_noshift: off-screen pass' || echo 'exporting')
@@ -1416,6 +1416,10 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
             label="auto_noshift: off-screen pass flagged live, shared shader not shifted there: eyes agree, half way between"
             check bash -c "[[ -n '$xl' && '$xl' == '$xr' ]] && (( $xl >= 118 && $xl <= 122 )) &&
                 grep -q 'auto_noshift: off-screen pass 512x512 not shifted (main view 960x720)' '$tmp/sh1-left.log' || { echo 'left $xl right $xr'; false; }"
+            label="pass_trace: one frame's passes (shadow pass off-screen, main view shifted) and binds logged"
+            check bash -c "grep -q 'pass_trace: present 60 (tracing from here)' '$tmp/sh1-left.log' && grep -q 'pass_trace: present 61 (end)' '$tmp/sh1-left.log' &&
+                grep -q 'pass_trace: cb .* depth only 512x512 -> off-screen (not shifted)' '$tmp/sh1-left.log' && grep -q 'pass_trace: cb .* colour 960x720 -> shifted' '$tmp/sh1-left.log' &&
+                grep -qE 'pass_trace: cb .*   bind [0-9a-f]{8}' '$tmp/sh1-left.log' || { grep pass_trace '$tmp/sh1-left.log' | head; false; }"
         fi
         kill "${sp[@]}" 2>/dev/null; wait "${sp[@]}" 2>/dev/null
     done

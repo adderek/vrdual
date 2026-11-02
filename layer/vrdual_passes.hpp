@@ -80,6 +80,8 @@ struct Track {
     std::string last_passes;  // log_passes: last logged
     std::atomic<uint64_t> main{0}, sc{0};  // main view and swapchain extents (0 = not known yet)
     std::set<uint64_t> off_ext;  // off-screen extents seen (log new ones)
+    uint64_t trace_at = 0;       // pass_trace: log what is recorded after this present
+    bool tracing() const { return trace_at && presents == trace_at; }
     DeviceData* dd = nullptr;
 };
 
@@ -281,6 +283,9 @@ static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D 
     note_draw(t, c);
     uint64_t main = t->main.load(), sc = t->sc.load();
     bool off = main && c.ext != main && c.ext != sc;
+    if (t->tracing())
+        logf("pass_trace: cb %p %s %ux%u -> %s", (void*)cb, depth_only ? "depth only" : "colour", ext.width, ext.height,
+             off ? "off-screen (not shifted)" : "shifted");
     if (off && t->off_ext.insert(c.ext).second)
         logf("auto_noshift: off-screen pass %ux%u not shifted (main view %ux%u)", ext.width, ext.height, uint32_t(main >> 32), uint32_t(main));
     return off;
@@ -384,6 +389,10 @@ static VKAPI_ATTR void VKAPI_CALL vrd_CmdBindPipeline(VkCommandBuffer cb, VkPipe
         auto& c = t->cbs[cb];
         c.pipe = p;
         note_draw(t, c);
+        if (t->tracing()) {
+            auto it = t->pipe_key.find(p);
+            logf("pass_trace: cb %p   bind %08x%s", (void*)cb, it == t->pipe_key.end() ? 0u : it->second, c.pass ? "" : " (outside a pass)");
+        }
     }
     t->next.CmdBindPipeline(cb, bp, p);
 }
@@ -434,6 +443,7 @@ static PFN_vkVoidFunction intercept(const char* name, const Track* t) {
 static Track* create(DeviceData* dd, bool depth, bool autons) {
     auto* t = new Track;
     t->depth = depth, t->autons = autons, t->dd = dd;
+    t->trace_at = autons && g_cfg.pass_trace > 0 ? uint64_t(g_cfg.pass_trace) : 0;
     Next& x = t->next;
     const Dispatch& d = dd->d;
 #define N(f) x.f = d.f; \
@@ -475,7 +485,10 @@ static void log_passes(Track& t) {
 static void refresh_auto(Track& t, VkExtent2D sc) {
     if (!t.autons) return;
     t.sc = ext_key(sc);
-    if (++t.presents % 30) return;
+    ++t.presents;
+    if (t.trace_at && (t.presents == t.trace_at || t.presents == t.trace_at + 1))
+        logf("pass_trace: present %llu %s", (unsigned long long)t.presents, t.presents == t.trace_at ? "(tracing from here)" : "(end)");
+    if (t.presents % 30) return;
     std::lock_guard<std::mutex> l(t.m);
     if (t.presents % 3000 == 600) log_passes(t);
     uint64_t sce = ext_key(sc), main = sce;

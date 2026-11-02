@@ -86,6 +86,11 @@
      removed the terrain, rule taken out. Open: does the shadow texture
      differ per eye? Suspect B's twin pass flag (selftest checks only A's
      shadow edge in the mirror); next: a snapshot of both eyes in the game.
+     Snapshots 2026-11-02: at IPD 0 both eyes are pixel-identical (memory
+     sync fine); with anchor right (right eye unshifted) the shadows still
+     differ, so A shifts the shadow texture too: the pass that draws it is
+     not flagged off-screen (all flagged extents logged; maybe it renders
+     at the main view's 1368x768). Next: `pass_trace` in Civ V.
   2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
      offline) loaded instead of the game's module, 3Dmigoto ShaderFixes
      style (MODDING.md "Shaders"). Zink hashes depend on the Mesa version:

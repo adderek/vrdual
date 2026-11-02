@@ -55,6 +55,7 @@ static const Key kKeys[] = {
     {"export", "1", "publish frames to /dev/shm for the compositor"},
     {"hunt_fragment", "0", "fragment shaders join the shader hunt (mode hide: what they draw disappears, e.g. a shadow or lighting pass); live params only"},
     {"auto_noshift", "0", "shaders drawn only in off-screen passes (another size than the swapchain and the main view: shadow maps, baked textures) are not shifted per eye; live params only"},
+    {"pass_trace", "0", "debugging (auto_noshift): log every render pass and pipeline bind recorded after present N (0 = off)"},
     {"depth_export", "0", "also publish the game's depth buffer with each frame (one process per eye or one GPU; not in mirror mode yet)"},
     {"cursor", "1", "export the X11 cursor (position + image) with the frames; vrdual-xr draws it"},
     {"cursor_depth", "auto", "vrdual-xr cursor depth: auto (the scene under it) | hud (at hud_depth)"},

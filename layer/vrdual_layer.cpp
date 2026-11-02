@@ -84,6 +84,7 @@ struct Config {
     bool export_frames = true;
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
+    int pass_trace = 0;        // debugging: log the render passes recorded after this present (vrdual_passes.hpp)
     bool depth_export = false; // the game's depth buffer with each frame (vrdual_passes.hpp)
     bool hunt_fragment = false; // fragment shaders join the hunt (spirv_patch.hpp patch_fragment)
     bool auto_noshift = false; // shaders drawn only in shadow passes not shifted (vrdual_passes.hpp)
@@ -286,6 +287,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.cached_wp = st.i("cached_wp") != 0;
     c.cursor = st.i("cursor") != 0;
     c.depth_export = st.i("depth_export") != 0;
+    c.pass_trace = st.i("pass_trace");
     c.auto_noshift = st.i("auto_noshift") != 0;
     c.hunt_fragment = st.i("hunt_fragment") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
