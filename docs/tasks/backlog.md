@@ -70,6 +70,17 @@
   (`cvLandmarkVisSystem::LandmarkRenderJob`, TBB worker, SEGV_MAPERR), mirror
   mode, 32-bit. Next: the same session without vrdual (or one eye, no
   mirror) to tell a game bug from the mirror's memory sync.
+- Fragment shader hunt + shader replacement (owner 2026-11-02, Civ V unit
+  shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
+  so hiding the shader that resolves shadows would hide the terrain too.
+  1. Record FS keys too; hunt mode `hide` on an FS = `OpKill` / output
+     unchanged colour, so only the effect disappears.
+  2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
+     offline) loaded instead of the game's module, 3Dmigoto ShaderFixes
+     style (MODDING.md "Shaders"). Zink hashes depend on the Mesa version:
+     store it next to the file and warn on a mismatch.
+  3. For the shadow fix itself the shader needs the eye offset: give
+     replacements the live param block (addr from the same BDA buffer).
 - Civ V 2026-11-02 (owner, headset): `head_look = clip` with
   `vrdual xr --lock head` works well (the world turns, the HUD stays).
 - Layer logs every live change on both eyes; consider rate limiting.
