@@ -1279,6 +1279,7 @@ static int run(int argc, char** argv) {
             bool rot = icfg.head_look == "clip";
             if (rot && anchored && !clip_warned) {  // a world-locked screen already shows the turn
                 fprintf(stderr, "[xr] head_look = clip needs a head-locked screen (--lock head, not frozen): rotation off\n");
+                notify("head_look = clip: rotation off, start vrdual xr --lock head");  // overrides the controls line
                 clip_warned = true;
             }
             rot &= !anchored;

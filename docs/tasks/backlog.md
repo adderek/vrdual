@@ -65,9 +65,13 @@
   (screenshot 2026-11-02); likely a decal projected on the terrain from
   depth (effect kind 2 in framegen-effects.md). Candidate for a per-game
   fix (setting or shader rule).
-- Civ V crashed once 2026-11-02 14:19 in the game's own code
+- Civ V crashed 2026-11-02 14:19, again at 17:15 and at the end of the next
+  session, same stack in the game's own code
   (`cvLandmarkVisSystem::LandmarkRenderJob`, TBB worker, SEGV_MAPERR), mirror
-  mode, 32-bit; not seen again yet. If it repeats: compare without vrdual.
+  mode, 32-bit. Next: the same session without vrdual (or one eye, no
+  mirror) to tell a game bug from the mirror's memory sync.
+- Civ V 2026-11-02 (owner, headset): `head_look = clip` with
+  `vrdual xr --lock head` works well (the world turns, the HUD stays).
 - Layer logs every live change on both eyes; consider rate limiting.
 - Review items 2026-10-31 left until a measurement says otherwise (xr.log:
   our work 2.5–4 ms per frame; upload fence wait 0.3–0.6 ms, staging
