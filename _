@@ -1638,11 +1638,12 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_HANG_AT=20 VRDUAL_XR_HANG_S=2 timeout 40 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr7.log' 2>&1;
             rc=\$?; [[ \$rc == 0 ]] && grep -q 'frame loop stuck' '$tmp/xr7.log' && [[ \$(grep -c 'session state 5' '$tmp/xr7.log') == 2 ]] && grep -q '30 frames submitted' '$tmp/xr7.log' || { echo rc=\$rc; grep '\\[xr\\]' '$tmp/xr7.log'; false; }"
         # game exits while streaming: WiVRn keeps the last image unless we send black
-        label="openxr: black frame after the game exits"
-        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
-            for i in \$(seq 40); do grep -q 'first frame' '$tmp/xr3.log' && break; sleep 0.5; done; kill $src
-            for i in \$(seq 10); do grep -q 'blank frame submitted' '$tmp/xr3.log' && break; sleep 0.5; done; kill \$p; wait \$p
-            grep -q 'first frame' '$tmp/xr3.log' && grep -q 'blank frame submitted' '$tmp/xr3.log' || { cat '$tmp/xr3.log'; false; }"
+        label="openxr: black frame after the game exits, not before frame_timeout (3 s)"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_FRAME_TIMEOUT=3 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
+            for i in \$(seq 40); do grep -q 'first frame' '$tmp/xr3.log' && break; sleep 0.5; done; kill $src; t0=\$(date +%s.%N)
+            for i in \$(seq 100); do grep -q 'blank frame submitted' '$tmp/xr3.log' && break; sleep 0.1; done; t1=\$(date +%s.%N); kill \$p; wait \$p
+            grep -q 'first frame' '$tmp/xr3.log' && grep -q 'blank frame submitted' '$tmp/xr3.log' && grep -q 'frame_timeout 3.0 s' '$tmp/xr3.log' &&
+                awk -v a=\$t0 -v b=\$t1 'BEGIN{d=b-a; exit !(d >= 2.5 && d <= 6)}' || { echo \"\$t0 \$t1\"; cat '$tmp/xr3.log'; false; }"
         kill $src 2>/dev/null || true; wait 2>/dev/null || true
         # game gone, frame files left behind: the headset must not get the frozen frame
         sleep 2

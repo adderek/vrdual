@@ -876,6 +876,7 @@ static int run(int argc, char** argv) {
     float cur_d = 0;                          // smoothed scene disparity under the cursor, px
     Overlay ov;
     float overlay_time = vrdual::load_settings({}).f("overlay_time");
+    float frame_timeout = std::max(0.1f, vrdual::load_settings({}).f("frame_timeout"));  // per game once its frames name it
     std::string ov_event;  // line 0 after "vrdual stereo VR | "
     bool one_gpu = false;  // both eyes from one GPU (alternate-eye rendering): settings hint in the overlay
     auto notify = [&](const std::string& what, bool log = true) {
@@ -989,9 +990,10 @@ static int run(int argc, char** argv) {
         XrCompositionLayerQuad quad[2] = {{XR_TYPE_COMPOSITION_LAYER_QUAD}, {XR_TYPE_COMPOSITION_LAYER_QUAD}};
         XrCompositionLayerCylinderKHR cyl[2] = {{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR}, {XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR}};
         XrCompositionLayerQuad ovq{XR_TYPE_COMPOSITION_LAYER_QUAD};
-        // No new game frame for 1 s (game exited or hung): show black. Submitting
-        // no layer is not enough, WiVRn's headset keeps the last streamed image.
-        bool fresh = vrdual::eye_map(L) && vrdual::eye_map(R) && std::max(vrdual::eye_age_s(L), vrdual::eye_age_s(R)) < 1.0;
+        // No new game frame for frame_timeout (game exited, hung, or a loading
+        // screen that presents nothing): show black. Submitting no layer is not
+        // enough, WiVRn's headset keeps the last streamed image.
+        bool fresh = vrdual::eye_map(L) && vrdual::eye_map(R) && std::max(vrdual::eye_age_s(L), vrdual::eye_age_s(R)) < frame_timeout;
         if (!fresh && vrdual::now_s() - t_scan > 1) {  // game in another dir (host vs Flatpak)?
             t_scan = vrdual::now_s();
             struct stat st;  // Steam restarted = new Flatpak /dev/shm: the old mapping is dead
@@ -1036,6 +1038,8 @@ static int run(int argc, char** argv) {
                 fprintf(stderr, "[xr] one GPU (%s, alternate eyes): temporal AA / upscaling, motion blur and frame generation mix the eyes\n",
                         L.hdr->gpu_name);
             if (prof == "none") fprintf(stderr, "[xr] no vrdual profile for '%s' (ask for one: vrdual request)\n", input_app.c_str());
+            frame_timeout = std::max(0.1f, st.f("frame_timeout"));
+            if (st.src.count("frame_timeout")) fprintf(stderr, "[xr] frame_timeout %.1f s (no new frame that long: black)\n", frame_timeout);
             scr.mode = screen_parse(st.s("screen"));
             scr.dist = std::max(0.2f, st.f("screen_dist"));
             scr.fov = std::clamp(st.f("screen_fov"), 10.0f, 170.0f);

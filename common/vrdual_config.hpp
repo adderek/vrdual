@@ -87,6 +87,7 @@ static const Key kKeys[] = {
     {"screen_fov", "60", "flat/curved screen width as seen from the centre, degrees"},
     {"screen_scale_x", "1", "picture width scale (all screen modes; two-hand grab changes it live)"},
     {"screen_scale_y", "1", "picture height scale"},
+    {"frame_timeout", "1", "vrdual-xr: no new game frame this long (s) -> black (game exited / hung); longer for loading screens that present nothing"},
     {"overlay_time", "4", "vrdual-xr notice (event, current settings) shown this long, seconds (0 = off)"},
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };

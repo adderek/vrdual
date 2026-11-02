@@ -79,6 +79,13 @@
      full-screen pass blacks the whole picture (the owner bisected by hand;
      `x` = can't tell applies the other half). Idea: leave the shaders drawn
      into the swapchain out of the first steps, or hide them last.
+     The key is Civ V's terrain fragment shader (Zink keeps the names:
+     DiffuseCachedTexture, TerrainOverlay, DynamicShadowTexture, FOW…): it
+     samples the shadow texture with a projective lookup from its varyings
+     (world based, so the same for both eyes if the texture is). Hide
+     removed the terrain, rule taken out. Open: does the shadow texture
+     differ per eye? Suspect B's twin pass flag (selftest checks only A's
+     shadow edge in the mirror); next: a snapshot of both eyes in the game.
   2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
      offline) loaded instead of the game's module, 3Dmigoto ShaderFixes
      style (MODDING.md "Shaders"). Zink hashes depend on the Mesa version:
