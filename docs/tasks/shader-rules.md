@@ -59,6 +59,9 @@ data: `[app:NAME]` sections and later the per-game profile files (TODO 11).
    the DXBC's SHA-1 in its shader key; not visible to a Vulkan layer as far
    as known)?
 3. HUD scale (borrowed-features #2) for `hud` rule shaders only.
+   Hunt in the headset done 2026-11-02 (TODO 20): `common/vrdual_hunt.hpp` is
+   the one bisection, `vrdual-ctl hunt find` (stdin answers, `_ hunt find`)
+   and vrdual-xr `input = hunt` (controllers, overlay panel) its front ends.
 4. Rules in the per-game profile files (`vrdual profiles sync`, TODO 11).
 
 ## Not taken over (and why)

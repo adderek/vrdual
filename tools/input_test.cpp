@@ -14,6 +14,7 @@
 #include "../common/vrdual_frames.hpp"
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_input.hpp"
+#include "../common/vrdual_hunt.hpp"
 
 using namespace vrdual;
 
@@ -373,7 +374,7 @@ int main(int argc, char** argv) {
         k = cfg("tune");
         k.modes = "mouse";
         Mapper m5(k);
-        expect(m5.controls() == "mouse: stick" && mode_mask("all") == 0xff && mode_mask("none") == 1 && mode_mask("mouse,map") == 0xbd,
+        expect(m5.controls() == "mouse: stick" && mode_mask("all") == 0x1ff && mode_mask("none") == 1 && mode_mask("mouse,map") == 0xbd,
                "input_modes mouse: tune falls back to the first mouse mode; all / none / mouse,map masks");
     }
     {  // menu + a / b switches the control mode in every mode; the game sees neither button
@@ -410,7 +411,7 @@ int main(int argc, char** argv) {
         c.b = true; ev = m.step(c, 0.01);
         expect(m.input() == "gamepad" && has(ev, {DEV_MOUSE, EV_KEY, BTN_LEFT, 0}), "mouse -> back: left button released");
         c = Controls{}; m.step(c, 0.01);
-        // b from off wraps to map; a walks through all seven
+        // b from off wraps to hunt; a walks through all nine
         Mapper w(cfg("off"));
         auto chord = [&](bool next) {
             Controls k; k.menu = true; w.step(k, 0.01);
@@ -418,10 +419,76 @@ int main(int argc, char** argv) {
             w.step(Controls{}, 0.01);
         };
         chord(false);
-        expect(w.input() == "map", "off: menu + b -> map");
+        expect(w.input() == "hunt", "off: menu + b -> hunt");
         std::string seen;
-        for (int i = 0; i < 8; ++i) { chord(true); seen += w.controls() + ","; }
-        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,mouse: move,tune,map,", ("cycle: " + seen).c_str());
+        for (int i = 0; i < 9; ++i) { chord(true); seen += w.controls() + ","; }
+        expect(seen == "off,gamepad,mouse: stick,mouse: motion,mouse: aim,mouse: move,tune,map,hunt,", ("cycle: " + seen).c_str());
+    }
+    {  // shader hunt (vrdual_hunt.hpp): every target found among 1..40 keys, in at most ceil(log2 n) steps
+        bool all = true;
+        int worst = 0;
+        for (int n = 1; n <= 40; ++n)
+            for (int tgt = 0; tgt < n; ++tgt) {
+                std::vector<std::string> list;
+                for (int i = 0; i < n; ++i) { char b[17]; snprintf(b, sizeof b, "%08x%08x", 0x1000u * (i + 1), i); list.push_back(b); }
+                Hunt h;
+                h.begin(list, 1);
+                uint32_t want = 0x1000u * (tgt + 1), a, b, m;
+                int steps = 0;
+                while (h.asking()) {
+                    h.range(a, b, m);
+                    if (h.phase != Hunt::Confirm) ++steps;
+                    h.answer(m == 1 && a <= want && want <= b ? Hunt::Yes : Hunt::No);
+                }
+                all &= h.phase == Hunt::Found && h.found() == list[tgt];
+                worst = std::max(worst, steps);
+            }
+        expect(all && worst <= 6, "hunt: every target among 1..40 keys found, at most 6 steps");
+        std::vector<std::string> list = {"00000001aaaaaaaa", "00000001bbbbbbbb", "00000002cccccccc", "00000003dddddddd", "00000004eeeeeeee"};
+        Hunt h;
+        h.begin(list, 2);
+        uint32_t a, b, m;
+        h.range(a, b, m);
+        bool ok = h.keys.size() == 4 && a == 1 && b == 2 && m == 2;      // duplicates of a 32-bit key are one candidate
+        h.answer(Hunt::Unsure);
+        h.range(a, b, m);
+        ok &= h.phase == Hunt::AskOther && a == 3 && b == 4;             // can't tell: the other half
+        h.on = false;
+        h.range(a, b, m);
+        ok &= m == 0;                                                     // toggled off: original picture
+        h.answer(Hunt::Yes);                                              // it is in the other half
+        ok &= h.on && h.lo == 2 && h.hi == 3;
+        h.answer(Hunt::Unsure);
+        h.answer(Hunt::Unsure);
+        ok &= h.phase == Hunt::Quit;
+        expect(ok, "hunt: duplicate key prefixes merged, can't tell tries the other half, toggle off applies nothing, twice can't tell stops");
+        h.begin({}, 1);
+        expect(h.phase == Hunt::NotFound, "hunt: no shaders -> not found");
+    }
+    {  // HuntUi: x picks the mode, a starts, a / b / x answer, y toggles, found: a saves
+        HuntUi u;
+        auto press = [&](int btn, bool menu = false) {
+            Controls c; c.menu = menu;
+            (btn == 0 ? c.a : btn == 1 ? c.b : btn == 2 ? c.x : c.y) = true;
+            int r = u.step(c);
+            u.step(Controls{});
+            return r;
+        };
+        press(2);
+        int r = press(0);
+        bool ok = u.mode == 2 && r == HUNT_START;
+        u.h.begin({"0000000100000000", "0000000200000000", "0000000300000000"}, u.mode);
+        ok &= press(3) == HUNT_CHANGED && !u.h.on && press(3) == HUNT_CHANGED && u.h.on;
+        ok &= press(0, true) == 0 && u.h.step == 1;                      // menu held: leaving, no answer
+        press(1);                                                          // no: [2, 2]
+        ok &= u.h.phase == Hunt::Confirm && u.h.lo == 2;
+        press(0);
+        ok &= u.h.phase == Hunt::Found && u.lines("game")[1].find("found: 0000000300000000 (noshift)") == 0;
+        ok &= press(0) == (HUNT_CHANGED | HUNT_SAVE) && u.h.phase == Hunt::Start;
+        expect(ok, "hunt ui: mode noshift, toggle, menu chords ignored, no -> confirm -> found -> a saves");
+        bool fit = true;
+        for (auto& l : u.lines("a game with a rather long name.exe")) fit &= l.size() <= 80;
+        expect(fit, "hunt ui: panel lines fit 80 columns");
     }
     {  // map editor: pick a button, right stick steps through the choices, left stick switches the mode
         MapEditor e;

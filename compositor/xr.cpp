@@ -58,6 +58,7 @@
 #include "../common/vrdual_frames.hpp"
 #include "../common/vrdual_version.h"
 #include "../common/vrdual_input.hpp"
+#include "../common/vrdual_hunt.hpp"
 
 static volatile sig_atomic_t g_quit = 0;
 static volatile sig_atomic_t g_user_quit = 0;  // Ctrl-C / --frames: no reconnect
@@ -377,9 +378,22 @@ static XrQuaternionf level(XrQuaternionf q) {
     return qmul({0, sinf(yaw / 2), 0, cosf(yaw / 2)}, {sinf(pitch / 2), 0, 0, cosf(pitch / 2)});
 }
 
+// Steam games read a copy of the config (vrdual install): refresh it after a write.
+static void config_copy_out(const char* tag) {
+    std::string path = vrdual::config_path();
+    const char* h = getenv("HOME");
+    for (const char* d : {"/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf", "/.local/share/vrdual/vrdual.conf"}) {
+        std::string c = std::string(h ? h : "") + d;
+        if (access(c.c_str(), F_OK) != 0) continue;
+        std::ifstream in(path, std::ios::binary);
+        std::ofstream out(c, std::ios::binary | std::ios::trunc);
+        out << in.rdbuf();
+        fprintf(stderr, "[xr] %s: copied to %s\n", tag, c.c_str());
+    }
+}
+
 // input = tune, a: keep world_scale / hud_depth / hfov (+ screen_fov for a
-// flat / curved screen) for this game. Steam games read a copy of the config
-// (vrdual install): refresh it too.
+// flat / curved screen) for this game.
 static void tune_save(const char* app, const vrdual::Tuner& t) {
     std::string sec = app[0] ? std::string("app:") + app : "global", path = vrdual::config_path();
     const char* keys[vrdual::Tuner::N] = {"world_scale", "hud_depth", "hfov", "screen_fov"};
@@ -393,15 +407,7 @@ static void tune_save(const char* app, const vrdual::Tuner& t) {
     if (!vrdual::save_keys(path, sec, kvs)) { fprintf(stderr, "[xr] tune: cannot write %s\n", path.c_str()); return; }
     fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g%s into [%s] of %s\n", v[0], v[1], v[2],
             t.screen ? (" screen_fov " + std::to_string(int(lroundf(v[3])))).c_str() : "", sec.c_str(), path.c_str());
-    const char* h = getenv("HOME");
-    for (const char* d : {"/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf", "/.local/share/vrdual/vrdual.conf"}) {
-        std::string c = std::string(h ? h : "") + d;
-        if (access(c.c_str(), F_OK) != 0) continue;
-        std::ifstream in(path, std::ios::binary);
-        std::ofstream out(c, std::ios::binary | std::ios::trunc);
-        out << in.rdbuf();
-        fprintf(stderr, "[xr] tune: copied to %s\n", c.c_str());
-    }
+    config_copy_out("tune");
 }
 
 // Surface the picture is shown on (config `screen`).
@@ -849,7 +855,10 @@ static int run(int argc, char** argv) {
     bool tune_on = false, tune_seeded = false;
     vrdual::MapEditor med;  // input = map: button maps edited in the headset
     bool map_on = false;
-    std::string map_lines[Overlay::kLines];
+    std::string map_lines[Overlay::kLines];  // the panel of input = map / hunt
+    vrdual::HuntUi hui;  // input = hunt: shader hunt with the controllers
+    bool hunt_on = false;
+    uint32_t hunt_sent[3] = {0, 0, 0};
     int control_changes = 0;  // mapper->changes already shown
     bool chord_hold = false;  // menu held with a / b pressed: a mode switch, not a recentre
     float hfov_now = 90;
@@ -1062,6 +1071,10 @@ static int run(int argc, char** argv) {
             tune_on = ic.input == "tune";
             map_on = ic.input == "map";
             med = vrdual::MapEditor{};
+            hunt_on = mapper && mapper->input() == "hunt";  // input_modes may have turned it off
+            hui = vrdual::HuntUi{};
+            hunt_sent[0] = hunt_sent[1] = hunt_sent[2] = 0;
+            if (hunt_on) fprintf(stderr, "[xr] hunt: a = start, x = mode; then a yes, b no, x can't tell, y group on / off\n");
             tune_seeded = false;
             if (tune_on) tune_help(scr.mode);
             if (scr.mode == SCREEN_FULL) fprintf(stderr, "[xr] screen: full (game FOV), scale %g x %g\n", scr.sx, scr.sy);
@@ -1169,6 +1182,37 @@ static int run(int argc, char** argv) {
                 map_lines[13] = "";
                 ov.until = vrdual::now_s() + 0.5;
             }
+            if (hunt_on && mapper) {
+                if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
+                std::string app = ctl ? vrdual::ctl_read(ctl).app : input_app;
+                int r = hui.step(c);
+                if (r & vrdual::HUNT_START) {
+                    std::string f = vrdual::shm_dir() + "/vrdual-" + session + "-shaders";
+                    hui.h.begin(vrdual::shader_list(f), hui.mode);
+                    fprintf(stderr, "[xr] hunt: %zu shader keys from %s, mode %s\n", hui.h.keys.size(), f.c_str(), vrdual::kHuntModes[hui.mode]);
+                }
+                if (r & vrdual::HUNT_CHANGED) fprintf(stderr, "[xr] hunt: %s%s\n", hui.h.asking() ? hui.h.status().c_str() : hui.lines(app)[1].c_str(),
+                                                      hui.h.asking() && !hui.h.on ? " [group off]" : "");
+                if (r & vrdual::HUNT_SAVE) {
+                    std::string val = app.empty() ? "" : vrdual::add_shader_rule(app, hui.h.found(), vrdual::kHuntModes[hui.h.mode]);
+                    if (val.empty()) hui.note = "cannot save the rule (" + vrdual::config_path() + ")";
+                    else {
+                        hui.note = "saved: [app:" + app + "] shader_rules = " + val;
+                        fprintf(stderr, "[xr] hunt: %s\n", hui.note.c_str());
+                        config_copy_out("hunt");
+                        if (hui.note.size() > 80) hui.note = hui.note.substr(0, 79) + "~";
+                    }
+                }
+                uint32_t h[3];
+                hui.h.range(h[0], h[1], h[2]);
+                if (ctl && memcmp(h, hunt_sent, sizeof h)) {
+                    vrdual::ctl_write(ctl, [&](vrdual_ctl& k) { k.hunt_lo = h[0]; k.hunt_hi = h[1]; k.hunt_mode = h[2]; });
+                    memcpy(hunt_sent, h, sizeof h);
+                }
+                auto ls = hui.lines(app);
+                for (int l = 0; l < Overlay::kLines; ++l) map_lines[l] = l < int(ls.size()) ? ls[l] : "";
+                ov.until = vrdual::now_s() + 0.5;
+            }
             if (mapper && t_now - cfg_checked >= 1) {
                 cfg_checked = t_now;
                 if (int64_t m = cfg_mtime(); m != cfg_seen) {
@@ -1198,7 +1242,7 @@ static int run(int argc, char** argv) {
             if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && mapper->changes != control_changes) {
                 control_changes = mapper->changes;
-                if (mapper->input() != "map" &&  // an editing mode, not one to start a game in
+                if (mapper->input() != "map" && mapper->input() != "hunt" &&  // editing modes, not ones to start a game in
                     !vrdual::input_last_save(input_app, mapper->input(), mapper->mouse_mode()))
                     fprintf(stderr, "[xr] could not save the control mode to %s\n", vrdual::input_last_path().c_str());
                 bool t = mapper->input() == "tune";
@@ -1215,6 +1259,16 @@ static int run(int argc, char** argv) {
                     fprintf(stderr, "[xr] map: buttons pick, right stick up / down = code, left stick = gamepad / mouse maps, saved into [app:%s]\n", input_app.c_str());
                 }
                 map_on = mapper->input() == "map";
+                if (mapper->input() == "hunt" && !hunt_on) {
+                    hui = vrdual::HuntUi{};
+                    fprintf(stderr, "[xr] hunt: a = start, x = mode; then a yes, b no, x can't tell, y group on / off\n");
+                }
+                if (hunt_on && mapper->input() != "hunt" && ctl && hunt_sent[2]) {  // leaving: the picture as it was
+                    vrdual::ctl_write(ctl, [](vrdual_ctl& k) { k.hunt_mode = 0; });
+                    hunt_sent[2] = 0;
+                    fprintf(stderr, "[xr] hunt: left, nothing applied\n");
+                }
+                hunt_on = mapper->input() == "hunt";
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
             }
             bool rot = icfg.head_look == "clip";
@@ -1487,7 +1541,7 @@ static int run(int argc, char** argv) {
             // visible: event + current settings; expired: one transparent image
             // (WiVRn keeps showing the last frame when nothing else is sent)
             for (auto& t : ov.text) t.clear();
-            if (map_on && mapper) {
+            if ((map_on || hunt_on) && mapper) {
                 for (int l = 0; l < Overlay::kLines; ++l) ov.text[l] = map_lines[l];
             } else if (ov.until > vrdual::now_s()) {
                 vrdual_ctl k{};

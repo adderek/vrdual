@@ -79,7 +79,9 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
       session, the game's config files (prefix = the player's settings,
       install dir) and mod hints. Left: native games, writing the entry into
       `site/games.json` and rendering it, the first real records.
-20. Shader hunt in the headset (owner's request 2026-11-02): `_ hunt find`
+20. Shader hunt in the headset (owner's request 2026-11-02): done
+    2026-11-02 as control mode `hunt` (docs/CONFIG.md `input`); left: try it
+    in the Quest. Original request: `_ hunt find`
     driven by the controllers in `vrdual-xr`, no terminal. Each step asks
     in the overlay "did exactly the artefact we hunt disappear?" (note:
     other things may appear or vanish too, judge only that one) with yes /

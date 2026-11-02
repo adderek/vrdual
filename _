@@ -306,9 +306,10 @@ config_sync() {
 }
 
 # Shader hunt (docs/tasks/shader-rules.md). `hunt [off | MODE LO HI]` and
-# `hunt shaders` go straight to vrdual-ctl; `hunt find [MODE]` (needs a
-# terminal) bisects over the session's vertex shader keys: half of them get
-# MODE (default hide), you answer whether the thing you look for changed.
+# `hunt shaders` go straight to vrdual-ctl; `hunt find [MODE]` bisects over
+# the session's vertex shader keys: half of them get MODE (default hide), you
+# answer whether the thing you look for changed (vrdual-ctl hunt find; in
+# the headset: controls = hunt in vrdual-xr).
 vrdual_hunt() {
     pick_shm "$@"
     local -a ses=()
@@ -321,54 +322,11 @@ vrdual_hunt() {
         find) ;;
         *) "$B/vrdual-ctl" hunt "$@"; return ;;
     esac
-    [[ -t 0 ]] || { say "hunt find asks questions: run it in a terminal"; return 2; }
     local mode=hide
     case ${2:-} in hide|noshift|hud) mode=$2 ;; esac
-    local -a k
-    mapfile -t k < <("$B/vrdual-ctl" "${ses[@]}" shaders | cut -c1-8 | uniq) || true
-    (( ${#k[@]} )) || { say "no shaders recorded for this session (is the game running with the layer?)"; return 1; }
-    local what
-    case $mode in hide) what="not drawn" ;; noshift) what="not shifted per eye" ;; hud) what="at hud_depth" ;; esac
-    say "hunt: ${#k[@]} vertex shaders. Watch ONE thing (an artefact, a HUD element) in the HMD or 'vrdual view'."
-    say "Each step makes part of the shaders $what ($mode) and asks whether your thing changed: the answers"
-    say "narrow down which shader draws it. The rest of the picture may look broken meanwhile (many shaders"
-    say "changed at once); ignore that. Picture too broken to judge: answer ? (tries the other half)."
-    local lo=0 hi=$(( ${#k[@]} - 1 )) mid ans step=0 off
-    local q="your thing: changed/gone (y), as before (n), can't tell (?), quit (q): "
-    while (( lo < hi )); do
-        mid=$(( (lo + hi) / 2 )) step=$(( step + 1 ))
-        "$B/vrdual-ctl" "${ses[@]}" hunt "$mode" "${k[lo]}" "${k[mid]}" >/dev/null || return 1
-        read -r -p "[$step] $(( mid - lo + 1 )) of $(( hi - lo + 1 )) candidates $mode; $q" ans
-        off=0
-        if [[ $ans == "?"* ]]; then  # e.g. the picture went black: try the other half
-            "$B/vrdual-ctl" "${ses[@]}" hunt "$mode" "${k[mid + 1]}" "${k[hi]}" >/dev/null || return 1
-            read -r -p "[$step] the other $(( hi - mid )) candidates $mode instead; $q" ans
-            off=1
-        fi
-        case $ans in
-            y*) if (( off )); then lo=$(( mid + 1 )); else hi=$mid; fi ;;
-            n*) if (( off )); then hi=$mid; else lo=$(( mid + 1 )); fi ;;
-            *) "$B/vrdual-ctl" "${ses[@]}" hunt off >/dev/null
-               [[ $ans == "?"* ]] && say "cannot tell either way: try another mode (noshift keeps the picture visible)"
-               return 1 ;;
-        esac
-    done
-    "$B/vrdual-ctl" "${ses[@]}" hunt "$mode" "${k[lo]}" "${k[lo]}" >/dev/null
-    local full app
-    full=$("$B/vrdual-ctl" "${ses[@]}" shaders | grep "^${k[lo]}" | head -1)
-    app=$("$B/vrdual-ctl" "${ses[@]}" live | sed -n 's/^app //p')
-    read -r -p "only shader $full is $mode now. Your thing still changed/gone? [y/n] " ans
-    "$B/vrdual-ctl" "${ses[@]}" hunt off >/dev/null
-    [[ $ans == y* ]] || { say "not found (it may take several shaders together: run hunt find again, or another mode)"; return 1; }
-    echo "$full"
-    ans=""
-    while [[ $ans != [sd]* ]]; do read -r -p "rule $full:$mode for [app:$app]: (s)ave / (d)on't save: " ans || return 1; done
-    if [[ $ans == s* ]]; then
-        "$B/vrdual-ctl" "${ses[@]}" rule "$full" "$mode" >/dev/null && config_sync || return 1
-    else
-        say "not saved; later: vrdual hunt rule $full $mode"
-    fi
-    return 0
+    # one bisection for the terminal and the headset (vrdual-xr input = hunt): common/vrdual_hunt.hpp
+    "$B/vrdual-ctl" "${ses[@]}" hunt find "$mode" || return
+    config_sync
 }
 
 # ------------------------------------------------------------ steam / HMD --
@@ -1061,6 +1019,23 @@ EOF
     label="hunt hide: all shaders hidden live"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hh.png' && (( \$(convert '$tmp/hh.png' -unique-colors -format %w info:) <= 2 ))"
     "$B/vrdual-ctl" --session $sess hunt off >/dev/null
+    # hunt find, the oracle is the picture: with the cube's shader hidden only
+    # the background is left. 5 fake keys make it a real bisection.
+    label="hunt find (vrdual-ctl, answers on stdin): picture as the oracle, 6 keys -> the cube's shader, rule saved, hunt off"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; f=/dev/shm/vrdual-$sess-shaders; k=\$('$B/spvpatch' --hash '$tmp/glsl.spv'); cp \$f '$tmp/shaders.bak'
+        for x in 10 30 50 a0 c0; do printf '%s00000000000000\\n' \$x >>\$f; done
+        export VRDUAL_CONFIG='$tmp/hunt.conf'; : >\$VRDUAL_CONFIG; found=''
+        coproc H { '$B/vrdual-ctl' --session $sess hunt find hide 2>&1; }; p=\$H_PID
+        while IFS= read -r l <&\${H[0]}; do
+            case \$l in
+                *'quit (q)') snap '$tmp/hf.png'; (( \$(convert '$tmp/hf.png' -unique-colors -format %w info:) <= 2 )) && a=y || a=n; echo \"\$l -> \$a\" >&2; echo \$a >&\${H[1]} ;;
+                'rule '*) echo s >&\${H[1]} ;;
+                *) [[ \$l =~ ^[0-9a-f]{16}\$ ]] && found=\$l ;;
+            esac
+        done 2>'$tmp/hf.log'
+        wait \$p; rc=\$?; cp '$tmp/shaders.bak' \$f
+        [[ \$rc == 0 && \$found == \$k ]] && grep -qx \"shader_rules = \$k:hide\" \$VRDUAL_CONFIG &&
+            '$B/vrdual-ctl' --session $sess hunt | grep -q '^hunt off' || { echo rc=\$rc found=\$found k=\$k; cat '$tmp/hf.log' \$VRDUAL_CONFIG; false; }"
     label="hunt off: posts back, ipd 64mm"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/ho.png' && $M '$tmp/ho.png' --ipd 0.064 --anchor center"
     label="config init: built-in button maps listed commented, both modes"
@@ -1517,6 +1492,13 @@ sys.exit(0 if max(d[i + 150 * w * 4: i + 151 * w * 4][3::4]) == 0 else 1)' '$tmp
         label="openxr: input_modes = none turns a configured gamepad off (controllers do nothing)"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_INPUT=gamepad VRDUAL_INPUT_MODES=none timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr-none.log' 2>&1;
             grep -q 'gamepad not in input_modes (none): off' '$tmp/xr-none.log' && ! grep -q 'virtual device' '$tmp/xr-none.log' || { grep '\\[\\(xr\\|input\\)\\]' '$tmp/xr-none.log' | tail; false; }"
+        label="openxr: input = hunt shows the hunt panel (start screen), the game gets no input"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_INPUT=hunt VRDUAL_XR_OVERLAY_DUMP='$tmp/ovhunt.pam' timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr-hunt.log' 2>&1;
+            grep -q \"app 'vrdual-cube': input=hunt\" '$tmp/xr-hunt.log' && python3 -I -c '
+import sys  # 5-line panel (40 px a line): 210 px high, deeper than the 4-line notice (170)
+d = open(sys.argv[1], \"rb\").read(); i = d.index(b\"ENDHDR\\n\") + 7; w = 1408
+row = lambda y: d[i + y * w * 4: i + (y + 1) * w * 4]
+sys.exit(0 if max(row(200)[3::4]) > 0 and max(row(300)[3::4]) == 0 else 1)' '$tmp/ovhunt.pam' || { grep '\\[xr\\]' '$tmp/xr-hunt.log' | tail; false; }"
         label="openxr: input = map shows the button list (14-line panel)"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_INPUT=map VRDUAL_XR_OVERLAY_DUMP='$tmp/ovmap.pam' timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr-mapui.log' 2>&1;
             grep -q \"app 'vrdual-cube': input=map\" '$tmp/xr-mapui.log' && python3 -I -c '
@@ -1684,7 +1666,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   shaders new LOG [CATALOG]     shaders a game met that are not in its shader_catalog (from the
                                   layer log) as catalog lines; with CATALOG, appended there
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
-  hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions);
+  hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions;
+                                  in the headset: controls = hunt, menu + a / b);
                                   hunt MODE LO HI | off sets a key range, hunt shaders lists keys,
                                   hunt rule KEY MODE saves a rule for the running game;
                                   found keys go into shader_rules (docs/tasks/shader-rules.md)

@@ -30,7 +30,7 @@
 // map edits them in the headset (MapEditor). In mouse mode the menu button
 // (unmapped) cycles mouse_mode; held 1 s it re-centres head_look=edge.
 // Menu held + a / b: next / previous control mode (off, gamepad, mouse stick,
-// motion, aim, move, tune, map), in every mode; so menu's own code (gamepad: Start) is
+// motion, aim, move, tune, map, hunt), in every mode; so menu's own code (gamepad: Start) is
 // sent as a tap when it is released without a chord and before 1 s.
 //
 // Mapper is pure (state in, events out) so it can be tested without devices;
@@ -514,7 +514,8 @@ inline float wrap180(float a) {
 }
 
 // input_modes -> allowed cycle positions (bit = kCycle index; off always).
-static const char* const kCycle[] = {"off", "gamepad", "stick", "motion", "aim", "move", "tune", "map"};
+static const char* const kCycle[] = {"off", "gamepad", "stick", "motion", "aim", "move", "tune", "map", "hunt"};
+constexpr int kCycleN = 9;
 inline unsigned mode_mask(const std::string& s, std::string* bad = nullptr) {
     unsigned m = 1;
     std::string w;
@@ -523,13 +524,13 @@ inline unsigned mode_mask(const std::string& s, std::string* bad = nullptr) {
         for (char& ch : w) if (ch == ',') ch = ' ';
         std::stringstream parts(w);
         for (std::string p; parts >> p;) {
-            if (p == "all") m |= 0xff;
+            if (p == "all") m |= (1u << kCycleN) - 1;
             else if (p == "none" || p == "off") {}
             else if (p == "mouse") m |= 0x3c;
             else {
                 int i = 1;
-                while (i < 8 && p != kCycle[i]) ++i;
-                if (i < 8) m |= 1u << i;
+                while (i < kCycleN && p != kCycle[i]) ++i;
+                if (i < kCycleN) m |= 1u << i;
                 else if (bad) *bad += (bad->empty() ? "" : " ") + p;
             }
         }
@@ -549,7 +550,7 @@ public:
             int q = 0;
             if (p >= 2 && p <= 5)
                 for (int i = 2; i <= 5 && !q; ++i) if (allowed_ & (1u << i)) q = i;
-            for (int i = 1; i < 8 && !q; ++i) if (allowed_ & (1u << i)) q = i;
+            for (int i = 1; i < kCycleN && !q; ++i) if (allowed_ & (1u << i)) q = i;
             fprintf(stderr, "[input] %s not in input_modes (%s): %s\n", kCycle[p], cfg_.modes.c_str(), kCycle[q]);
             set_pos(q);
         }
@@ -637,21 +638,23 @@ public:
 private:
     InputCfg cfg_;
     int mode_ = 0;
-    unsigned allowed_ = 0xff;  // kCycle positions menu + a / b may reach
+    unsigned allowed_ = (1u << kCycleN) - 1;  // kCycle positions menu + a / b may reach
     bool swallow_[B_COUNT] = {};  // pressed as part of a chord: its release is not the game's either
     bool chord_ = false;          // a chord happened during this menu hold
     int menu_up_ = 0;             // menu tap: code to release on the next step
 
     // Next (+1) / previous (-1) control mode. Releases whatever the old mode
     // holds down (keys, buttons, pad axes) so nothing sticks.
-    int pos() const { return cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 6 : cfg_.input == "map" ? 7 : 0; }
+    int pos() const {
+        return cfg_.input == "gamepad" ? 1 : cfg_.input == "mouse" ? 2 + mode_ : cfg_.input == "tune" ? 6 : cfg_.input == "map" ? 7 : cfg_.input == "hunt" ? 8 : 0;
+    }
     void set_pos(int p) {
-        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "mouse", "tune", "map"};
+        static const char* const kIn[] = {"off", "gamepad", "mouse", "mouse", "mouse", "mouse", "tune", "map", "hunt"};
         cfg_.input = kIn[p];
         if (p >= 2 && p <= 5) mode_ = p - 2;
     }
     void cycle(int dir, std::vector<InEvent>& ev) {
-        const int n = 8;
+        const int n = kCycleN;
         int pos = this->pos(), to = pos;
         do to = (to + dir + n) % n; while (!(allowed_ & (1u << to)));
         if (to == pos) return;  // nothing else allowed

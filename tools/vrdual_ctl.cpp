@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <set>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@
 #include "../common/vrdual_version.h"
 #include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_input.hpp"
+#include "../common/vrdual_hunt.hpp"
 
 using namespace vrdual;
 
@@ -33,7 +35,7 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 static int usage() {
     fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | profiles [DIR] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
                     "                  | live | set KEY VALUE | save [--global]   [--session S]\n"
-                    "                  | shaders | hunt [off | hide|noshift|hud LO HI]   (LO, HI: 8 hex digits, inclusive)\n"
+                    "                  | shaders | hunt [off | hide|noshift|hud LO HI | find [MODE]]   (LO, HI: 8 hex digits, inclusive)\n"
                     "                  | rule KEY noshift|hud|hide   (adds to shader_rules in the session's [app:NAME])\n");
     return 2;
 }
@@ -189,6 +191,52 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (cmd == "hunt" && args.size() >= 2 && args[1] == "find") {
+        // Bisection (vrdual_hunt.hpp) answered on stdin, one line per question
+        // (y yes, n no, ? can't tell, t group on / off, q quit); questions on
+        // stderr. Found: its key on stdout, then s saves the rule, d doesn't.
+        int m = 1;
+        if (args.size() == 3) for (int k = 1; k < 4; ++k) if (args[2] == kHuntModes[k]) m = k;
+        if (args.size() > 3 || (args.size() == 3 && !(args[2] == "hide" || args[2] == "noshift" || args[2] == "hud"))) return usage();
+        Hunt h;
+        h.begin(shader_list(shm_dir() + "/vrdual-" + session + "-shaders"), m);
+        auto apply = [&] {
+            uint32_t a, b, md;
+            h.range(a, b, md);
+            ctl_write(c, [&](vrdual_ctl& x) { x.hunt_lo = a; x.hunt_hi = b; x.hunt_mode = md; });
+        };
+        if (h.asking())
+            fprintf(stderr, "hunt: %zu vertex shaders. Watch ONE thing (an artefact, a HUD element) in the HMD or 'vrdual view'.\n"
+                            "Each step changes part of them (%s) and asks whether exactly your thing changed / disappeared;\n"
+                            "other things may change too: ignore them. Too broken to judge: ? (tries the other half).\n",
+                    h.keys.size(), kHuntModes[m]);
+        std::string ans;
+        while (h.asking()) {
+            apply();
+            fprintf(stderr, "%s%s; %s: yes (y), no (n), can't tell (?), group on/off (t), quit (q)\n", h.status().c_str(),
+                    h.on ? "" : " [group off]", h.phase == Hunt::Confirm ? "your thing still gone/changed" : "your thing changed/gone");
+            if (!std::getline(std::cin, ans)) ans = "q";
+            char a = ans.empty() ? ' ' : ans[0];
+            if (a == 't') h.on = !h.on;
+            else if (a == 'y' || a == 'n' || a == '?' || a == 'q') h.answer(a == 'y' ? Hunt::Yes : a == 'n' ? Hunt::No : a == '?' ? Hunt::Unsure : Hunt::Abort);
+        }
+        apply();  // off
+        if (h.phase != Hunt::Found) { fprintf(stderr, "%s\n", h.why.c_str()); return 1; }
+        printf("%s\n", h.found().c_str());
+        fflush(stdout);
+        vrdual_ctl v = ctl_read(c);
+        for (;;) {
+            fprintf(stderr, "rule %s:%s for [app:%s]: save (s) / don't save (d)\n", h.found().c_str(), kHuntModes[m], v.app);
+            if (!std::getline(std::cin, ans)) ans = "d";
+            if (!ans.empty() && (ans[0] == 's' || ans[0] == 'd')) break;
+        }
+        if (ans[0] == 'd') { fprintf(stderr, "not saved; later: vrdual hunt rule %s %s\n", h.found().c_str(), kHuntModes[m]); return 0; }
+        std::string val = v.app[0] ? add_shader_rule(v.app, h.found(), kHuntModes[m]) : "";
+        if (val.empty()) { fprintf(stderr, "cannot save the rule (%s)\n", v.app[0] ? config_path().c_str() : "session has no app name"); return 1; }
+        fprintf(stderr, "[app:%s] shader_rules = %s (applies at the next game start)\n", v.app, val.c_str());
+        return 0;
+    }
+
     if (cmd == "hunt") {  // docs/tasks/shader-rules.md
         static const char* const modes[] = {"off", "hide", "noshift", "hud"};
         if (args.size() == 2 && args[1] == "off") ctl_write(c, [](vrdual_ctl& x) { x.hunt_mode = 0; });
@@ -212,11 +260,8 @@ int main(int argc, char** argv) {
         if (k.size() < 8 || k.size() > 16 || k.find_first_not_of("0123456789abcdef") != std::string::npos) return usage();
         vrdual_ctl v = ctl_read(c);
         if (!v.app[0]) { fprintf(stderr, "session has no app name\n"); return 1; }
-        std::string sec = std::string("app:") + v.app, cur;
-        Ini ini = parse_ini(config_path());
-        if (ini.count(lower(sec)) && ini[lower(sec)].count("shader_rules")) cur = ini[lower(sec)]["shader_rules"];
-        std::string val = cur.empty() ? k + ":" + args[2] : cur + ", " + k + ":" + args[2];
-        if (!save_key(config_path(), sec, "shader_rules", val)) { fprintf(stderr, "cannot write %s\n", config_path().c_str()); return 1; }
+        std::string sec = std::string("app:") + v.app, val = add_shader_rule(v.app, k, args[2]);
+        if (val.empty()) { fprintf(stderr, "cannot write %s\n", config_path().c_str()); return 1; }
         fprintf(stderr, "[%s] shader_rules = %s (applies at the next game start)\n", sec.c_str(), val.c_str());
         printf("%s\n", val.c_str());
         return 0;

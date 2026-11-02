@@ -55,14 +55,14 @@ $(B)/vrdual-gltest: testapp/gltest.cpp | $(B)
 $(B)/vrdual-compositor: compositor/main.cpp common/vrdual_shm.h common/vrdual_ctl.hpp common/vrdual_frames.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $< $(SDL) -lrt
 
-$(B)/vrdual-xr: compositor/xr.cpp common/vrdual_frames.hpp common/vrdual_ctl.hpp common/vrdual_input.hpp $(B)/input_names.hpp | $(B)
+$(B)/vrdual-xr: compositor/xr.cpp common/vrdual_hunt.hpp common/vrdual_frames.hpp common/vrdual_ctl.hpp common/vrdual_input.hpp $(B)/input_names.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -Ithird_party/OpenXR-SDK/include -o $@ $< -lvulkan -ldl
 
 # KEY_*/BTN_* names for map_<button> = ... (values resolved by the compiler).
 $(B)/input_names.hpp: /usr/include/linux/input-event-codes.h | $(B)
 	awk '/^#define (KEY|BTN)_[A-Z0-9_]+[ \t]/ && $$2 != "KEY_MAX" && $$2 != "KEY_CNT" {print "{\"" $$2 "\", " $$2 "},"}' $< > $@
 
-$(B)/vrdual-input-test: tools/input_test.cpp common/vrdual_input.hpp common/vrdual_frames.hpp common/vrdual_config.hpp $(B)/input_names.hpp | $(B)
+$(B)/vrdual-input-test: tools/input_test.cpp common/vrdual_hunt.hpp common/vrdual_ctl.hpp common/vrdual_input.hpp common/vrdual_frames.hpp common/vrdual_config.hpp $(B)/input_names.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -o $@ $<
 
 $(B)/spvpatch: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
@@ -78,7 +78,7 @@ $(B)/vrdual-frames-test: tools/frames_test.cpp common/vrdual_frames.hpp common/v
 $(B)/vrdual-calib-test: tools/calib_test.cpp common/vrdual_calib.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<
 
-$(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_config.hpp common/vrdual_ctl.hpp common/vrdual_shm.h common/vrdual_input.hpp $(B)/input_names.hpp | $(B)
+$(B)/vrdual-ctl: tools/vrdual_ctl.cpp common/vrdual_hunt.hpp common/vrdual_config.hpp common/vrdual_ctl.hpp common/vrdual_shm.h common/vrdual_input.hpp $(B)/input_names.hpp | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -I$(B) -o $@ $< -lrt
 
 # keeps build/monado (selftest's OpenXR runtime, built separately)
