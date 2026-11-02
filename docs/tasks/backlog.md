@@ -74,7 +74,11 @@
   shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
   so hiding the shader that resolves shadows would hide the terrain too.
   1. Done 2026-11-02: `hunt_fragment = 1` lists FS keys, hunt `hide` on an
-     FS discards (selftest 3c'f). Try in Civ V: unit shadows.
+     FS discards (selftest 3c'f). Civ V 2026-11-02: found
+     `a27db010721f21a6` three times in a row. The half holding the final
+     full-screen pass blacks the whole picture (the owner bisected by hand;
+     `x` = can't tell applies the other half). Idea: leave the shaders drawn
+     into the swapchain out of the first steps, or hide them last.
   2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
      offline) loaded instead of the game's module, 3Dmigoto ShaderFixes
      style (MODDING.md "Shaders"). Zink hashes depend on the Mesa version:

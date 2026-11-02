@@ -1280,11 +1280,12 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     # both eyes render the same picture.
     rm -f /dev/shm/vrdual-$sess-*
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
-        VRDUAL_SHADER_RULES="$("$B/spvpatch" --hash "$tmp/glsl.spv" | cut -c1-10):noshift" \
+        VRDUAL_SHADER_RULES="$("$B/spvpatch" --hash "$tmp/glsl.spv" | cut -c1-10):noshift" VRDUAL_SHADER_DUMP="$tmp/rdump" \
         "$B/vrdual-cube" --scene calib --title "selftest shader rules" >"$tmp/sr.log" 2>&1 &
     for i in $(seq 100); do grep -q 'exporting' "$tmp/sr.log" 2>/dev/null && break; sleep 0.1; done
-    label="shader_rules noshift: rule logged, both eyes equal"
+    label="shader_rules noshift: rule logged, ruled shader dumped as KEY.spv (shader_dump), both eyes equal"
     check bash -c "grep -q 'rule noshift' '$tmp/sr.log' || { cat '$tmp/sr.log'; exit 1; }
+        k=\$('$B/spvpatch' --hash '$tmp/glsl.spv'); [[ \$('$B/spvpatch' --hash '$tmp/rdump/'\$k.spv) == \$k ]] || { ls '$tmp/rdump'; exit 1; }
         for i in \$(seq 100); do a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-0 2>/dev/null) b=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-1 2>/dev/null)
             [[ -n \$a && \${a#* } == \${b#* } ]] && exit 0; sleep 0.1; done; echo \"\$a / \$b\"; false"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
@@ -1304,6 +1305,15 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     "$B/vrdual-ctl" --session $sess hunt off >/dev/null
     label="hunt_fragment: hunt off, posts back, ipd 64mm"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hfr2.png' && $M '$tmp/hfr2.png' --ipd 0.064 --anchor center"
+    kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
+    # a hide rule on the fragment key, without hunt_fragment: discarded always
+    rm -f /dev/shm/vrdual-$sess-*
+    env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_SHADER_RULES="$fk:hide" \
+        "$B/vrdual-cube" --scene calib --title "selftest fragment rule" >"$tmp/hfr3.log" 2>&1 &
+    for i in $(seq 100); do grep -q 'exporting' "$tmp/hfr3.log" 2>/dev/null && break; sleep 0.1; done
+    label="shader_rules hide on a fragment key: logged as fragment shader, both eyes background only"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; grep -q 'shader $fk: fragment shader' '$tmp/hfr3.log' && snap '$tmp/hfr3.png' &&
+        (( \$(convert '$tmp/hfr3.png' -unique-colors -format %w info:) <= 2 )) || { tail -5 '$tmp/hfr3.log'; false; }"
     kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
 
     # 3c''. hud_depth_scope = rules: without a hud rule the HUD (w == 1) stays

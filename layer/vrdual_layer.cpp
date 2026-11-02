@@ -1116,6 +1116,24 @@ static void catalog_note(uint64_t h, const char* state) {
     logf("shader %016llx: not in catalog (%s)", (unsigned long long)h, state);
 }
 
+// shader_dump: the module as the app passed it, DIR/KEY.spv (O_EXCL: once
+// per key); "" without shader_dump, else the path plus a note on failure.
+static std::string dump_shader(uint64_t h, const VkShaderModuleCreateInfo* ci) {
+    if (g_cfg.shader_dump.empty()) return "";
+    char name[32];
+    snprintf(name, sizeof name, "/%016llx.spv", (unsigned long long)h);
+    std::string f = g_cfg.shader_dump + name;
+    mkdir(g_cfg.shader_dump.c_str(), 0755);  // EEXIST is fine
+    int fd = open(f.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+    if (fd >= 0) {
+        if (write(fd, ci->pCode, ci->codeSize) != ssize_t(ci->codeSize)) f += " (short write)";
+        close(fd);
+    } else {
+        f += errno == EEXIST ? " (exists)" : " (cannot write)";
+    }
+    return f;
+}
+
 static int rule_for(uint64_t h) {
     char hex[17];
     snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
@@ -1129,6 +1147,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     if (ep.eye < 0 || !g_cfg.ctl) return false;
     uint64_t h = spv::shader_hash(ci->pCode, ci->codeSize / 4);
     int rule = rule_for(h);
+    if (rule && !g_cfg.shader_dump.empty()) logf("shader %016llx (ruled) dumped to %s", (unsigned long long)h, dump_shader(h, ci).c_str());
     spv::PatchOptions o;
     o.skip_w1 = g_cfg.skip_w1;
     o.w1_hud = !g_cfg.hud_rules_only;
@@ -1143,6 +1162,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
         f.addr = ep.params ? ep.addr : 0;
         spv::PatchResult fr = spv::patch_fragment(code, f);
         if (fr.patched) {
+            if (rule) logf("shader %016llx: fragment shader", (unsigned long long)h);
             ep.frag++;
             if (rule) ep.ruled++;
             note_shader(h, rule);
@@ -1167,20 +1187,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     if (!pr.patched) {
         ep.skipped++;
         if (pr.why != spv::kNoEntry) {
-            std::string f;
-            if (!g_cfg.shader_dump.empty()) {  // O_EXCL: once per key
-                char name[32];
-                snprintf(name, sizeof name, "/%016llx.spv", (unsigned long long)h);
-                f = g_cfg.shader_dump + name;
-                mkdir(g_cfg.shader_dump.c_str(), 0755);  // EEXIST is fine
-                int fd = open(f.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
-                if (fd >= 0) {
-                    if (write(fd, ci->pCode, ci->codeSize) != ssize_t(ci->codeSize)) f += " (short write)";
-                    close(fd);
-                } else {
-                    f += errno == EEXIST ? " (exists)" : " (cannot write)";
-                }
-            }
+            std::string f = dump_shader(h, ci);
             logf("shader module not patched: %s%s%s", pr.why.c_str(), f.empty() ? "" : ", dumped to ", f.c_str());
             catalog_note(h, ("not patched: " + pr.why).c_str());
         }
