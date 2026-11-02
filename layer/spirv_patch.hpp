@@ -32,9 +32,9 @@
 // w == 1 treatment, `hide` stores (0,0,0,0) (nothing drawn). Live mode also
 // reads a uvec4 (lo, hi, mode, 0) at addr+32 and, if lo <= key <= hi (key =
 // high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift | 3 hud
-// at runtime: the hunt for a shader's key. Then 8 uvec4 at addr+96: up to 32
-// keys the layer found drawn only in off-screen passes (auto_noshift); a shader
-// whose key is among them is not shifted (0 = empty entry; key 0 never checks).
+// at runtime: the hunt for a shader's key. A uint at addr+96 (auto_noshift)
+// is set by the layer before each render pass: non-zero = an off-screen pass
+// (shadow map, baked texture), drawn unshifted.
 //
 // Gate: the result is selected against the original by a specialization
 // constant (SpecId kGateSpecId, default true). A pipeline with TES or GS sets
@@ -56,7 +56,7 @@ enum : uint32_t {
     OpFunction = 54, OpFunctionEnd = 56, OpVariable = 59, OpLoad = 61, OpStore = 62,
     OpAccessChain = 65, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeExtract = 81,
     OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133, OpFDiv = 136,
-    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalOr = 166, OpLogicalAnd = 167, OpIEqual = 170,
+    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalOr = 166, OpLogicalAnd = 167, OpIEqual = 170, OpINotEqual = 171,
     OpUGreaterThanEqual = 174, OpULessThanEqual = 178,
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253, OpEmitVertex = 218, OpEmitStreamVertex = 220,
     OpSpecConstantTrue = 48, OpDecorateId = 332, OpDecorateString = 5632, OpMemberDecorateString = 5633,
@@ -255,7 +255,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
-    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_tab[8] = {};
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_flag = 0, c_u0 = 0;
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -283,12 +283,12 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             c_rot[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_rot[k], rl, rh});
         }
         for (uint32_t k = 1; k < 4; ++k) { c_m[k] = fresh(); emit(globals, OpConstant, {t_uint, c_m[k], k}); }
-        for (int k = 0; o.key && k < 8; ++k) {  // auto_noshift key table
-            uint64_t a = o.addr + 96 + 16 * k;
-            uint32_t tl = fresh(), th = fresh();
-            emit(globals, OpConstant, {t_uint, tl, uint32_t(a)});
-            emit(globals, OpConstant, {t_uint, th, uint32_t(a >> 32)});
-            c_tab[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_tab[k], tl, th});
+        {  // auto_noshift pass flag
+            uint32_t fl = fresh(), fh = fresh();
+            emit(globals, OpConstant, {t_uint, fl, uint32_t(o.addr + 96)});
+            emit(globals, OpConstant, {t_uint, fh, uint32_t((o.addr + 96) >> 32)});
+            c_flag = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_flag, fl, fh});
+            c_u0 = fresh(); emit(globals, OpConstant, {t_uint, c_u0, 0});
         }
     } else {
         uint32_t c[4];
@@ -456,21 +456,13 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 uint32_t vh = fresh();
                 emit(out, OpCompositeInsert, {t_vec4, vh, xh, v, 0});
                 uint32_t res = v2;
-                if (o.key) {  // auto_noshift: own key in the table -> unshifted (the hunt below still applies)
-                    uint32_t any = 0;
-                    for (int k = 0; k < 8; ++k) {
-                        uint32_t tq = fresh(), tv = fresh();
-                        emit(out, OpBitcast, {p_psb4, tq, c_tab[k]});
-                        emit(out, OpLoad, {t_uvec4, tv, tq, MemAccessAligned, 16});
-                        for (uint32_t j = 0; j < 4; ++j) {
-                            uint32_t e = fresh(), eq = fresh();
-                            emit(out, OpCompositeExtract, {t_uint, e, tv, j});
-                            emit(out, OpIEqual, {t_bool, eq, e, c_key});
-                            if (any) { uint32_t o2 = fresh(); emit(out, OpLogicalOr, {t_bool, o2, any, eq}); any = o2; }
-                            else any = eq;
-                        }
-                    }
-                    res = sel4(any, v, res);
+                {  // auto_noshift: the layer flags off-screen passes at addr+96 -> unshifted (the hunt below still applies)
+                    uint32_t fq = fresh(), fv = fresh(), fx = fresh(), off = fresh();
+                    emit(out, OpBitcast, {p_psb4, fq, c_flag});
+                    emit(out, OpLoad, {t_uvec4, fv, fq, MemAccessAligned, 16});
+                    emit(out, OpCompositeExtract, {t_uint, fx, fv, 0});
+                    emit(out, OpINotEqual, {t_bool, off, fx, c_u0});
+                    res = sel4(off, v, res);
                 }
                 const uint32_t alt[4] = {0, c_zero4, v, vh};
                 for (uint32_t k = 3; k >= 1; --k) {

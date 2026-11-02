@@ -1349,9 +1349,9 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     done
 
     # 3e. auto_noshift: --shadow draws the near post into a depth-only 512x512
-    # pass with its own vertex shader and logs where its edge lands. Shifted
-    # per eye the eyes disagree by ~34 px (left sees it further right); auto_noshift finds that shader live
-    # (drawn only in shadow passes) and they agree. Mirror: A's eye agrees
+    # pass with the main view's vertex shader and logs where its edge lands. Shifted
+    # per eye the eyes disagree by ~34 px (left sees it further right); auto_noshift
+    # flags the off-screen pass live and they agree. Mirror: A's eye agrees
     # too (hooks in front of the mirror's wrappers), the scene keeps 64 mm.
     edge_after() {  # last "shadow edge" x in LOG after the line matching RE, once 3 are there
         local n; n=$(sed -n "/$2/,\$p" "$1" | grep -c 'shadow edge')
@@ -1366,7 +1366,7 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
                 VRDUAL_AUTO_NOSHIFT=$a "$B/vrdual-cube" --scene calib --shadow --title "selftest shadow $e" >"$tmp/sh$a-$e.log" 2>&1 &
             sp+=($!)
         done
-        local re=$([[ $a == 1 ]] && echo 'auto_noshift: 1 shader' || echo 'exporting')
+        local re=$([[ $a == 1 ]] && echo 'auto_noshift: off-screen pass' || echo 'exporting')
         xl="" xr=""
         for i in $(seq 300); do
             xl=$(edge_after "$tmp/sh$a-left.log" "$re") && xr=$(edge_after "$tmp/sh$a-right.log" "$re") && break; sleep 0.1
@@ -1375,9 +1375,9 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
             label="shadow pass shifted per eye without auto_noshift (edges ~34 px apart)"
             check bash -c "[[ -n '$xl' && -n '$xr' ]] && (( $xl - $xr >= 30 && $xl - $xr <= 38 )) || { echo 'left $xl right $xr'; false; }"
         else
-            label="auto_noshift: shadow-pass shader found live, not shifted: eyes agree, half way between"
+            label="auto_noshift: off-screen pass flagged live, shared shader not shifted there: eyes agree, half way between"
             check bash -c "[[ -n '$xl' && '$xl' == '$xr' ]] && (( $xl >= 118 && $xl <= 122 )) &&
-                grep -q 'auto_noshift: 1 shader(s) drawn only in off-screen passes, not shifted: [0-9a-f]*@512x512' '$tmp/sh1-left.log' || { echo 'left $xl right $xr'; false; }"
+                grep -q 'auto_noshift: off-screen pass 512x512 not shifted (main view 960x720)' '$tmp/sh1-left.log' || { echo 'left $xl right $xr'; false; }"
         fi
         kill "${sp[@]}" 2>/dev/null; wait "${sp[@]}" 2>/dev/null
     done
@@ -1385,7 +1385,7 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 \
         "$B/vrdual-cube" --scene calib --shadow --title "selftest shadow mirror" >"$tmp/shm.log" 2>&1 &
     sp=($!)
-    for i in $(seq 300); do xl=$(edge_after "$tmp/shm.log" 'auto_noshift: 1 shader') && break; sleep 0.1; done
+    for i in $(seq 300); do xl=$(edge_after "$tmp/shm.log" 'auto_noshift: off-screen pass') && break; sleep 0.1; done
     label="auto_noshift in the mirror: A's shadow pass unshifted, ipd 64mm"
     check bash -c "[[ -n '$xl' ]] && (( $xl >= 118 && $xl <= 122 )) && '$B/vrdual-compositor' --session $sess --snapshot '$tmp/shm.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
         $M '$tmp/shm.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/shm.log' || { echo 'A edge $xl'; tail -5 '$tmp/shm.log'; false; }"

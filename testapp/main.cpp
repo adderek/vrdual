@@ -40,10 +40,11 @@
 // behind another struct in the stage's pNext (DXVK chains subgroup-size info first).
 //
 // --shadow: each frame also draws the 0.5 m post into a depth-only 512x512
-// pass (a shadow map, from the camera for simplicity) with its own vertex
-// shader (same code, another generator word: another key), reads one row back
-// and logs where the post's left edge is ("shadow edge x=N"). Shifted per
-// eye, the eyes see it ~33 px apart; auto_noshift makes them agree.
+// pass (a shadow map, from the camera for simplicity) with the main view's
+// vertex shader (one shader for both, like a game's unit and its shadow),
+// reads one row back and logs where the post's left edge is ("shadow edge
+// x=N"). Shifted per eye, the eyes see it ~33 px apart; auto_noshift (the
+// pass decides) makes them agree while the main view stays shifted.
 //
 // --scene calib: static posts at 0.5, 1, 2, 5 and 20 m (eye height), for IPD
 // calibration: look at one post, adjust until it sits at a believable distance
@@ -622,10 +623,7 @@ int main(int argc, char** argv) {
         CK(vkCreateRenderPass(dev, &srpci, nullptr, &srp));
         VkFramebufferCreateInfo sfci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, nullptr, 0, srp, 1, &sview, SM, SM, 1};
         CK(vkCreateFramebuffer(dev, &sfci, nullptr, &sfb));
-        std::vector<uint32_t> sv(kVert, kVert + sizeof kVert / 4);
-        sv[2] ^= 1;  // generator word: valid SPIR-V, another shader key
-        VkPipelineShaderStageCreateInfo sst{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT,
-                                            mkmod(sv.data(), sv.size() * 4), "main"};
+        VkPipelineShaderStageCreateInfo sst{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
         VkViewport svp{0, 0, float(SM), float(SM), 0, 1};
         VkRect2D ssc{{0, 0}, {SM, SM}};
         VkPipelineViewportStateCreateInfo svps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, nullptr, 0, 1, &svp, 1, &ssc};

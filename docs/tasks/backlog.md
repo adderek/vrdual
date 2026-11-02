@@ -42,9 +42,17 @@
   320x190. Its shadow map is orthographic (w == 1): the shadows and the
   right eye's seams between terrain tiles both moved with `hud_depth`
   (correct at 0). Hence the rule is now "off-screen" (extent neither the
-  swapchain's nor the main view's), colour or not. Left: confirm in Civ V.
-  Not covered: a shadow atlas the size of the main view, a shader shared
-  between the main view and an off-screen pass (then a rule).
+  swapchain's nor the main view's), colour or not. A first version kept a
+  table of shader keys drawn only off-screen: HUD and the selection circle
+  got better, unit shadows did not (their vertex shader is shared with the
+  units: keys at 1024² / 64² also drawn elsewhere). Now the pass decides: a
+  flag written before each render pass. Left: confirm unit shadows in
+  Civ V; measure the cost of the two barriers per pass in a heavy game.
+  Not covered: a shadow atlas the size of the main view.
+- Civ V, right eye only (mirror B): thin dark lines along terrain tile
+  edges, also at IPD 0, gone at times with hud_depth 0 (2026-11-02). Partly
+  the off-screen shift above (grooves); thin lines remain. Mirror replay
+  difference on B, cause unknown (no mirror warnings in the log).
 - Civ V: the selection circle under a unit differs a lot between the eyes
   (screenshot 2026-11-02); likely a decal projected on the terrain from
   depth (effect kind 2 in framegen-effects.md). Candidate for a per-game

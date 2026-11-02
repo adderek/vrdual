@@ -20,13 +20,13 @@
 // offset from its own geometry (Civilization V: shadows cast from the camera
 // side, seams between baked terrain tiles). A pass is off-screen if its
 // extent is neither the swapchain's nor the main view's (the extent with
-// colour that has the most shader keys; a game may render its 3D view at
-// another size than the swapchain, Civ V: 1368x768 into 1920x1080). Shader
-// keys (pipeline -> last pre-raster stage) seen bound in passes are recorded
-// with the pass extent; keys seen only in off-screen passes go into the live
-// key table of the param buffer (addr+96, 32 entries), which patched shaders
-// check: not shifted. Re-evaluated every 30 presents, so a key later seen in
-// the main view leaves the table again.
+// colour that has the most shader keys bound; a game may render its 3D view
+// at another size than the swapchain, Civ V: 1368x768 into 1920x1080).
+// Before each render pass the layer writes the decision into the param
+// buffer (addr+96, vkCmdUpdateBuffer between two barriers, on both mirror
+// devices); patched shaders read it and skip the shift. The pass decides,
+// not the shader: a vertex shader shared by the unit and its shadow pass
+// (Civ V) is right in both. The main view is re-evaluated every 30 presents.
 #pragma once
 
 namespace passes {
@@ -78,7 +78,9 @@ struct Track {
     std::unordered_map<uint32_t, std::vector<uint64_t>> key_use;  // key -> (extent << 1 | depth only) seen
     uint64_t presents = 0;
     std::string last_passes;  // log_passes: last logged
-    uint64_t main_ext = 0;    // main view extent (log changes)
+    std::atomic<uint64_t> main{0}, sc{0};  // main view and swapchain extents (0 = not known yet)
+    std::set<uint64_t> off_ext;  // off-screen extents seen (log new ones)
+    DeviceData* dd = nullptr;
 };
 
 static uint64_t ext_key(VkExtent2D e) { return uint64_t(e.width) << 32 | e.height; }
@@ -270,12 +272,34 @@ static void note_draw(Track* t, const Track::Cb& c) {
     auto& v = t->key_use[it->second];
     if (std::find(v.begin(), v.end(), u) == v.end() && v.size() < 16) v.push_back(u);
 }
-static void begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D ext) {
-    if (!t->autons) return;
+// Returns the pass flag to write: 1 off-screen, 0 not, -1 none (t->m held).
+static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D ext) {
+    if (!t->autons) return -1;
     auto& c = t->cbs[cb];
     c.pass = depth_only ? 2 : 1;
     c.ext = ext_key(ext);
     note_draw(t, c);
+    uint64_t main = t->main.load(), sc = t->sc.load();
+    bool off = main && c.ext != main && c.ext != sc;
+    if (off && t->off_ext.insert(c.ext).second)
+        logf("auto_noshift: off-screen pass %ux%u not shifted (main view %ux%u)", ext.width, ext.height, uint32_t(main >> 32), uint32_t(main));
+    return off;
+}
+
+static void pass_flag_twin(DeviceData* dd, VkCommandBuffer cb, uint32_t v);  // vrdual_mirror.hpp
+// Writes the pass flag (param addr+96) into the command buffer, ordered after
+// earlier shader reads and before the pass's.
+static void record_flag(const Dispatch& d, VkCommandBuffer cb, VkBuffer buf, uint32_t v) {
+    VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT};
+    d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+    d.CmdUpdateBuffer(cb, buf, 96, 4, &v);
+    mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
+    d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+}
+static void write_flag(Track* t, VkCommandBuffer cb, int v) {
+    if (v < 0 || !t->dd->ep.buf) return;
+    if (t->dd->md) pass_flag_twin(t->dd, cb, uint32_t(v));
+    else record_flag(t->dd->d, cb, t->dd->ep.buf, uint32_t(v));
 }
 static void use(Track& t, VkImage img, VkImageLayout layout) {
     auto it = t.img.find(img);
@@ -283,14 +307,13 @@ static void use(Track& t, VkImage img, VkImageLayout layout) {
     it->second.uses++;
     it->second.layout = layout;
 }
-static void begin_rp(Track* t, VkCommandBuffer cb, const VkRenderPassBeginInfo* bi) {
+static int begin_rp(Track* t, VkCommandBuffer cb, const VkRenderPassBeginInfo* bi) {
     std::lock_guard<std::mutex> l(t->m);
     auto rp = t->rp.find(bi->renderPass);
-    if (rp == t->rp.end()) return;
-    begin_pass(t, cb, rp->second.depth_only, bi->renderArea.extent);
-    if (!t->depth) return;
+    int flag = begin_pass(t, cb, rp != t->rp.end() && rp->second.depth_only, bi->renderArea.extent);
+    if (rp == t->rp.end() || !t->depth) return flag;
     auto fb = t->fb.find(bi->framebuffer);
-    if (fb == t->fb.end()) return;
+    if (fb == t->fb.end()) return flag;
     VkImage img = fb->second.img;
     if (fb->second.imageless)
         for (auto* p = (const VkBaseInStructure*)bi->pNext; p; p = p->pNext)
@@ -302,6 +325,7 @@ static void begin_rp(Track* t, VkCommandBuffer cb, const VkRenderPassBeginInfo* 
                 }
             }
     if (img) use(*t, img, rp->second.final);
+    return flag;
 }
 static void end_pass(Track* t, VkCommandBuffer cb) {
     if (!t->autons) return;
@@ -312,12 +336,12 @@ static void end_pass(Track* t, VkCommandBuffer cb) {
 }
 static VKAPI_ATTR void VKAPI_CALL vrd_CmdBeginRenderPass(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi, VkSubpassContents c) {
     Track* t = of(key(cb));
-    begin_rp(t, cb, bi);
+    write_flag(t, cb, begin_rp(t, cb, bi));
     t->next.CmdBeginRenderPass(cb, bi, c);
 }
 static VKAPI_ATTR void VKAPI_CALL vrd_CmdBeginRenderPass2(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi, const VkSubpassBeginInfo* sbi) {
     Track* t = of(key(cb));
-    begin_rp(t, cb, bi);
+    write_flag(t, cb, begin_rp(t, cb, bi));
     t->next.CmdBeginRenderPass2(cb, bi, sbi);
 }
 static VKAPI_ATTR void VKAPI_CALL vrd_CmdEndRenderPass(VkCommandBuffer cb) {
@@ -332,17 +356,20 @@ static VKAPI_ATTR void VKAPI_CALL vrd_CmdEndRenderPass2(VkCommandBuffer cb, cons
 }
 static VKAPI_ATTR void VKAPI_CALL vrd_CmdBeginRendering(VkCommandBuffer cb, const VkRenderingInfo* ri) {
     Track* t = of(key(cb));
+    int flag = -1;
     {
         std::lock_guard<std::mutex> l(t->m);
         bool colour = false;
         for (uint32_t i = 0; i < ri->colorAttachmentCount; ++i) colour |= ri->pColorAttachments[i].imageView != VK_NULL_HANDLE;
         bool depth = ri->pDepthAttachment && ri->pDepthAttachment->imageView;
-        if (colour || depth) begin_pass(t, cb, !colour, ri->renderArea.extent);
+        if (colour || depth) flag = begin_pass(t, cb, !colour, ri->renderArea.extent);
+        if (ri->flags & VK_RENDERING_RESUMING_BIT) flag = -1;  // nothing may sit between a suspended pass and its resume
         if (t->depth && depth) {
             auto v = t->view.find(ri->pDepthAttachment->imageView);
             if (v != t->view.end()) use(*t, v->second, ri->pDepthAttachment->imageLayout);
         }
     }
+    write_flag(t, cb, flag);
     t->next.CmdBeginRendering(cb, ri);
 }
 static VKAPI_ATTR void VKAPI_CALL vrd_CmdEndRendering(VkCommandBuffer cb) {
@@ -406,7 +433,7 @@ static PFN_vkVoidFunction intercept(const char* name, const Track* t) {
 
 static Track* create(DeviceData* dd, bool depth, bool autons) {
     auto* t = new Track;
-    t->depth = depth, t->autons = autons;
+    t->depth = depth, t->autons = autons, t->dd = dd;
     Next& x = t->next;
     const Dispatch& d = dd->d;
 #define N(f) x.f = d.f; \
@@ -419,10 +446,9 @@ static Track* create(DeviceData* dd, bool depth, bool autons) {
     return t;
 }
 
-// auto_noshift, at present: keys seen only in off-screen passes -> the live table.
-// Every 3000 presents, when it changed: which passes the game draws (a shadow
-// pass the heuristic misses shows up here: its extent, colour or not, its key
-// count) and how many pipelines / modules have a key (t.m held).
+// Every 3000 presents, when it changed: which passes the game draws (extent,
+// colour or depth only, shader keys bound there; how many pipelines and
+// modules have a key), for games the main-view rule gets wrong (t.m held).
 static void log_passes(Track& t) {
     std::map<uint64_t, std::pair<int, int>> ext;  // extent<<1|depth only -> keys, keys only there
     for (auto& kv : t.key_use)
@@ -438,54 +464,30 @@ static void log_passes(Track& t) {
                  kv.first & 1 ? "depth only" : "colour", kv.second.first, kv.second.second);
         s += b;
     }
-    char k[96];
-    snprintf(k, sizeof k, " (%zu pipelines, %zu modules with a key)", t.pipe_key.size(), t.mod_key.size());
     if (s == t.last_passes) return;
     t.last_passes = s;
-    logf("auto_noshift: passes seen (extent, kind, shader keys):%s%s", s.empty() ? " none" : s.c_str(), k);
+    logf("auto_noshift: passes seen (extent, kind, shader keys):%s (%zu pipelines, %zu modules with a key)", s.empty() ? " none" : s.c_str(),
+         t.pipe_key.size(), t.mod_key.size());
 }
 
+// auto_noshift, at present: the main view = the colour extent with the most
+// shader keys bound (the swapchain's on a tie); begin_pass flags the rest.
 static void refresh_auto(Track& t, VkExtent2D sc) {
-    if (!t.autons || ++t.presents % 30) return;
-    if (t.presents % 3000 == 600) {
-        std::lock_guard<std::mutex> l(t.m);
-        log_passes(t);
-    }
-    std::vector<std::pair<uint32_t, uint64_t>> found;  // key, an off-screen extent (log)
-    {
-        std::lock_guard<std::mutex> l(t.m);
-        uint64_t sce = ext_key(sc), main = sce;
-        std::map<uint64_t, int> n;  // colour extent -> keys drawn there
-        for (auto& kv : t.key_use)
-            for (uint64_t u : kv.second)
-                if (!(u & 1)) n[u >> 1]++;
-        int best = n.count(sce) ? n[sce] : 0;
-        for (auto& e : n)
-            if (e.second > best) best = e.second, main = e.first;
-        for (auto& kv : t.key_use) {
-            bool off = !kv.second.empty();
-            for (uint64_t u : kv.second)
-                if ((u >> 1) == sce || (u >> 1) == main) { off = false; break; }
-            if (off) found.push_back({kv.first, kv.second[0] >> 1});
-        }
-        if (main != t.main_ext) {
-            t.main_ext = main;
-            logf("auto_noshift: main view %ux%u (swapchain %ux%u)", uint32_t(main >> 32), uint32_t(main), sc.width, sc.height);
-        }
-    }
-    std::sort(found.begin(), found.end());
-    if (found.size() > 32) found.resize(32);
-    AutoKeys& a = auto_keys();
-    uint32_t k[32] = {};
-    for (size_t i = 0; i < found.size(); ++i) k[i] = found[i].first;
-    std::lock_guard<std::mutex> l(a.m);
-    if (!memcmp(k, a.keys, sizeof k)) return;
-    memcpy(a.keys, k, sizeof k);
-    a.seq.fetch_add(1);
-    std::string s;
-    for (auto& f : found)
-        s += " " + [&] { char b[48]; snprintf(b, sizeof b, "%08x@%ux%u", f.first, uint32_t(f.second >> 32), uint32_t(f.second)); return std::string(b); }();
-    logf("auto_noshift: %zu shader(s) drawn only in off-screen passes, not shifted:%s", found.size(), s.empty() ? " none" : s.c_str());
+    if (!t.autons) return;
+    t.sc = ext_key(sc);
+    if (++t.presents % 30) return;
+    std::lock_guard<std::mutex> l(t.m);
+    if (t.presents % 3000 == 600) log_passes(t);
+    uint64_t sce = ext_key(sc), main = sce;
+    std::map<uint64_t, int> n;  // colour extent -> keys drawn there
+    for (auto& kv : t.key_use)
+        for (uint64_t u : kv.second)
+            if (!(u & 1)) n[u >> 1]++;
+    int best = n.count(sce) ? n[sce] : 0;
+    for (auto& e : n)
+        if (e.second > best) best = e.second, main = e.first;
+    if (main != t.main.exchange(main))
+        logf("auto_noshift: main view %ux%u (swapchain %ux%u)", uint32_t(main >> 32), uint32_t(main), sc.width, sc.height);
 }
 
 // ------------------------------------------------------ depth export ------

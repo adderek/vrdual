@@ -1900,6 +1900,22 @@ static void present_twin(DeviceData* dd, VkQueue queue, uint32_t family, const V
 }
 
 // ------------------------------------------------------------- lookup -------
+} // namespace mirror
+// auto_noshift pass flag (vrdual_passes.hpp) on both devices: A's param
+// buffer in the app's command buffer, B's in its twin.
+namespace passes {
+static void pass_flag_twin(DeviceData* dd, VkCommandBuffer cb, uint32_t v) {
+    mirror::MDev* md = dd->md;
+    record_flag(md->a, cb, dd->ep.buf, v);
+    if (!md->live || !md->bep.buf) return;
+    mirror::Ctx& c = mirror::ctx_begin(md);
+    VkCommandBuffer bcb = c.xl(cb);
+    if (c.ok()) record_flag(md->b, bcb, md->bep.buf, v);
+    mirror::ctx_end(c);
+}
+}  // namespace passes
+namespace mirror {
+
 static PFN_vkVoidFunction lookup(const char* name) {
     if (const char* m = manual_canonical(name)) {
         std::string n = m;

@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <atomic>
 #include <map>
+#include <set>
 #include <cmath>
 #include <cctype>
 #include <cerrno>
@@ -377,9 +378,8 @@ struct EyeBuf {
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     float* params = nullptr;  // mapping
-    float cur[56] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4,
-                              // auto_noshift keys 32 x uint32 (addr + 96)
-    uint64_t auto_seq = ~0ull;  // auto_noshift table version in cur
+    float cur[24] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4
+                              // (addr + 96: auto_noshift pass flag, written in the app's command buffers, vrdual_passes.hpp)
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
     float aspect = 0;  // of the exported swapchain when params were last pushed
@@ -1000,28 +1000,15 @@ static BdaPlan plan_bda(InstanceData* id, VkPhysicalDevice pd, const VkDeviceCre
 // GPU by write_params_cpu or the copy submit, copy_to_readback).
 static float g_aspect = 16.0f / 9;  // exported swapchain (head offset y needs P11)
 
-// auto_noshift's live key table (vrdual_passes.hpp), process-wide: both eyes'
-// param buffers, mirror B too.
-namespace passes {
-struct AutoKeys { std::mutex m; uint32_t keys[32] = {}; std::atomic<uint64_t> seq{0}; };
-static AutoKeys& auto_keys() { static auto* a = new AutoKeys; return *a; }  // never freed
-}
-
 static void push_params(EyeBuf& ep) {
     if (!g_cfg.ctl || !ep.params) return;
     uint64_t seq = g_cfg.ctl->seq;
-    passes::AutoKeys& ak = passes::auto_keys();
-    if (ep.auto_seq != ak.seq.load()) {  // auto_noshift table changed (no log line here: refresh_auto logs it)
-        std::lock_guard<std::mutex> l(ak.m);
-        memcpy(ep.cur + 24, ak.keys, sizeof ak.keys);
-        ep.auto_seq = ak.seq.load();
-    }
     if (seq == ep.ctl_seq && ep.aspect == g_aspect && ep.pushed_eye == ep.eye) return;
     bool head_only = ep.ctl_seq != ~0ull && ep.aspect == g_aspect;
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
-    static_assert(sizeof e.v == 20 * sizeof(float) && sizeof ep.cur == 56 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation, + hunt + key table");
+    static_assert(sizeof e.v == 20 * sizeof(float) && sizeof ep.cur == 24 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation, + hunt");
     memcpy(ep.cur, e.v, 8 * sizeof(float));
     uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
     memcpy(ep.cur + 8, hunt, sizeof hunt);
@@ -1073,6 +1060,7 @@ static void create_param_buffer(const Dispatch& d, VkDevice dev, const VkPhysica
     VkBufferDeviceAddressInfo bai{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, ep.buf};
     ep.addr = d.GetBufferDeviceAddress(dev, &bai);
     ep.params = (float*)map;
+    memset(map, 0, 256);  // the auto_noshift flag at +96 starts 0 (not shifted only when set)
     push_params(ep);
     write_params_cpu(ep);
     logf("live params at device address 0x%llx (%s eye, memory type %d)", (unsigned long long)ep.addr, ep.eye ? "right" : "left", best);
