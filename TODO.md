@@ -95,23 +95,13 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     request 2026-11-02): done 2026-11-02, `input_modes` (docs/CONFIG.md);
     left: try it in the Quest.
 22. Research (owner's question 2026-11-02): frame generation and extra
-    effects with our approach.
-    - Two GPUs: the game's own FG (FSR 3 FG, DLSS FG) runs inside the
-      mirror on each GPU with that eye's frames and motion vectors, so in
-      principle each eye interpolates itself. Open: does B replay it
-      (optical flow / compute paths, NVIDIA-only DLSS on AMD B), do both
-      present the same frame count so L[F]/R[F] pairing holds (backlog)?
-    - One GPU (alternate eyes): the game's FG interpolates between L and R
-      (garbage). Needs FG outside the game, per eye stream: in `vrdual-xr`
-      on the exported frames (image-only interpolation like lsfg-vk /
-      Lossless Scaling: no game motion vectors needed, artefacts at
-      disocclusions), or OpenXR runtime reprojection (head motion only).
-    - Effects that break in stereo (shadows, SSAO, deferred lights rebuilt
-      from depth with the game's unshifted matrices): fix by turning them
-      off and drawing our own per eye (needs the depth buffer: find the
-      depth attachment, export it like the colour), by NVSTEREO (item 15),
-      or per-shader rules (item 17). Also check stacking existing Vulkan
-      post layers (vkBasalt, ReShade on Linux) under ours, per eye.
+    effects with our approach. Findings and next steps:
+    [framegen-effects](docs/tasks/framegen-effects.md). In short:
+    - two GPUs: FSR 3 FG should work per eye in the mirror (to test);
+    - one GPU: the game's FG must stay off; best route is depth-based
+      synthesis of the missing eye in `vrdual-xr`, which needs depth export
+      first;
+    - own shadows: not possible app-unaware; SSAO from depth is.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

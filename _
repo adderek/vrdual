@@ -1481,6 +1481,8 @@ PA
         label="openxr: focused session, 60 frames submitted"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LEAN=on VRDUAL_XR_OVERLAY_DUMP='$tmp/ov.pam' timeout 30 '$B/vrdual-xr' --session $sess --frames 60 >'$tmp/xr.log' 2>&1;
             grep -q 'session state 5' '$tmp/xr.log' && grep -q '60 frames submitted' '$tmp/xr.log' || { cat '$tmp/xr.log'; false; }"
+        label="openxr: runtime extension list logged (depth layers / space warp support visible)"
+        check grep -qE '^\[xr\] runtime extensions \([0-9]+\):.* XR_KHR_vulkan_enable2' "$tmp/xr.log"
         label="openxr: overlay notice (game started, settings) accepted by the runtime"
         check bash -c "grep -q 'overlay: game started' '$tmp/xr.log' && ! grep -q 'overlay unavailable' '$tmp/xr.log' && head -c 200 '$tmp/ov.pam' | grep -q 'WIDTH 1408' &&
             [[ \$(stat -c %s '$tmp/ov.pam') -gt 524288 ]] && python3 -I -c '

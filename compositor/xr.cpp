@@ -692,7 +692,12 @@ static int run(int argc, char** argv) {
         xrEnumerateInstanceExtensionProperties(nullptr, 0, &ne, nullptr);
         std::vector<XrExtensionProperties> ep(ne, {XR_TYPE_EXTENSION_PROPERTIES});
         xrEnumerateInstanceExtensionProperties(nullptr, ne, &ne, ep.data());
-        for (auto& e : ep) has_cyl |= !strcmp(e.extensionName, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
+        std::string all;  // what the runtime offers (depth layers, space warp: docs/tasks/framegen-effects.md)
+        for (auto& e : ep) {
+            has_cyl |= !strcmp(e.extensionName, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
+            all += std::string(" ") + e.extensionName;
+        }
+        fprintf(stderr, "[xr] runtime extensions (%u):%s\n", ne, all.c_str());
     }
     if (has_cyl) exts.push_back(XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
     XrInstanceCreateInfo ici{XR_TYPE_INSTANCE_CREATE_INFO};
