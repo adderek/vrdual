@@ -854,7 +854,10 @@ vrdual_selftest() {
     label="anchor right";        check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/d.png' && $M '$tmp/d.png' --ipd 0.064 --anchor right"
     set_live anchor=center ipd_near=0.2 near_dist=1 far_dist=5
     label="near/far blend";      check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/e.png' && $M '$tmp/e.png' --ipd 0.064 --ipd-near 0.2 --near 1 --far 5"
-    set_live ipd_near=0
+    set_live ipd_near=0 head_yaw=6
+    label="head yaw 6 deg (clip rotation M = D R^T D^-1): posts where the turned camera sees them, HUD bar stays"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/yaw.png' && $M '$tmp/yaw.png' --ipd 0.064 --anchor center --head-yaw 6"
+    set_live head_yaw=0
     # Shader hunt: both processes list the test shader's key; hide over the
     # whole key range leaves only the background, off brings the posts back.
     label="shader list: test shader key, once"
@@ -957,8 +960,9 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     label="mirror: default ipd 64mm"; check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m1.png' && $M '$tmp/m1.png' --ipd 0.064 --anchor center"
     set_live ipd=0.2
     label="mirror: live ipd 200mm";   check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m2.png' && $M '$tmp/m2.png' --ipd 0.2 --anchor center"
-    set_live ipd=0.064 head_x=0.05
-    label="mirror: head offset 50mm right"; check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m3.png' && $M '$tmp/m3.png' --ipd 0.064 --anchor center --head-x 0.05"
+    set_live ipd=0.064 head_x=0.05 head_yaw=-4
+    label="mirror: head offset 50mm right, then turned 4 deg left"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/m3.png' && $M '$tmp/m3.png' --ipd 0.064 --anchor center --head-x 0.05 --head-yaw -4"
     label="record: 1 s SBS mp4 at 30 fps, full and half width (ffprobe)"
     check bash -c "w=\$(identify -format %w '$tmp/m1.png') h=\$(identify -format %h '$tmp/m1.png')
         p() { ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=width,height,nb_read_frames -of csv=p=0 \"\$1\"; }
@@ -966,7 +970,7 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
         '$B/vrdual-compositor' --session $sess --record '$tmp/rech.mp4' --seconds 1 --fps 30 --half --timeout 20 2>>'$tmp/rec.log' >/dev/null &&
         [[ \$(p '$tmp/rec.mp4') == \$((w / 2 * 2)),\$((h / 2 * 2)),30 && \$(p '$tmp/rech.mp4') == \$((w / 4 * 2)),\$((h / 2 * 2)),30 ]] &&
         grep -q 'recorded 30 frames' '$tmp/rec.log' || { echo w=\$w h=\$h; p '$tmp/rec.mp4'; p '$tmp/rech.mp4'; cat '$tmp/rec.log'; false; }"
-    set_live head_x=0
+    set_live head_x=0 head_yaw=0
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
 
     # 3b. Mirror with Vulkan 1.4 paths DXVK 3 needs: device addresses (captured on
@@ -1313,6 +1317,16 @@ import sys
 d = open(sys.argv[1], \"rb\").read(); i = d.index(b\"ENDHDR\\n\") + 7; w = 1408
 row = lambda y: d[i + y * w * 4: i + (y + 1) * w * 4]
 sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$tmp/ovmap.pam' || { grep '\\[xr\\]' '$tmp/xr-mapui.log'; false; }"
+        # head_look = clip: Monado's simulated HMD turns (SIMULATED_ROTATE), the
+        # turn reaches the control block soft-limited, world lock refuses it,
+        # exit clears it.
+        label="openxr: head_look = clip, turning simulated HMD -> head_yaw in the block (|yaw| < head_rot_max), world lock: off, exit: 0"
+        check bash -c "c='$B/vrdual-ctl --session $sess'; x() { XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 SIMULATED_ROTATE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LOOK=clip VRDUAL_HEAD_ROT_MAX=10 timeout 30 '$B/vrdual-xr' --session $sess --frames 150 \"\$@\"; }
+            x --lock head >'$tmp/xr-rot.log' 2>&1 & p=\$!; seen=0
+            while kill -0 \$p 2>/dev/null; do \$c live | awk '\$1==\"head_yaw\"{y=\$2} END{exit !(y != 0 && y > -10 && y < 10)}' && seen=1; sleep 0.2; done; wait \$p
+            [[ \$seen == 1 ]] && \$c live | grep -qx 'head_yaw 0' &&
+            x --lock world >'$tmp/xr-rotw.log' 2>&1; grep -q 'head_look = clip needs a head-locked screen' '$tmp/xr-rotw.log' && \$c live | grep -qx 'head_yaw 0' ||
+            { echo seen=\$seen; \$c live; grep '^\\[xr\\]' '$tmp/xr-rot.log' | tail; false; }"
         local sm  # cinema screen: quad / cylinder pair accepted by the runtime
         for sm in flat:world curved:head full:head; do  # default lock = world
             label="openxr: screen=${sm%:*} lock ${sm#*:}, 30 frames submitted"

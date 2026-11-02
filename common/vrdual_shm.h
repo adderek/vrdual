@@ -84,6 +84,9 @@ struct vrdual_ctl {
     // whose key (high 32 bits of the hash) is in [hunt_lo, hunt_hi] get
     // hunt_mode 1 hide | 2 noshift | 3 hud; 0 = off. Live mode only.
     uint32_t hunt_lo, hunt_hi, hunt_mode;
+    // version 5: head rotation from vrdual-xr, degrees, same frame as head_x/y/z:
+    // yaw + = turned right, pitch + = up, roll + = right ear down; 0 = none
+    float head_yaw, head_pitch, head_roll;
 };
 
 static inline const char* vrdual_anchor_name(int a) {

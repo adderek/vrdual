@@ -652,6 +652,7 @@ struct XrInput {
         if (xrLocateSpace(view, local, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot)) {
             c.head_ok = true;
             yaw_pitch(loc.pose.orientation, c.head_yaw, c.head_pitch);
+            memcpy(c.head_q, &loc.pose.orientation, sizeof c.head_q);
             c.head_px = loc.pose.position.x;
             c.head_py = loc.pose.position.y;
             c.head_pz = loc.pose.position.z;
@@ -903,16 +904,22 @@ static int run(int argc, char** argv) {
     };
     int64_t cfg_seen = 0;
     double cfg_checked = 0;
-    bool lean_ref = false;
-    float ref_p[3] = {}, ref_yaw = 0;
+    bool lean_ref = false, clip_warned = false;
+    float ref_p[3] = {}, ref_yaw = 0, ref_q[4] = {0, 0, 0, 1};
     int recentres = 0;
-    float sent[3] = {NAN, NAN, NAN};  // first call always writes (clears an offset a killed run left)
-    auto send_head = [&](float x, float y, float z) {
-        if (fabsf(x - sent[0]) < 5e-4f && fabsf(y - sent[1]) < 5e-4f && fabsf(z - sent[2]) < 5e-4f) return;
+    // head offset (m) and rotation (deg, head_look = clip) -> control block
+    float sent[6] = {NAN, NAN, NAN, NAN, NAN, NAN};  // first call always writes (clears what a killed run left)
+    auto send_head = [&](const float h[6]) {
+        bool same = true;
+        for (int i = 0; i < 6; ++i) same &= fabsf(h[i] - sent[i]) < (i < 3 ? 5e-4f : 0.02f);
+        if (same) return;
         if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
         if (!ctl) return;
-        vrdual::ctl_write(ctl, [&](vrdual_ctl& k) { k.head_x = x; k.head_y = y; k.head_z = z; });
-        sent[0] = x; sent[1] = y; sent[2] = z;
+        vrdual::ctl_write(ctl, [&](vrdual_ctl& k) {
+            k.head_x = h[0]; k.head_y = h[1]; k.head_z = h[2];
+            k.head_yaw = h[3]; k.head_pitch = h[4]; k.head_roll = h[5];
+        });
+        memcpy(sent, h, sizeof sent);
     };
     double t_report = vrdual::now_s();
     for (auto& d : dirs) fprintf(stderr, "[xr] watching %s/vrdual-%s-{0,1}\n", d.c_str(), session.c_str());
@@ -1208,22 +1215,41 @@ static int run(int argc, char** argv) {
                 map_on = mapper->input() == "map";
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
             }
-            if (mapper && icfg.lean && c.head_ok) {
+            bool rot = icfg.head_look == "clip";
+            if (rot && anchored && !clip_warned) {  // a world-locked screen already shows the turn
+                fprintf(stderr, "[xr] head_look = clip needs a head-locked screen (--lock head, not frozen): rotation off\n");
+                clip_warned = true;
+            }
+            rot &= !anchored;
+            if (mapper && (icfg.lean || rot) && c.head_ok) {
                 if (!lean_ref || mapper->recentres != recentres) {
                     ref_p[0] = c.head_px; ref_p[1] = c.head_py; ref_p[2] = c.head_pz;
                     ref_yaw = c.head_yaw * float(M_PI) / 180.0f;
+                    memcpy(ref_q, c.head_q, sizeof ref_q);
                     lean_ref = true;
                     recentres = mapper->recentres;
                 }
-                float d[3] = {c.head_px - ref_p[0], c.head_py - ref_p[1], c.head_pz - ref_p[2]};
-                // reference frame: forward (-sin, 0, -cos)(yaw), right (cos, 0, -sin)(yaw)
-                float rx = d[0] * cosf(ref_yaw) - d[2] * sinf(ref_yaw);
-                float fz = -d[0] * sinf(ref_yaw) - d[2] * cosf(ref_yaw);
-                float L = icfg.lean_max > 0 ? icfg.lean_max : 0.1f;
-                send_head(L * tanhf(rx / L), L * tanhf(d[1] / L), L * tanhf(fz / L));
+                float h[6] = {};
+                if (icfg.lean) {
+                    float d[3] = {c.head_px - ref_p[0], c.head_py - ref_p[1], c.head_pz - ref_p[2]};
+                    // reference frame: forward (-sin, 0, -cos)(yaw), right (cos, 0, -sin)(yaw)
+                    float rx = d[0] * cosf(ref_yaw) - d[2] * sinf(ref_yaw);
+                    float fz = -d[0] * sinf(ref_yaw) - d[2] * cosf(ref_yaw);
+                    float L = icfg.lean_max > 0 ? icfg.lean_max : 0.1f;
+                    h[0] = L * tanhf(rx / L), h[1] = L * tanhf(d[1] / L), h[2] = L * tanhf(fz / L);
+                }
+                if (rot) {
+                    vrdual::head_turn(ref_q, c.head_q, h[3], h[4], h[5]);
+                    float L = icfg.rot_max > 0 ? icfg.rot_max : 20;
+                    for (int i = 3; i < 6; ++i) h[i] = L * tanhf(h[i] / L);
+                }
+                send_head(h);
             }
         }
-        if (!fresh || !mapper || !icfg.lean) send_head(0, 0, 0);  // nothing drives it: no stale offset
+        if (!fresh || !mapper || !(icfg.lean || (icfg.head_look == "clip" && !anchored))) {  // nothing drives it: no stale offset
+            const float zero[6] = {};
+            send_head(zero);
+        }
         t_input = t_now;
         mark(1);
         if (fs.shouldRender && (fresh || (out[0].released && out[1].released))) {
@@ -1551,7 +1577,10 @@ static int run(int argc, char** argv) {
     for (auto& o : out)
         if (o.sc) xrDestroySwapchain(o.sc);
     if (ov.o.sc) xrDestroySwapchain(ov.o.sc);
-    send_head(0, 0, 0);
+    {
+        const float zero[6] = {};
+        send_head(zero);
+    }
     xrDestroySession(s);
     xrDestroyInstance(g_inst);
     return g_user_quit ? 0 : kLost;

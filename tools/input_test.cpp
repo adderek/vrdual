@@ -5,12 +5,14 @@
 #include <dirent.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <fstream>
 #include <set>
 #include <thread>
 
 #include "../common/vrdual_frames.hpp"
+#include "../common/vrdual_ctl.hpp"
 #include "../common/vrdual_input.hpp"
 
 using namespace vrdual;
@@ -152,6 +154,31 @@ int main(int argc, char** argv) {
         Controls c; c.head_ok = true; c.head_yaw = 179; m.step(c, 0.01);
         c.head_yaw = -176; auto ev = m.step(c, 0.01);  // 5 deg left across the wrap
         expect(rel(ev, REL_X) == -50, "head mouse: 5 deg left across +-180 -> -50");
+    }
+    {
+        // head_turn: turn 10 right, 5 up, 3 right ear down, after a start
+        // looking 30 deg left and 8 down (OpenXR: yaw right = -y, roll right = -z)
+        auto q = [](float ax, float ay, float az, float deg) {
+            float h = deg * float(M_PI) / 360;
+            return std::array<float, 4>{ax * sinf(h), ay * sinf(h), az * sinf(h), cosf(h)};
+        };
+        auto mul = [](std::array<float, 4> a, std::array<float, 4> b) {
+            return std::array<float, 4>{a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+                                        a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]};
+        };
+        auto ref = mul(q(0, 1, 0, 30), q(1, 0, 0, -8));
+        auto now = mul(ref, mul(mul(q(0, 1, 0, -10), q(1, 0, 0, 5)), q(0, 0, 1, -3)));
+        float y, p, r;
+        head_turn(ref.data(), now.data(), y, p, r);
+        expect(fabsf(y - 10) < 0.01f && fabsf(p - 5) < 0.01f && fabsf(r - 3) < 0.01f, "head_turn: 10 right, 5 up, 3 roll right in the start frame");
+        vrdual_ctl k{};
+        k.hfov = 90; k.world_scale = 1; k.ipd = 0.064f;
+        auto e = vrdual::eye_params(k, 0);
+        const float I[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+        expect(!memcmp(e.v + 8, I, sizeof I), "eye_params: no head rotation -> identity rows (bit-exact)");
+        k.head_yaw = 90;
+        e = vrdual::eye_params(k, 0);
+        expect(fabsf(e.v[8 + 2] + 1) < 1e-6f && fabsf(e.v[8 + 10]) < 1e-6f, "eye_params: yaw 90 right -> the point ahead lands at clip x = -P00 * w, w = 0");
     }
     {
         ScreenGrab g;

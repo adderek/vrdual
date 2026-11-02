@@ -20,8 +20,10 @@
 // (SPV_KHR_physical_storage_buffer), so the layer can change IPD at runtime by
 // writing host-visible memory — no pipeline rebuild, app stays unaware. It also
 // reads a second vec4 h at addr+16 (head offset, vrdual_ctl.hpp EyeParams):
-//     x' += h.x, y' = v.y + h.y, w' = v.w + h.z, z' = v.z * w' / v.w
-// (z' = v.z if v.w == 0 or h.z == 0)
+//     (x, y, w)_t = (v.x + h.x, v.y + h.y, v.w + h.z)
+//     (x, y, w)'  = M * (x, y, w)_t,   x' += off,   z' = v.z * w' / v.w
+// (z' = v.z if v.w == 0 or w' == v.w)
+// M = rows at addr+48/64/80, the head rotation (identity without one).
 // (z scaled with w keeps every vertex's depth z/w: no far-plane clipping,
 // depth order kept; same w == 1 skip). w == 1 vertices (HUD) get x' = v.x + h.w
 // instead: a constant disparity that puts the HUD at hud_depth.
@@ -251,7 +253,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
-    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {};
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {};
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -271,6 +273,13 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
         c_addr3 = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_addr3, lo3, hi3});
         p_psb4 = fresh(); emit(globals, OpTypePointer, {p_psb4, StoragePhysicalStorageBuffer, t_uvec4});
         c_key = fresh(); emit(globals, OpConstant, {t_uint, c_key, o.key});
+        for (int k = 0; k < 3; ++k) {  // rotation rows
+            uint64_t a = o.addr + 48 + 16 * k;
+            uint32_t rl = fresh(), rh = fresh();
+            emit(globals, OpConstant, {t_uint, rl, uint32_t(a)});
+            emit(globals, OpConstant, {t_uint, rh, uint32_t(a >> 32)});
+            c_rot[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_rot[k], rl, rh});
+        }
         for (uint32_t k = 1; k < 4; ++k) { c_m[k] = fresh(); emit(globals, OpConstant, {t_uint, c_m[k], k}); }
     } else {
         uint32_t c[4];
@@ -350,30 +359,49 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             emit(out, OpFSub, {t_float, d, b, a});
             emit(out, OpFMul, {t_float, e, d, t});
             emit(out, OpFAdd, {t_float, off, a, e});
-            emit(out, OpFAdd, {t_float, x2, x, off});
             uint32_t y = 0, y2 = 0, w2 = 0, z = 0, z2 = 0;
+            if (!live) emit(out, OpFAdd, {t_float, x2, x, off});
             if (live) {
-                uint32_t hx = fresh(), hy = fresh(), hw = fresh(), x3 = fresh(), zr = fresh();
+                uint32_t hx = fresh(), hy = fresh(), hw = fresh(), xt = fresh(), yt = fresh(), wt = fresh(), zr = fresh();
                 y = fresh(); y2 = fresh(); w2 = fresh(); z = fresh(); z2 = fresh();
                 emit(out, OpCompositeExtract, {t_float, y, v, 1});
                 emit(out, OpCompositeExtract, {t_float, z, v, 2});
                 emit(out, OpCompositeExtract, {t_float, hx, hp, 0});
                 emit(out, OpCompositeExtract, {t_float, hy, hp, 1});
                 emit(out, OpCompositeExtract, {t_float, hw, hp, 2});
-                emit(out, OpFAdd, {t_float, x3, x2, hx});
-                emit(out, OpFAdd, {t_float, y2, y, hy});
-                emit(out, OpFAdd, {t_float, w2, wv, hw});
+                emit(out, OpFAdd, {t_float, xt, x, hx});
+                emit(out, OpFAdd, {t_float, yt, y, hy});
+                emit(out, OpFAdd, {t_float, wt, wv, hw});
+                // rotation: row k . (xt, yt, wt); identity rows give the input exactly
+                uint32_t rr[3];
+                for (int k = 0; k < 3; ++k) {
+                    uint32_t rp = fresh(), row = fresh(), m0 = fresh(), m1 = fresh(), m2 = fresh();
+                    uint32_t p0 = fresh(), p1 = fresh(), p2 = fresh(), s0 = fresh();
+                    emit(out, OpBitcast, {p_psb, rp, c_rot[k]});
+                    emit(out, OpLoad, {t_vec4, row, rp, MemAccessAligned, 16});
+                    emit(out, OpCompositeExtract, {t_float, m0, row, 0});
+                    emit(out, OpCompositeExtract, {t_float, m1, row, 1});
+                    emit(out, OpCompositeExtract, {t_float, m2, row, 2});
+                    emit(out, OpFMul, {t_float, p0, m0, xt});
+                    emit(out, OpFMul, {t_float, p1, m1, yt});
+                    emit(out, OpFMul, {t_float, p2, m2, wt});
+                    emit(out, OpFAdd, {t_float, s0, p0, p1});
+                    rr[k] = fresh();
+                    emit(out, OpFAdd, {t_float, rr[k], s0, p2});
+                }
+                emit(out, OpFAdd, {t_float, x2, rr[0], off});
+                y2 = rr[1];
+                w2 = rr[2];
                 // w == 0 (a triangle crossing the camera plane) would give
-                // 0/0; no head z offset keeps z bit-exact (depth prepass
+                // 0/0; an unchanged w keeps z bit-exact (depth prepass
                 // shaders without the patch, rule noshift, must still match).
                 uint32_t zm = fresh(), w0 = fresh(), h0 = fresh(), keep = fresh();
                 emit(out, OpFDiv, {t_float, zr, w2, wv});
                 emit(out, OpFMul, {t_float, zm, z, zr});
                 emit(out, OpFOrdEqual, {t_bool, w0, wv, c_zero});
-                emit(out, OpFOrdEqual, {t_bool, h0, hw, c_zero});
+                emit(out, OpFOrdEqual, {t_bool, h0, w2, wv});
                 emit(out, OpLogicalOr, {t_bool, keep, w0, h0});
                 emit(out, OpSelect, {t_float, z2, keep, z, zm});
-                x2 = x3;
             }
             uint32_t xh = x;  // x of the HUD treatment
             if (live) {  // HUD at hud_depth: constant shift h.w

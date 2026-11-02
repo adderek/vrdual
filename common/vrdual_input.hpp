@@ -12,6 +12,11 @@
 //   head_look         mouse: head yaw/pitch deltas -> relative mouse (1:1)
 //                     edge:  past head_deadzone from the start direction,
 //                            the angle sets a turn rate
+//                     clip:  the game camera stays; vrdual-xr turns the
+//                            rendered view by the head rotation from the
+//                            start direction (clip-space rotation in the
+//                            layer, head_turn), soft limit head_rot_max;
+//                            needs a head-locked screen (--lock head)
 //
 // Buttons are remapped with map_<mode>_<button> = KEY_*|BTN_*|none (mode:
 // gamepad, mouse) or map_<button> (both modes) in [global] or [app:NAME];
@@ -74,6 +79,7 @@ struct Controls {
     bool head_ok = false;
     float head_yaw = 0, head_pitch = 0;     // degrees
     float head_px = 0, head_py = 0, head_pz = 0;  // meters, OpenXR LOCAL space
+    float head_q[4] = {0, 0, 0, 1};         // orientation x y z w, OpenXR LOCAL space
     bool hands_ok = false;                  // both grip poses valid
     bool hand_p_ok[2] = {};                 // that grip's position valid
     float hand_p[2][3] = {};                // left, right grip position, meters, screen space
@@ -373,6 +379,7 @@ struct InputCfg {
     float head_dz = 15, head_rate = 120, head_cpd = 10;
     bool lean = false;
     float lean_max = 0.1f;
+    float rot_max = 20;  // head_look = clip: soft limit, degrees
     int map[M_COUNT][B_COUNT];  // code, 0 = none, -1 = mode default
     std::string map_src[M_COUNT][B_COUNT];  // "[app:NAME] map_mouse_a", "" = built-in
     std::string input_src;  // where input came from (load_input_cfg)
@@ -469,8 +476,29 @@ inline InputCfg load_input_cfg(const std::string& app) {
     c.head_cpd = st.f("head_counts_per_deg");
     c.lean = st.s("head_lean") == "on";
     c.lean_max = st.f("lean_max");
+    c.rot_max = st.f("head_rot_max");
     load_input_maps(c, st.profile);
     return c;
+}
+
+// Head rotation from orientation `ref` to `now` (quaternions x y z w, OpenXR:
+// x right, y up, z back) as yaw (+ = turned right), pitch (+ = up), roll (+ =
+// right ear down), degrees, with R = Ry(yaw) Rx(pitch) Rz(roll) in x right,
+// y up, z forward (vrdual_ctl.hpp head_rot), in the frame of `ref`.
+inline void head_turn(const float ref[4], const float now[4], float& yaw, float& pitch, float& roll) {
+    // q = conj(ref) * now
+    float ax = -ref[0], ay = -ref[1], az = -ref[2], aw = ref[3], bx = now[0], by = now[1], bz = now[2], bw = now[3];
+    float x = aw * bx + ax * bw + ay * bz - az * by, y = aw * by - ax * bz + ay * bw + az * bx;
+    float z = aw * bz + ax * by - ay * bx + az * bw, w = aw * bw - ax * bx - ay * by - az * bz;
+    float A[3][3] = {{1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)},
+                     {2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)},
+                     {2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)}};
+    // z forward: B = S A S, S = diag(1, 1, -1)
+    float b02 = -A[0][2], b12 = -A[1][2], b22 = A[2][2], b10 = A[1][0], b11 = A[1][1];
+    const float d = 57.29578f;
+    pitch = asinf(std::fmax(-1.f, std::fmin(1.f, b12))) * d;
+    yaw = atan2f(b02, b22) * d;
+    roll = atan2f(-b10, b11) * d;
 }
 
 inline float wrap180(float a) {

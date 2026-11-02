@@ -3,8 +3,15 @@
 **Status 2026-10-18:** steps 1–3 done: head offset in the control block
 (`head_x/y/z`), x/y/forward in the shader patch (x measured in selftest, y and
 forward checked by eye in the calib scene), `head_look = mouse|edge` and
-`head_lean` in `vrdual-xr`. Not yet tried in the Quest. Step 4 (rotation via
-`P·R·P⁻¹`) open.
+`head_lean` in `vrdual-xr`. Not yet tried in the Quest.
+**2026-11-02:** step 4 rotation part done: `head_yaw/pitch/roll` (ctl version
+5), live rotation rows in the param buffer (`M = D·Rᵀ·D⁻¹` on clip x, y, w,
+identity = bit-exact), `head_look = clip` in `vrdual-xr` (head-locked screen,
+soft limit `head_rot_max`). Selftest: posts measured at yaw 6° and at head_x
++ yaw −4° (mirror), Monado's turning simulated HMD reaches the block,
+`head_turn` / identity unit checks. Open: latency hiding for `mouse` (needs
+the game's input lag; tune in the Quest), exact z for head_z (P22 unknown,
+z/w kept instead), Quest check.
 
 **Goal:** head rotation and translation (6DoF) change what the game shows,
 although the game's camera knows nothing about the HMD. Pose source: OpenXR
@@ -62,6 +69,7 @@ Roll: clip-space rotation only (games rarely have a roll axis).
 3. `head_look = edge` and `mouse` via the uinput sink from
    [input emulation](input-emulation.md) (same device, same per-game config).
 4. Rotation/z via `P·H·P⁻¹` (param buffer → mat4), latency hiding.
+   Rotation done 2026-11-02 (3 rows on clip x, y, w, not a mat4: z keeps z/w).
 
 **Done when:** in the calib scene a simulated head offset/yaw moves the posts
 by the predicted pixel amount (extend `measure_posts.py`; Monado's simulated

@@ -357,7 +357,7 @@ struct EyeBuf {
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
     float* params = nullptr;  // mapping
-    float cur[12] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32
+    float cur[24] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
     float aspect = 0;  // of the exported swapchain when params were last pushed
@@ -975,10 +975,11 @@ static void push_params(EyeBuf& ep) {
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
-    static_assert(sizeof e.v == 8 * sizeof(float), "EyeParams: 2 vec4");
-    memcpy(ep.cur, e.v, sizeof e.v);
+    static_assert(sizeof e.v == 20 * sizeof(float) && sizeof ep.cur == 24 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation");
+    memcpy(ep.cur, e.v, 8 * sizeof(float));
     uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
     memcpy(ep.cur + 8, hunt, sizeof hunt);
+    memcpy(ep.cur + 12, e.v + 8, 12 * sizeof(float));  // rotation rows at addr + 48
     if (ep.ctl_seq != ~0ull && (c.hunt_mode != ep.hunt[2] || c.hunt_lo != ep.hunt[0] || c.hunt_hi != ep.hunt[1]))
         logf("hunt[%s]: mode %u keys %08x..%08x", ep.eye ? "R" : "L", c.hunt_mode, c.hunt_lo, c.hunt_hi);
     memcpy(ep.hunt, hunt, sizeof ep.hunt);

@@ -25,7 +25,7 @@ inline std::string ctl_path(const std::string& session) { return shm_dir() + "/v
 
 // Live values from config (creation, and a new game joining an old block).
 inline void ctl_seed(vrdual_ctl& c, const Settings& s) {
-    c.version = 4;
+    c.version = 5;
     c.hunt_mode = 0;  // a hunt belongs to the game it ran on
     c.ipd = s.f("ipd");
     c.ipd_near = s.f("ipd_near");
@@ -96,14 +96,15 @@ template <typename F> inline void ctl_write(vrdual_ctl* c, F fn) {
 
 static const char* const kLiveKeys[] = {"ipd", "ipd_near", "near_dist", "far_dist", "anchor", "hfov", "world_scale", "hud_depth"};
 // Live but never saved: the head offset (vrdual-xr writes it every frame).
-static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z"};
+static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z", "head_yaw", "head_pitch", "head_roll"};
 
 inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
     char b[64];
     if (k == "anchor") return vrdual_anchor_name(c.anchor);
     float v = k == "ipd" ? c.ipd : k == "ipd_near" ? c.ipd_near : k == "near_dist" ? c.near_dist
             : k == "far_dist" ? c.far_dist : k == "hfov" ? c.hfov : k == "head_x" ? c.head_x
-            : k == "head_y" ? c.head_y : k == "head_z" ? c.head_z : k == "hud_depth" ? c.hud_depth : c.world_scale;
+            : k == "head_y" ? c.head_y : k == "head_z" ? c.head_z : k == "head_yaw" ? c.head_yaw
+            : k == "head_pitch" ? c.head_pitch : k == "head_roll" ? c.head_roll : k == "hud_depth" ? c.hud_depth : c.world_scale;
     snprintf(b, sizeof b, "%g", v);
     return b;
 }
@@ -132,7 +133,31 @@ inline std::string ctl_save(const vrdual_ctl& v, bool global) {
 //          Vulkan apps that flip y in the projection.
 //          w = clip_dx added to w == 1 vertices (HUD): the NDC disparity of a
 //          point at hud_depth, -P00 * eye_dx / hud_depth (0 = HUD at infinity).
-struct EyeParams { float v[8]; };
+// vec4 #2..#4 (at +48, after the hunt uvec4 at +32; live mode only): rows of
+//          M = D * R^T * D^-1, D = diag(P00, P11, 1), applied to (x, y, w)
+//          after the head offset and before the eye shift: the head rotation
+//          R (yaw, pitch, roll) for a perspective P whose w is view depth. M
+//          is the identity without rotation (bit-exact result).
+struct EyeParams { float v[20]; };
+
+// R = Ry(yaw) Rx(pitch) Rz(roll) in x right, y up, z forward; M as above.
+inline void head_rot(const vrdual_ctl& c, float p00, float p11, float m[12]) {
+    const float k = float(M_PI) / 180.0f;
+    float cy = cosf(c.head_yaw * k), sy = sinf(c.head_yaw * k), cp = cosf(c.head_pitch * k), sp = sinf(c.head_pitch * k);
+    float cr = cosf(c.head_roll * k), sr = sinf(c.head_roll * k);
+    const float Ry[3][3] = {{cy, 0, sy}, {0, 1, 0}, {-sy, 0, cy}}, Rx[3][3] = {{1, 0, 0}, {0, cp, sp}, {0, -sp, cp}};
+    const float Rz[3][3] = {{cr, sr, 0}, {-sr, cr, 0}, {0, 0, 1}};
+    float t[3][3], R[3][3];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) t[i][j] = Ry[i][0] * Rx[0][j] + Ry[i][1] * Rx[1][j] + Ry[i][2] * Rx[2][j];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) R[i][j] = t[i][0] * Rz[0][j] + t[i][1] * Rz[1][j] + t[i][2] * Rz[2][j];
+    const float D[3] = {p00, p11, 1};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) m[4 * i + j] = i == j ? R[j][i] : D[i] * R[j][i] / D[j];
+        m[4 * i + 3] = 0;
+    }
+}
 
 inline EyeParams eye_params(const vrdual_ctl& c, int eye, float aspect = 16.0f / 9, float y_sign = 1) {
     float p00 = 1.0f / tanf(c.hfov * 0.5f * float(M_PI) / 180.0f);
@@ -142,8 +167,11 @@ inline EyeParams eye_params(const vrdual_ctl& c, int eye, float aspect = 16.0f /
     float near_ = -p00 * c.world_scale * eye_dx(an, eye, ipdn);
     float wf = c.far_dist * c.world_scale, wn = c.near_dist * c.world_scale;
     float inv = wf > wn ? 1.0f / (wf - wn) : 0.0f;
-    return {{far_, near_, wf, inv, -p00 * c.world_scale * c.head_x, -y_sign * p00 * aspect * c.world_scale * c.head_y,
-             -c.world_scale * c.head_z, c.hud_depth > 0 ? -p00 * eye_dx(an, eye, c.ipd) / c.hud_depth : 0}};
+    float p11 = y_sign * p00 * aspect;
+    EyeParams e{{far_, near_, wf, inv, -p00 * c.world_scale * c.head_x, -p11 * c.world_scale * c.head_y,
+                 -c.world_scale * c.head_z, c.hud_depth > 0 ? -p00 * eye_dx(an, eye, c.ipd) / c.hud_depth : 0}};
+    head_rot(c, p00, p11, e.v + 8);
+    return e;
 }
 
 }  // namespace vrdual

@@ -376,6 +376,16 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
   stays the same); y needs `lean_y_sign` (+1 GL/D3D games, −1 Vulkan apps that
   flip y in the projection). Render-only: the game's camera and collision stay.
   `vrdual set head_x 0.05` sets it by hand.
+- `head_look = clip`: the game camera stays, the rendered view turns by the
+  head rotation from the start direction (yaw/pitch/roll, each soft-clamped to
+  `head_rot_max` degrees), written as `head_yaw/pitch/roll`. The layer applies
+  `M = D·Rᵀ·D⁻¹` to clip (x, y, w), D = diag(P00, P11, 1): exact for a
+  perspective projection whose w is view depth, after the head offset and
+  before the eye shift, z scaled with w (depth kept). Needs a head-locked
+  screen (`--lock head`, not frozen); with a world-locked one the compositor
+  already shows the turn and vrdual-xr sends 0. Beyond the game's frustum
+  there is nothing (culled), so edges show the clear colour: meant for small
+  turns. `vrdual set head_yaw 5` sets it by hand (selftest measures it).
 
 Stats, every 5 s in the `vrdual xr` log (`VRDUAL_XR_STATS` seconds): `N frames
 submitted, M new game frames (game fps), headset … Hz, … without a new game
