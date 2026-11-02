@@ -4,39 +4,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vrdual game</title>
-<meta name="description" content="Materials from vrdual's work on one game: status, settings, notes, wiggle GIFs and videos.">
+<meta name="description" data-i18n="p_desc" data-i18n-attr="content" content="Materials from vrdual's work on one game: status, settings, notes, wiggle GIFs and videos.">
 <link rel="stylesheet" href="style.css">
 <script>try{var t=localStorage.getItem("vrdual-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek">Sponsor</a></nav>
-<main class="page" id="g"><p class="muted">Loading…</p></main>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+  <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
+<main class="page" id="g"><p class="muted" data-i18n="p_loading">Loading…</p></main>
 <script src="common.js"></script>
+<script src="i18n.js"></script>
 <script>
 "use strict";
 const want = new URLSearchParams(location.search).get("g");
-loadGames().then(games => {
-  const g = games.find(x => slug(x) === want), box = document.getElementById("g");
-  if (!g) { box.innerHTML = `<h1>Not found</h1><p><a href="games.html">All games</a></p>`; return; }
+let games = null;
+function show() {
+  const box = document.getElementById("g");
+  if (!games) return;
+  const g = games.find(x => slug(x) === want);
+  if (!g) { box.innerHTML = `<h1>${esc(t("p_notfound", "Not found"))}</h1><p><a href="games.html">${esc(t("p_all_games", "All games"))}</a></p>`; return; }
   document.title = g.game + " · vrdual";
-  const rows = [["store: test", g.store], ["path", g.path], ["settings", g.settings], ["notes", g.notes]]
-    .filter(r => r[1]).map(([h, v]) => `<dt>${h}</dt><dd>${md(v)}</dd>`).join("");
-  box.innerHTML = `<p><a href="games.html?g=${encodeURIComponent(want)}">← all games</a></p>
+  box.innerHTML = `<p><a href="games.html?g=${encodeURIComponent(want)}">${esc(t("p_back", "← all games"))}</a></p>
     <h1>${esc(g.game)}</h1>
     <div class="cards">
-      <div class="card"><h3>two GPUs</h3>${stHtml(g.status)}</div>
-      <div class="card"><h3>one GPU</h3>${stHtml(g.single)}</div>
-      <div class="card wide"><h3>other VR routes</h3>${g.alt ? md(g.alt) : '<span class="muted">not researched</span>'}</div>
+      <div class="card"><h3>${esc(t("g_two", "two GPUs"))}</h3>${stHtml(g.status)}</div>
+      <div class="card"><h3>${esc(t("g_one", "one GPU"))}</h3>${stHtml(g.single)}</div>
+      <div class="card wide"><h3>${esc(t("g_col_alt", "other VR routes"))}</h3>${g.alt ? md(g.alt) : `<span class="muted">${esc(t("g_not_researched", "not researched"))}</span>`}</div>
     </div>
-    <h2>Materials</h2>
+    <h2>${esc(t("p_materials", "Materials"))}</h2>
     ${g.media.length ? `<div class="media">${g.media.map(mediaHtml).join("")}</div>
-      <p class="muted">Wiggle GIFs alternate the left and right eye views to show depth on a flat screen; in the headset each eye sees its own view.</p>`
-      : '<p class="muted">No GIFs or videos yet.</p>'}
-    <h2>Configuration</h2>
-    <p>${g.writeup_pending ? `A tuned configuration (tested settings, fixes for the problems already worked through) exists but is not written up yet; it will be published here. Until then everything can be configured by hand (<a href="${REPO}CONFIG.md">CONFIG.md</a>).`
-      : `Everything known about this game is on this page.`}</p>
-    <h2>Details</h2><dl>${rows}</dl>`;
-}).catch(e => { document.getElementById("g").textContent = "games.json: " + e; });
+      <p class="muted">${esc(t("p_wiggle_note", "Wiggle GIFs alternate the left and right eye views to show depth on a flat screen; in the headset each eye sees its own view."))}</p>`
+      : `<p class="muted">${esc(t("p_no_media", "No GIFs or videos yet."))}</p>`}
+    <h2>${esc(t("p_config", "Configuration"))}</h2>
+    <p>${g.writeup_pending ? t("p_pending", 'A tuned configuration (tested settings, fixes for the problems already worked through) exists but is not written up yet; it will be published here. Until then everything can be configured by hand (<a href="{url}">CONFIG.md</a>).', {url: REPO + "CONFIG.md"})
+      : esc(t("p_all_known", "Everything known about this game is on this page."))}</p>
+    <h2>${esc(t("p_details", "Details"))}</h2><dl>${detailRows(g)}</dl>`;
+}
+onLang(show);
+loadGames().then(d => { games = d; show(); })
+  .catch(e => { document.getElementById("g").textContent = "games.json: " + e; });
 </script>
 </body>
 </html>

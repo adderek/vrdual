@@ -1,7 +1,10 @@
-// Landing page translations: English stays in the HTML (data-i18n="KEY"),
-// other languages come from i18n.json. Picked: saved choice, else the
-// browser's languages, else English (?lang=CODE overrides, not saved). data-i18n-attr="NAME" translates an
-// attribute instead of the content; SVG text gets plain text.
+// Site translations: English stays in the HTML (data-i18n="KEY") or in the
+// script (t(key, english, {vars})), other languages come from i18n.json
+// (one flat dict per language, keys shared by all pages). Picked: saved
+// choice, else the browser's languages, else English (?lang=CODE overrides,
+// not saved). data-i18n-attr="NAME" translates an attribute instead of the
+// content; SVG text gets plain text. Pages that build HTML in script render
+// again from onLang(fn).
 "use strict";
 const LANGS = [  // flag, own name, English name; ordered by English name
   ["zh-CN", "🇨🇳", "简体中文", "Chinese (Simplified)"],
@@ -14,7 +17,16 @@ const LANGS = [  // flag, own name, English name; ordered by English name
   ["ru", "🇷🇺", "Русский", "Russian"],
   ["es", "🇪🇸", "Español", "Spanish"],
 ];
-const I18N = {tr: null, en: {}, lang: "en", vars: {}};
+const I18N = {tr: null, en: {}, lang: "en", vars: {}, hooks: []};
+
+// Script text: KEY's translation (English given here), {name} from vars.
+function t(k, en, vars) {
+  if (!(k in I18N.en)) I18N.en[k] = en;
+  const dict = I18N.lang === "en" ? null : I18N.tr && I18N.tr[I18N.lang];
+  const v = (dict && dict[k]) ?? en;
+  return v.replace(/\{(\w+)\}/g, (m, n) => vars && n in vars ? vars[n] : m);
+}
+function onLang(fn) { I18N.hooks.push(fn); }
 
 function pickLang() {
   const ok = c => LANGS.some(l => l[0] === c) ? c : null;
@@ -46,6 +58,7 @@ function applyLang(lang) {
   });
   const sel = document.getElementById("lang");
   if (sel) sel.value = I18N.lang;
+  I18N.hooks.forEach(f => f());
 }
 
 function setVar(k, v) { I18N.vars[k] = v; applyLang(I18N.lang); }

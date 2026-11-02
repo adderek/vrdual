@@ -3,8 +3,9 @@
 
 gen_games.py           rewrite the table between the games:begin / games:end
                        markers in docs/GAMES.md (alphabetical)
-gen_games.py --check   validate games.json and the landing page translations
-                       (site/i18n.json); exit 1 if GAMES.md is out of date
+gen_games.py --check   validate games.json and the site translations
+                       (site/i18n.json: every key of the pages' data-i18n and
+                       the scripts' t() calls); exit 1 if GAMES.md is out of date
 
 The same games.json is the data of the GitHub Pages viewer (site/). Public
 material only: unpublished notes never go here (TODO 18).
@@ -60,17 +61,34 @@ def load():
     return games
 
 
+def i18n_keys():
+    """{key: allowed placeholders}: data-i18n of the site's pages ({n} only) and
+    t("KEY", "English") / tr(...) in its scripts (the English text's own)."""
+    site = ROOT / "site"
+    keys = {}
+    for f in ("index.html", "games.html", "game.html"):
+        for k in re.findall(r'data-i18n="(\w+)"', (site / f).read_text()):
+            keys[k] = {"n"}
+    eng, errs = {}, []
+    for f in [*sorted(site.glob("*.js")), site / "game.html"]:
+        for k, q in re.findall(r"""\b(?:t|tr)\("(\w+)",\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')""", f.read_text()):
+            if eng.setdefault(k, q[1:-1]) != q[1:-1]:
+                errs.append(f"{f.name}: {k} has two English texts")
+            keys[k] = keys.get(k, set()) | set(re.findall(r"\{(\w+)\}", q))
+    for k in re.findall(r'"(st_\w+)"', (site / "common.js").read_text()):  # status labels, looked up by name
+        keys.setdefault(k, set())
+    return keys, errs
+
+
 def check_i18n():
-    """site/i18n.json: every language has exactly the data-i18n keys of index.html."""
-    html = (ROOT / "site" / "index.html").read_text()
-    keys = set(re.findall(r'data-i18n="(\w+)"', html))
+    """site/i18n.json: every language has exactly the site's keys (pages and scripts)."""
+    keys, errs = i18n_keys()
     tr = json.loads((ROOT / "site" / "i18n.json").read_text())
-    errs = []
+    js = (ROOT / "site" / "i18n.js").read_text()
     for lang, d in tr.items():
-        if set(d) != keys:
-            errs.append(f"i18n.json {lang}: missing {sorted(keys - set(d))}, unknown {sorted(set(d) - keys)}")
-        errs += [f"i18n.json {lang}.{k}: unknown placeholder" for k, v in d.items() if set(re.findall(r"\{(\w+)\}", v)) - {"n"}]
-        js = (ROOT / "site" / "i18n.js").read_text()
+        if set(d) != set(keys):
+            errs.append(f"i18n.json {lang}: missing {sorted(set(keys) - set(d))}, unknown {sorted(set(d) - set(keys))}")
+        errs += [f"i18n.json {lang}.{k}: unknown placeholder" for k, v in d.items() if set(re.findall(r"\{(\w+)\}", v)) - keys.get(k, set())]
         if f'["{lang}"' not in js:
             errs.append(f"i18n.json {lang}: not in LANGS of i18n.js")
     if errs:

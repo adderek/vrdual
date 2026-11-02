@@ -9,11 +9,9 @@ const keyOf = (g, k) => k === "game" ? nameKey(g)
 
 function details(g) {
   const s = slug(g);
-  const rows = [["store: test", g.store], ["path", g.path], ["settings", g.settings], ["notes", g.notes]]
-    .filter(r => r[1]).map(([h, v]) => `<dt>${h}</dt><dd>${md(v)}</dd>`).join("");
-  const sp = g.writeup_pending ? `<p class="pending">Tuned configuration, write-up pending (until then tune it yourself, <a href="${REPO}CONFIG.md">CONFIG.md</a>).</p>` : "";
-  const media = g.media.length ? `<div class="media" data-media="${esc(s)}"><button type="button" class="load">Show ${g.media.length} wiggle GIF / video</button></div>` : "";
-  return `<tr class="det" id="d-${esc(s)}"><td colspan="5"><dl>${rows}</dl>${sp}${media}<p><a href="game.html?g=${encodeURIComponent(s)}">All materials for this game →</a></p></td></tr>`;
+  const sp = g.writeup_pending ? `<p class="pending">${t("g_pending", 'Tuned configuration, write-up pending (until then tune it yourself, <a href="{url}">CONFIG.md</a>).', {url: REPO + "CONFIG.md"})}</p>` : "";
+  const media = g.media.length ? `<div class="media" data-media="${esc(s)}"><button type="button" class="load">${esc(t("g_show_media", "Show wiggle GIFs / videos ({n})", {n: g.media.length}))}</button></div>` : "";
+  return `<tr class="det" id="d-${esc(s)}"><td colspan="5"><dl>${detailRows(g)}</dl>${sp}${media}<p><a href="game.html?g=${encodeURIComponent(s)}">${esc(t("g_all_mat", "All materials for this game →"))}</a></p></td></tr>`;
 }
 
 function render() {
@@ -23,7 +21,8 @@ function render() {
     .sort((a, b) => { const x = keyOf(a, sortK), y = keyOf(b, sortK); return (x < y ? -1 : x > y ? 1 : 0) * sortDir || (nameKey(a) < nameKey(b) ? -1 : 1); });
   // sorted by a status column: one labelled group per status
   const grpOf = sortK === "dual" ? g => g.status : sortK === "single" ? g => g.single || "untested" : null;
-  const colName = sortK === "dual" ? "two GPUs" : "one GPU";
+  const two = t("g_two", "two GPUs"), one = t("g_one", "one GPU"), alt = t("g_col_alt", "other VR routes");
+  const colName = sortK === "dual" ? two : one;
   let prev = null;
   document.querySelector("#t tbody").innerHTML = rows.map(g => {
     const s = slug(g), o = open.has(s);
@@ -31,18 +30,21 @@ function render() {
     if (grpOf && grpOf(g) !== prev) {
       prev = grpOf(g);
       const n = rows.filter(x => grpOf(x) === prev).length;
-      head = `<tr class="grp"><th colspan="5" scope="rowgroup">${stHtml(prev)} <span class="muted">${colName} · ${n} game${n === 1 ? "" : "s"}</span></th></tr>`;
+      head = `<tr class="grp"><th colspan="5" scope="rowgroup">${stHtml(prev)} <span class="muted">${esc(t("g_grp", "{col} · games: {n}", {col: colName, n}))}</span></th></tr>`;
     }
-    const marks = (g.media.length ? '<span class="cam" title="wiggle GIF / video">◐</span>' : "") + (g.writeup_pending ? '<span class="spb" title="tuned configuration, write-up pending">★</span>' : "");
+    const marks = (g.media.length ? `<span class="cam" title="${esc(t("g_mark_media", "wiggle GIF / video"))}">◐</span>` : "") +
+      (g.writeup_pending ? `<span class="spb" title="${esc(t("g_mark_pending", "tuned configuration, write-up pending"))}">★</span>` : "");
     return head + `<tr class="row${o ? " open" : ""}${modeSt(g) === "broken" ? " broken" : ""}" data-s="${esc(s)}" tabindex="0" aria-expanded="${o}">
-      <td data-h="game"><div class="gcell"><span><span class="tw">▸</span> ${esc(g.game)}</span>${marks ? `<span class="marks">${marks}</span>` : ""}</div></td>
-      <td data-h="two GPUs" class="${mode === "dual" ? "hl" : ""}">${stHtml(g.status)}</td>
-      <td data-h="one GPU" class="${mode === "single" ? "hl" : ""}">${stHtml(g.single)}</td>
-      <td data-h="other VR routes">${g.alt ? md(g.alt) : '<span class="muted">not researched</span>'}</td>
-      <td class="more"><span class="muted">${o ? "less" : "more"}</span></td></tr>` + (o ? details(g) : "");
+      <td data-h="${esc(t("g_col_game", "game"))}"><div class="gcell"><span><span class="tw">▸</span> ${esc(g.game)}</span>${marks ? `<span class="marks">${marks}</span>` : ""}</div></td>
+      <td data-h="${esc(two)}" class="${mode === "dual" ? "hl" : ""}">${stHtml(g.status)}</td>
+      <td data-h="${esc(one)}" class="${mode === "single" ? "hl" : ""}">${stHtml(g.single)}</td>
+      <td data-h="${esc(alt)}">${g.alt ? md(g.alt) : `<span class="muted">${esc(t("g_not_researched", "not researched"))}</span>`}</td>
+      <td class="more"><span class="muted">${esc(o ? t("g_less", "less") : t("g_more", "more"))}</span></td></tr>` + (o ? details(g) : "");
   }).join("");
   const works = rows.filter(g => modeSt(g) === "works").length;
-  document.getElementById("count").textContent = `${rows.length} of ${games.length} games shown, ${works} work${mode === "single" ? " on one GPU" : " on two GPUs"}`;
+  const cv = {shown: rows.length, total: games.length, works};
+  document.getElementById("count").textContent = mode === "single" ? t("g_count1", "games shown: {shown} of {total} · working on one GPU: {works}", cv)
+    : t("g_count2", "games shown: {shown} of {total} · working on two GPUs: {works}", cv);
   document.querySelectorAll("th[data-k]").forEach(th => th.setAttribute("aria-sort", th.dataset.k === sortK ? (sortDir > 0 ? "ascending" : "descending") : "none"));
   document.getElementById("single-note").hidden = mode !== "single";
 }
@@ -50,7 +52,7 @@ function render() {
 function chips() {
   const box = document.getElementById("status");
   const list = mode === "single" ? order : STATUS;
-  box.innerHTML = list.map(s => `<button type="button" data-s="${s}" aria-pressed="${!hidden.has(s)}">${s} (${games.filter(g => modeSt(g) === s).length})</button>`).join("");
+  box.innerHTML = list.map(s => `<button type="button" data-s="${s}" aria-pressed="${!hidden.has(s)}">${esc(stLabel(s))} (${games.filter(g => modeSt(g) === s).length})</button>`).join("");
 }
 
 document.getElementById("status").addEventListener("click", e => {
@@ -87,6 +89,7 @@ try { mode = localStorage.getItem("vrdual-mode") === "single" ? "single" : "dual
 sortK = mode;
 document.querySelector(`#mode input[value="${mode}"]`).checked = true;
 const want = new URLSearchParams(location.search).get("g");
+onLang(() => { if (games.length) { chips(); render(); } });
 loadGames().then(d => {
   games = d;
   if (want) open.add(want);

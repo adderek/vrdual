@@ -3,41 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vrdual games</title>
-<meta name="description" content="Which games run in real stereo 3D in a VR headset with vrdual, on one or two GPUs, and which other VR routes exist for them.">
+<title data-i18n="g_title">vrdual games</title>
+<meta name="description" data-i18n="g_desc" data-i18n-attr="content" content="Which games run in real stereo 3D in a VR headset with vrdual, on one or two GPUs, and which other VR routes exist for them.">
 <link rel="stylesheet" href="style.css">
 <script>try{var t=localStorage.getItem("vrdual-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" aria-current="page">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek">Sponsor</a></nav>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" aria-current="page" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+  <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
 <header class="page">
-  <h1>Games</h1>
-  <p>Status per game as tested; anything not listed is untested. Click a game for settings, notes and wiggle GIFs.</p>
+  <h1 data-i18n="g_h1">Games</h1>
+  <p data-i18n="g_intro">Status per game as tested; anything not listed is untested. Click a game for settings, notes and wiggle GIFs.</p>
 </header>
 <main class="page">
   <div class="tools">
     <fieldset id="mode" class="seg">
-      <legend>I have</legend>
-      <label><input type="radio" name="mode" value="single"> one GPU</label>
-      <label><input type="radio" name="mode" value="dual"> two GPUs</label>
+      <legend data-i18n="g_have">I have</legend>
+      <label><input type="radio" name="mode" value="single"> <span data-i18n="g_one">one GPU</span></label>
+      <label><input type="radio" name="mode" value="dual"> <span data-i18n="g_two">two GPUs</span></label>
     </fieldset>
-    <input id="q" type="search" placeholder="Search game, notes…" aria-label="search">
+    <input id="q" type="search" data-i18n="g_search" data-i18n-attr="placeholder" placeholder="Search game, notes…" aria-label="search">
   </div>
   <div id="status" class="chips" role="group" aria-label="status filter"></div>
-  <p id="single-note" class="note" hidden>One GPU: few games checked so far, most were tested on two GPUs. The same
+  <p id="single-note" class="note" hidden data-i18n="g_single_note">One GPU: few games checked so far, most were tested on two GPUs. The same
     patch runs on one GPU with the eyes on alternate frames (half the frame rate per eye). Turn off temporal AA /
     upscaling (TAA, DLSS, FSR, XeSS), motion blur and frame generation: they mix the eyes.</p>
   <p id="count" class="muted"></p>
   <div class="wrap">
     <table id="t">
       <thead><tr>
-        <th data-k="game">game</th><th data-k="dual">two GPUs</th><th data-k="single">one GPU</th>
-        <th data-k="alt">other VR routes</th><th aria-label="details"></th>
+        <th data-k="game" data-i18n="g_col_game">game</th><th data-k="dual" data-i18n="g_two">two GPUs</th><th data-k="single" data-i18n="g_one">one GPU</th>
+        <th data-k="alt" data-i18n="g_col_alt">other VR routes</th><th aria-label="details"></th>
       </tr></thead>
       <tbody></tbody>
     </table>
   </div>
-  <p class="muted legend"><b>works</b> = stereo in the headset confirmed; <b>runs</b> = renders, stereo not
+  <p class="muted legend" data-i18n="g_legend"><b>works</b> = stereo in the headset confirmed; <b>runs</b> = renders, stereo not
     confirmed in the headset or weak; <b>broken</b> = crash or no picture; <b>no effect</b> = runs, nothing to gain (2D);
     <b>retest</b> = result outdated. ◐ = wiggle GIF / video; ★ = tuned configuration, write-up pending;
     until then everything can be configured by hand
@@ -46,6 +47,7 @@
     Setup and settings that break stereo: <a href="https://github.com/adderek/vrdual/blob/master/docs/GAMES.md">GAMES.md</a>.</p>
 </main>
 <script src="common.js"></script>
+<script src="i18n.js"></script>
 <script src="games.js"></script>
 </body>
 </html>
