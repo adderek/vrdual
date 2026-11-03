@@ -70,6 +70,13 @@
   (`cvLandmarkVisSystem::LandmarkRenderJob`, TBB worker, SEGV_MAPERR), mirror
   mode, 32-bit. Next: the same session without vrdual (or one eye, no
   mirror) to tell a game bug from the mirror's memory sync.
+  2026-11-03: twice more within minutes (09:23, 11:29), same pc
+  (Civ5XP+0x813d5f: `mov (%eax),%eax` gives 0, then `0x14(%eax)`, a null
+  object in a TBB job). Mirror maps only ~37 MB, so not address space.
+  Known on Linux without vrdual too: an Arch forum thread (bbs.archlinux.org
+  viewtopic.php?id=308562) fixed random Civ5XP null segfaults by raising
+  `MaxSimultaneousThreads` (Aspyr config.ini, default 8; this box: 24
+  threads). Owner to try that first.
 - Fragment shader hunt + shader replacement (owner 2026-11-02, Civ V unit
   shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
   so hiding the shader that resolves shadows would hide the terrain too.
