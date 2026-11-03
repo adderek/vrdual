@@ -184,15 +184,16 @@
   "store": "Steam: positive",
   "path": "native Linux port (Aspyr, `Civ5XP`, 32-bit, GL from the Mac code) → Zink; Steam runs it, not the Windows build, unless Proton is forced",
   "status": "works",
-  "settings": "user profile `[app:Civ5XP]`, `world_scale` ~0.1, `auto_noshift = 1` (shadows, baked terrain), `head_look = scroll` (look past the edge to scroll the map; untested in the game yet); Aspyr config.ini `MaxSimultaneousThreads = 8` plus the thread-count binary patch (notes; a `vrdual` command for it is planned)",
+  "settings": "user profile `[app:Civ5XP]`, `world_scale` ~0.1, `auto_noshift = 1` (shadows, baked terrain), `head_look = scroll` with `cull_widen = 1.5` (look past the edge, scroll the map past `head_rot_max`; untested in the game yet); Aspyr config.ini `MaxSimultaneousThreads = 8` (the thread fix is applied by vrdual, `game_fixes = 1`, the default)",
   "notes": [
    "Works in the headset: shadows agree in both eyes, no crash with the thread patch.",
    "The depth effect is modest for a top-down map.",
    "Steam runs the native Linux port (Aspyr, from the Mac code), not the Windows build; Proton must be forced for that.",
    "Port vs Windows build: DX9 renderer (no DX11-only options), not updated with Windows (version mismatch in multiplayer with Windows players), no mods that replace the game core DLL (e.g. Vox Populi); players report both better and worse performance than under Proton.",
    "Port bug, also without vrdual (Steam reports since 2018): crash after a few to ~25 minutes. Each thread entering its TBB job system gets an index from an unbounded counter, but the per-thread render data has only n = `MaxSimultaneousThreads` slots (clamped to 3..16); two threads more than n enter, and a render job on such a thread reads a null slot.",
-   "Fix: binary patch, `JobManager_GetNumberThreads()` returns 16 (the port's own maximum), with `MaxSimultaneousThreads = 8`; over 30 minutes without a crash (before: 2-25 min).",
-   "Shadows: the game draws its shadow map at the 3D view's size into another target; `auto_noshift = 1` leaves it unshifted, so both eyes' shadows agree."
+   "Fix (applied by the vrdual layer in the game's process, `game_fixes`; the game file stays as it is): `JobManager_GetNumberThreads()` returns 16 (the port's own maximum), with `MaxSimultaneousThreads = 8`; over 30 minutes without a crash with the same patch in the file (before: 2-25 min).",
+   "Shadows: the game draws its shadow map at the 3D view's size into another target; `auto_noshift = 1` leaves it unshifted, so both eyes' shadows agree.",
+   "Wider culling (`cull_widen`): every culling frustum of the game comes from one function (`FGXGetClipPlanesFromMatrix`); vrdual replaces it with one that culls with a wider view while the game draws with its own, so `head_look = clip` / `scroll` can show the map past the screen edge. Not tested in the game yet."
   ],
   "tested": "2026-11-03",
   "single": "",

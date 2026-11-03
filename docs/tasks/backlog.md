@@ -100,10 +100,10 @@
   (vaddr 0x8dc282b, 19 bytes) returns 16 once initialized
   (`a1 08 14 0a 10 85 c0 74 05 b8 10 00 00 00 c3` + 4 nops), with
   `MaxSimultaneousThreads = 8` (indices up to 10). Applied by hand to the
-  owner's copy (`Civ5XP.orig` kept); first session over 30 min, no crash
-  (owner, 2026-11-03). Next: `vrdual fix
-  on|off GAME` like `intro` (bytes from the profile, checked before
-  writing, `.orig` backup), selftest check on a fake file.
+  owner's copy; first session over 30 min, no crash (owner, 2026-11-03).
+  Since then applied in memory by the layer (`layer/vrdual_gamefix.hpp`,
+  `game_fixes = 1`), the owner's file restored to the original. To confirm in
+  the game: log line `game fix Civ V threads ...: applied`, no crash.
 - Civ V (and other top-down strategy games): look around by turning the head
   (owner 2026-11-03). Today `head_look = clip` turns the rendered view, but the
   game culls everything outside its own frustum, so past the edge nothing is
@@ -111,7 +111,16 @@
   1. `head_look = scroll`: `clip` inside `head_rot_max`; past it vrdual-xr holds
      the arrow keys (uinput), at a rate set by the angle past the limit. Generic
      (most 4X/RTS games scroll with the arrows), Mapper scenario in selftest.
-  2. Wider culling only (game patch): the clip rotation happens in the vertex
+  1 done 2026-11-03 (selftest; not tried in the game yet).
+  2. Done 2026-11-03 as `cull_widen` (game fix, in memory): every culling
+     frustum comes from `FGXGetClipPlanesFromMatrix(proj, planes)` (callers:
+     `GameViewState::SetupFrameGlobals` via `CvCamera::GetClipPlanesInWorldSpace`
+     and `FGXGetClipPlanesFromViewMatrix`, `CalcVisibleRegion` intersects the
+     planes with the ground, leader heads, shadows); the hook extracts the same
+     planes from the projection with x / y divided by `cull_widen`. To check in
+     the game: content past the edge when the head turns, the terrain texture
+     and shadows there, cost. Original note:
+     Wider culling only (game patch): the clip rotation happens in the vertex
      shader before clipping, so anything the game submits shows up when the
      head turns. Widening only Civ V's culling frustum (FCamera / vis systems;
      the binary exports class symbols) keeps its projection, mouse picking and

@@ -31,6 +31,7 @@ automatically.
 |---|---|
 | `layer/vrdual_layer.cpp` | the Vulkan layer: GPU filter, capability filter, BDA enable + param buffer, shader patch hook, swapchain readback, lockstep |
 | `layer/vrdual_passes.hpp` | render pass tracking: `depth_export` (the main depth image copied with each frame) and `auto_noshift` (shaders drawn only in shadow passes not shifted, live key table at param addr+96) |
+| `layer/vrdual_gamefix.hpp` | game fixes: byte-checked patches of known game binaries in memory (Civ V thread crash, `cull_widen`), `game_fixes` / `cull_widen`; tested by `tools/gamefix_test.cpp` (`vrdual-gamefix-test`, also 32-bit) |
 | `layer/vrdual_cursor.hpp` | X11 cursor (pointer over the game window + XFixes image) into the frame header, xcb via dlopen |
 | `layer/vrdual_mirror.hpp` | mirror mode: hidden twin device via the ICD, handle map, memory shadow/diff, sync, WSI twins |
 | `tools/gen_mirror.py` | generates `build/mirror_{dispatch,gen}.hpp` (dispatch table + ~400 replay wrappers) from vk.xml |
@@ -137,6 +138,10 @@ machine unless a row says otherwise. Read them with its topology in mind:
 - The layer stays **passive**: no UI, network, threads or prompts inside the
   app process. UIs edit the control block; layers only read it. See PLAN §H.
 - App-unaware is the point. No changes to apps or engines.
+  Exception by the owner's decision (2026-11-03): `game_fixes`, small
+  in-memory patches for a known game build that fix its own bugs or widen its
+  culling (`layer/vrdual_gamefix.hpp`); byte-checked, any other build is left
+  alone, off with `game_fixes = 0`. Never patch game files on disk.
 - Config precedence: defaults < `[global]` < game profile (`profiles/`) < `[app:NAME]` < `VRDUAL_<KEY>` env.
   `VRDUAL_EYE`, `VRDUAL_GPU` and `VRDUAL_SESSION` are per process only.
 - Changing a struct in `vrdual_shm.h` → bump `VRDUAL_VERSION` or the ctl `version`.

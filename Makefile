@@ -12,15 +12,15 @@ LAYERFLAGS := -shared -fPIC -fvisibility=hidden -static-libstdc++ -static-libgcc
 # Version, build time and machine, evaluated when a binary is compiled (so
 # each one carries its own; see common/vrdual_version.h).
 BUILDINFO = -DVRDUAL_BUILD_INFO="\"$$(tools/build_info.sh)\""
-LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/vrdual_passes.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
+LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/vrdual_passes.hpp layer/vrdual_gamefix.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
 
-all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test
+all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test $(B)/vrdual-gamefix-test
 
 # What `vrdual install` needs: the tools and both layers (no 32-bit GL test app).
 install-build: all $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json
 
 # 32-bit layer for 32-bit games (Zen Bound 2, most older Steam titles).
-lib32: $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json $(B)/lib32/vrdual-gltest
+lib32: $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json $(B)/lib32/vrdual-gltest $(B)/lib32/vrdual-gamefix-test
 
 $(B) $(B)/lib32:
 	mkdir -p $@
@@ -36,6 +36,12 @@ $(B)/lib32/libVkLayer_vrdual.so: $(LAYERSRC) | $(B)/lib32
 
 $(B)/lib32/vrdual-gltest: testapp/gltest.cpp | $(B)/lib32
 	$(CXX) -m32 $(CXXFLAGS) $(BUILDINFO) -o $@ $< -lGL -lX11
+
+$(B)/vrdual-gamefix-test: tools/gamefix_test.cpp layer/vrdual_gamefix.hpp | $(B)
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+$(B)/lib32/vrdual-gamefix-test: tools/gamefix_test.cpp layer/vrdual_gamefix.hpp | $(B)/lib32
+	$(CXX) -m32 -msse2 $(CXXFLAGS) -o $@ $<
 
 $(B)/VkLayer_vrdual.json: layer/VkLayer_vrdual.json.in | $(B)
 	cp $< $@
@@ -89,4 +95,4 @@ clean:
 
 # GPU-free targets for `vrdual ci` (no SDL3, no 32-bit toolchain; the layer is
 # built so gen_mirror.py and the layer code compile: needs xcb + xfixes headers)
-ci: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test
+ci: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test $(B)/vrdual-gamefix-test

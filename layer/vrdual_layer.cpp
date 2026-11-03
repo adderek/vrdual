@@ -61,6 +61,7 @@
 #include "../common/vrdual_shm.h"
 #include "../common/vrdual_version.h"
 #include "spirv_patch.hpp"
+#include "vrdual_gamefix.hpp"
 
 #define EXPORT extern "C" __attribute__((visibility("default")))
 
@@ -289,6 +290,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.depth_export = st.i("depth_export") != 0;
     c.pass_trace = st.i("pass_trace");
     c.auto_noshift = st.i("auto_noshift") != 0;
+    if (st.i("game_fixes")) gamefix::run(exe_name(), st.f("cull_widen"), logf);
     c.hunt_fragment = st.i("hunt_fragment") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
     c.lockstep_timeout_ms = st.i("lockstep_timeout_ms");

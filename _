@@ -854,6 +854,8 @@ _selftest_nogpu() {
     mkdir -p "$tmp/frames"; check "$B/vrdual-frames-test" "$tmp/frames"
     label="guided IPD calibration: simulated viewers 50-80 mm converge within 0.5 mm, near IPD found or left off"
     check "$B/vrdual-calib-test"
+    label="game fixes: culling planes plain and widened, byte-checked patch (applied / already / unknown build / unmapped)$([[ -x $B/lib32/vrdual-gamefix-test ]] && echo ', 32-bit jmp into the Civ V hook')"
+    check bash -c "'$B/vrdual-gamefix-test' >/dev/null && { [[ ! -x '$B/lib32/vrdual-gamefix-test' ]] || '$B/lib32/vrdual-gamefix-test' >/dev/null; }"
     label="game profiles: all valid (exe, known keys); a bad one is refused"
     check bash -c "'$B/vrdual-ctl' profiles '$VRDUAL_ROOT/profiles' >/dev/null && mkdir -p '$tmp/badprof' &&
         printf '[game]\\nexe = x.exe\\n[settings]\\nworld_scal = 2\\n' >'$tmp/badprof/x.conf' &&

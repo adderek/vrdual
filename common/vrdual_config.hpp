@@ -57,6 +57,8 @@ static const Key kKeys[] = {
     {"auto_noshift", "0", "shaders drawn only in off-screen passes (another size than the swapchain and the main view: shadow maps, baked textures) are not shifted per eye; live params only"},
     {"pass_trace", "0", "debugging (auto_noshift): log every render pass and pipeline bind recorded after present N (0 = off)"},
     {"depth_export", "0", "also publish the game's depth buffer with each frame (one process per eye or one GPU; not in mirror mode yet)"},
+    {"game_fixes", "1", "byte-checked fixes of known game binaries, applied in the game's process (docs/CONFIG.md: Civ V thread crash); 0 = off"},
+    {"cull_widen", "1", "game fix: the game culls with a view this many times wider (tan of the half angles) than it draws, so head_look clip / scroll shows more past the edge (Civ V); 1 = off"},
     {"cursor", "1", "export the X11 cursor (position + image) with the frames; vrdual-xr draws it"},
     {"cursor_depth", "auto", "vrdual-xr cursor depth: auto (the scene under it) | hud (at hud_depth)"},
     {"lockstep", "1", "hold each frame until the other eye has it"},
