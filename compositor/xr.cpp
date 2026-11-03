@@ -908,6 +908,7 @@ static int run(int argc, char** argv) {
     GameLog games;
     std::unique_ptr<vrdual::Mapper> mapper;
     vrdual::Uinput uinput;
+    bool fed = false;  // the Mapper was stepped last frame (release() when that stops)
     double t_input = vrdual::now_s();
     // head_lean: head position relative to a reference, in the frame of the
     // reference yaw (x right, y up, z forward), soft-clamped -> control block
@@ -1023,6 +1024,7 @@ static int run(int argc, char** argv) {
             ctl = nullptr;
             input_app.assign(L.hdr->app, strnlen(L.hdr->app, sizeof L.hdr->app));
             vrdual::InputCfg ic = vrdual::load_input_cfg(input_app);
+            if (mapper) uinput.emit(mapper->release());  // the old game's held keys
             mapper.reset(new vrdual::Mapper(ic));  // also with input = off: menu + a / b switches the control mode
             control_changes = 0;
             fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s (input: %s)\n", input_app.c_str(), ic.input.c_str(),
@@ -1102,6 +1104,8 @@ static int run(int argc, char** argv) {
         bool anchored = world || frozen;
         float aspect = float(L.w ? L.w : 16) / float(L.h ? L.h : 9);
         XrPosef base = anchored && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
+        if (mapper && fed && !(xin.ok && fresh)) uinput.emit(mapper->release());  // stopped feeding it: nothing stays pressed
+        fed = mapper && xin.ok && fresh;
         if (xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
             ScreenGeom G = screen_geom(scr, base, grab, hfov_now, aspect);
             vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G);

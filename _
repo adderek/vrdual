@@ -921,6 +921,10 @@ vrdual_selftest() {
     local tmp fails=0 sess=selftest
     tmp=$(mktemp -d)
     _VRDUAL_SELFTEST_TMP=$tmp
+    # vrdual-xr runs here with simulated controllers and head turns: only the
+    # virtual pad may be created, never a keyboard or mouse that would type
+    # into the desktop (head_look = scroll once left arrows stuck there).
+    export VRDUAL_UINPUT_PAD_ONLY=1
     trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
     check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
     vrdual_build || return 1
@@ -1643,16 +1647,16 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         # turn reaches the control block soft-limited, world lock refuses it,
         # exit clears it. head_look = scroll turns the view the same way (its
         # arrow keys: Mapper scenario in vrdual-input-test).
-        label="openxr: head_look = clip (--lock head) and scroll (lock = head from the config), turning simulated HMD -> head_yaw in the block (|yaw| < head_rot_max), world lock: off + overlay notice, exit: 0"
+        label="openxr: head_look = clip (--lock head) and scroll (lock = head from the config; its arrow keys produced, kept off the desktop), turning simulated HMD -> head_yaw in the block (|yaw| < head_rot_max), world lock: off + overlay notice, exit: 0"
         check bash -c "c='$B/vrdual-ctl --session $sess'; x() { XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 SIMULATED_ROTATE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LOOK=\${hl:-clip} VRDUAL_HEAD_ROT_MAX=10 timeout 30 '$B/vrdual-xr' --session $sess --frames 150 \"\$@\"; }
             for hl in clip scroll; do
-            if [[ \$hl == clip ]]; then x --lock head >'$tmp/xr-rot.log' 2>&1 & p=\$!; else VRDUAL_LOCK=head x >'$tmp/xr-rot.log' 2>&1 & p=\$!; fi; seen=0
+            if [[ \$hl == clip ]]; then x --lock head >'$tmp/xr-rot.log' 2>&1 & p=\$!; else VRDUAL_LOCK=head VRDUAL_SCROLL_ANGLE=1 x >'$tmp/xr-rot.log' 2>&1 & p=\$!; fi; seen=0
             while kill -0 \$p 2>/dev/null; do \$c live | awk '\$1==\"head_yaw\"{y=\$2} END{exit !(y != 0 && y > -10 && y < 10)}' && seen=1; sleep 0.2; done; wait \$p
             [[ \$seen == 1 ]] && \$c live | grep -qx 'head_yaw 0' || break
-            [[ \$hl == clip ]] || grep -q 'lock head (config)' '$tmp/xr-rot.log' || { seen=0; break; }; done; hl=clip
+            [[ \$hl == clip ]] || { grep -q 'lock head (config)' '$tmp/xr-rot.log' && grep -q 'VRDUAL_UINPUT_PAD_ONLY: no vrdual keyboard created' '$tmp/xr-rot.log'; } || { seen=0; break; }; done; hl=clip
             [[ \$seen == 1 ]] && \$c live | grep -qx 'head_yaw 0' &&
             x --lock world >'$tmp/xr-rotw.log' 2>&1; grep -q 'head_look = clip needs a head-locked screen' '$tmp/xr-rotw.log' && grep -q 'overlay: head_look = clip: rotation off' '$tmp/xr-rotw.log' && \$c live | grep -qx 'head_yaw 0' ||
-            { echo seen=\$seen; \$c live; grep '^\\[xr\\]' '$tmp/xr-rot.log' | tail; false; }"
+            { echo seen=\$seen hl=\$hl; \$c live; grep -E '^\\[input\\]|lock' '$tmp/xr-rot.log' | head; grep '^\\[xr\\]' '$tmp/xr-rot.log' | tail; false; }"
         local sm  # cinema screen: quad / cylinder pair accepted by the runtime
         for sm in flat:world curved:head full:head; do  # default lock = world
             label="openxr: screen=${sm%:*} lock ${sm#*:}, 30 frames submitted"

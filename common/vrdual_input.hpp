@@ -54,6 +54,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -597,6 +598,26 @@ public:
         if (m == M_MOUSE && b == B_LG && (mode_ == 1 || mode_ == 3)) return 0;  // clutch
         return kMapDefault[m][b];
     }
+    // Releases everything held (keys, buttons, stick keys, head scroll keys,
+    // pad axes back to rest): the Mapper is not stepped any more (game gone,
+    // replaced by a new one), so nothing may stay pressed on the desktop.
+    std::vector<InEvent> release() {
+        std::vector<InEvent> ev;
+        if (menu_up_) key(ev, menu_up_, false), menu_up_ = 0;
+        for (int b = 0; b < B_COUNT; ++b)
+            if (down_code_[b] > 0) key(ev, down_code_[b], false), down_code_[b] = 0;
+        for (int i = 0; i < 4; ++i) {
+            if (dir_[i]) key(ev, lstick_key(i), false), dir_[i] = false;
+            if (scroll_[i] && cfg_.scroll_keys[i] > 0) key(ev, cfg_.scroll_keys[i], false);
+            scroll_[i] = scroll_in_[i] = scroll_hold_[i] = false;
+            scroll_t_[i] = -1;
+        }
+        for (auto& a : axis_)
+            if (a.second != 0) ev.push_back({DEV_PAD, EV_ABS, a.first, 0}), a.second = 0;
+        for (int b = 0; b < B_COUNT; ++b) prev_[b] = false;
+        head_ref_ok_ = head_prev_ok_ = false;
+        return ev;
+    }
     // New button maps (config reloaded); held buttons release what they pressed.
     void remap(const InputCfg& c) { memcpy(cfg_.map, c.map, sizeof cfg_.map); }
     void set_speed(float s) { cfg_.speed = s; }
@@ -845,15 +866,24 @@ private:
 // Virtual devices, created on first event for them.
 class Uinput {
 public:
+    // Keys still down are released first: a device destroyed with a key down
+    // can leave the compositor thinking it is held (that key then dead on the
+    // real keyboard until the next login).
     ~Uinput() {
-        for (int& fd : fd_)
-            if (fd >= 0) { ioctl(fd, UI_DEV_DESTROY); close(fd); }
+        for (int d = 0; d < 4; ++d) {
+            if (fd_[d] < 0) continue;
+            for (int code : down_[d]) write_ev(fd_[d], EV_KEY, code, 0);
+            if (!down_[d].empty()) write_ev(fd_[d], EV_SYN, SYN_REPORT, 0), usleep(50000);  // let readers take it
+            ioctl(fd_[d], UI_DEV_DESTROY);
+            close(fd_[d]);
+        }
     }
     bool emit(const std::vector<InEvent>& ev) {
         bool used[4] = {};
         for (auto& e : ev) {
             if (!open_dev(e.dev)) continue;
             write_ev(fd_[e.dev], e.type, e.code, e.value);
+            if (e.type == EV_KEY) e.value ? (void)down_[e.dev].insert(e.code) : (void)down_[e.dev].erase(e.code);
             used[e.dev] = true;
         }
         for (int d = 0; d < 4; ++d)
@@ -868,7 +898,9 @@ public:
 
 private:
     int fd_[4] = {-1, -1, -1, -1};
+    std::set<int> down_[4];  // keys / buttons currently down per device
     bool failed_ = false;
+    unsigned blocked_ = 0;  // devices refused by VRDUAL_UINPUT_PAD_ONLY (logged once)
     std::string err_;
 
     static void write_ev(int fd, int type, int code, int value) {
@@ -890,6 +922,11 @@ private:
     bool open_dev(int dev) {
         if (fd_[dev] >= 0) return true;
         if (failed_) return false;
+        if (dev != DEV_PAD && getenv("VRDUAL_UINPUT_PAD_ONLY")) {  // selftest: never type into the desktop
+            if (!(blocked_ & (1u << dev))) fprintf(stderr, "[input] VRDUAL_UINPUT_PAD_ONLY: no %s created\n", name(dev));
+            blocked_ |= 1u << dev;
+            return false;
+        }
         int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) {
             err_ = std::string("/dev/uinput: ") + strerror(errno) +

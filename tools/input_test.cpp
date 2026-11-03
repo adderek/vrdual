@@ -173,6 +173,13 @@ int main(int argc, char** argv) {
         for (auto& e : ev2) held &= !(e == key(KEY_A, 0));
         for (auto& e : ev3) held &= !(e == key(KEY_A, 0));
         expect(held, "head scroll: past scroll_hold_angle -> held, also back in the tap band");
+        {
+            Mapper m2(k);
+            Controls c2 = c; c2.head_yaw = 170; c2.head_pitch = -5; m2.step(c2, 0.1);
+            c2.head_yaw = -155; m2.step(c2, 0.1);  // 35 left: held
+            auto rel = m2.release(), again = m2.release();
+            expect(has(rel, key(KEY_A, 1 - 1)) && again.empty(), "release(): a held scroll key goes up (game gone), once");
+        }
         c.head_yaw = 187; c.head_pitch = -30; ev = m.step(c, 0.1);  // 17 left (out, hysteresis 2), 25 down
         expect(has(ev, key(KEY_A, 0)) && has(ev, key(KEY_DOWN, 1)) && ev.size() == 2, "head scroll: back inside -> left released; 25 down -> DOWN tap");
         c.head_ok = false; ev = m.step(c, 0.05);
