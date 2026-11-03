@@ -411,6 +411,11 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
   already shows the turn and vrdual-xr sends 0. Beyond the game's frustum
   there is nothing (culled), so edges show the clear colour: meant for small
   turns. `vrdual set head_yaw 5` sets it by hand (selftest measures it).
+- `head_look = scroll`: `clip`, plus the Mapper holds the arrow keys while the
+  head (yaw/pitch from the start direction) is past `head_rot_max`, released
+  2° back inside. Strategy games scroll the map with the arrows, so looking
+  past the edge moves the camera there (Civ V); within the limit the view only
+  turns.
 
 Stats, every 5 s in the `vrdual xr` log (`VRDUAL_XR_STATS` seconds): `N frames
 submitted, M new game frames (game fps), headset … Hz, … without a new game

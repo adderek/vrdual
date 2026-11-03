@@ -21,6 +21,9 @@
 //                            start direction (clip-space rotation in the
 //                            layer, head_turn), soft limit head_rot_max;
 //                            needs a head-locked screen (--lock head)
+//                     scroll: clip, and past head_rot_max from the start
+//                            direction the arrow keys are held (map
+//                            scrolling in strategy games); 2 deg hysteresis
 //
 // Buttons are remapped with map_<mode>_<button> = KEY_*|BTN_*|none (mode:
 // gamepad, mouse) or map_<button> (both modes) in [global] or [app:NAME];
@@ -43,6 +46,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -578,7 +582,7 @@ public:
     std::vector<InEvent> step(const Controls& c, double dt) {
         std::vector<InEvent> ev;
         if (none()) {  // head look only (it is the head, not a controller)
-            head(c, dt);
+            head(c, dt, ev);
             flush_rel(ev);
             return ev;
         }
@@ -624,12 +628,12 @@ public:
         }
         if (!now[B_MENU]) recentred_ = false;
         if (menu_hold_ >= 1.0 && !recentred_) {
-            head_ref_ok_ = false;  // edge: the current direction becomes the centre
+            head_ref_ok_ = false;  // edge / scroll: the current direction becomes the centre
             recentred_ = true;
             ++recentres;
             fprintf(stderr, "[input] head look re-centred\n");
         }
-        head(c, dt);
+        head(c, dt, ev);
         flush_rel(ev);
         for (int b = 0; b < B_COUNT; ++b) prev_[b] = now[b];
         return ev;
@@ -682,6 +686,7 @@ private:
     float hand_yaw_ = 0, hand_pitch_ = 0, pos_x_ = 0, pos_y_ = 0;
     bool head_prev_ok_ = false, head_ref_ok_ = false;
     float head_yaw_ = 0, head_pitch_ = 0, ref_yaw_ = 0, ref_pitch_ = 0;
+    bool scroll_[4] = {};  // head_look = scroll: arrows held (up down left right)
 
     bool hyst(int b, float v) { return an_[b] = an_[b] ? v > 0.45f : v > 0.55f; }
     static void key(std::vector<InEvent>& ev, int code, bool down) {
@@ -756,7 +761,7 @@ private:
             }
         }
     }
-    void head(const Controls& c, double dt) {
+    void head(const Controls& c, double dt, std::vector<InEvent>& ev) {
         if (cfg_.head_look == "mouse" && c.head_ok && head_prev_ok_) {
             fx_ -= wrap180(c.head_yaw - head_yaw_) * cfg_.head_cpd;
             fy_ -= (c.head_pitch - head_pitch_) * cfg_.head_cpd;
@@ -769,6 +774,18 @@ private:
             };
             fx_ -= float(rate(wrap180(c.head_yaw - ref_yaw_)) * dt * cfg_.head_cpd);
             fy_ -= float(rate(c.head_pitch - ref_pitch_) * dt * cfg_.head_cpd);
+        }
+        if (cfg_.head_look == "scroll" || std::any_of(scroll_, scroll_ + 4, [](bool b) { return b; })) {
+            bool on = cfg_.head_look == "scroll" && c.head_ok;
+            if (on && !head_ref_ok_) { ref_yaw_ = c.head_yaw; ref_pitch_ = c.head_pitch; head_ref_ok_ = true; }
+            float y = on ? wrap180(c.head_yaw - ref_yaw_) : 0, p = on ? c.head_pitch - ref_pitch_ : 0;  // + = left / up
+            float L = cfg_.rot_max > 0 ? cfg_.rot_max : 20;
+            float a[4] = {p, -p, y, -y};
+            static const int keys[4] = {KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT};
+            for (int i = 0; i < 4; ++i) {
+                bool want = a[i] > (scroll_[i] ? L - 2 : L);
+                if (want != scroll_[i]) { key(ev, keys[i], want); scroll_[i] = want; }
+            }
         }
         head_prev_ok_ = c.head_ok;
         head_yaw_ = c.head_yaw;

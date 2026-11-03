@@ -1636,11 +1636,14 @@ row = lambda y: d[i + y * w * 4: i + (y + 1) * w * 4]
 sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$tmp/ovmap.pam' || { grep '\\[xr\\]' '$tmp/xr-mapui.log'; false; }"
         # head_look = clip: Monado's simulated HMD turns (SIMULATED_ROTATE), the
         # turn reaches the control block soft-limited, world lock refuses it,
-        # exit clears it.
-        label="openxr: head_look = clip, turning simulated HMD -> head_yaw in the block (|yaw| < head_rot_max), world lock: off + overlay notice, exit: 0"
-        check bash -c "c='$B/vrdual-ctl --session $sess'; x() { XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 SIMULATED_ROTATE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LOOK=clip VRDUAL_HEAD_ROT_MAX=10 timeout 30 '$B/vrdual-xr' --session $sess --frames 150 \"\$@\"; }
+        # exit clears it. head_look = scroll turns the view the same way (its
+        # arrow keys: Mapper scenario in vrdual-input-test).
+        label="openxr: head_look = clip and scroll, turning simulated HMD -> head_yaw in the block (|yaw| < head_rot_max), world lock: off + overlay notice, exit: 0"
+        check bash -c "c='$B/vrdual-ctl --session $sess'; x() { XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 SIMULATED_ROTATE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LOOK=\${hl:-clip} VRDUAL_HEAD_ROT_MAX=10 timeout 30 '$B/vrdual-xr' --session $sess --frames 150 \"\$@\"; }
+            for hl in clip scroll; do
             x --lock head >'$tmp/xr-rot.log' 2>&1 & p=\$!; seen=0
             while kill -0 \$p 2>/dev/null; do \$c live | awk '\$1==\"head_yaw\"{y=\$2} END{exit !(y != 0 && y > -10 && y < 10)}' && seen=1; sleep 0.2; done; wait \$p
+            [[ \$seen == 1 ]] && \$c live | grep -qx 'head_yaw 0' || break; done; hl=clip
             [[ \$seen == 1 ]] && \$c live | grep -qx 'head_yaw 0' &&
             x --lock world >'$tmp/xr-rotw.log' 2>&1; grep -q 'head_look = clip needs a head-locked screen' '$tmp/xr-rotw.log' && grep -q 'overlay: head_look = clip: rotation off' '$tmp/xr-rotw.log' && \$c live | grep -qx 'head_yaw 0' ||
             { echo seen=\$seen; \$c live; grep '^\\[xr\\]' '$tmp/xr-rot.log' | tail; false; }"

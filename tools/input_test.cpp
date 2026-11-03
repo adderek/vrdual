@@ -150,6 +150,25 @@ int main(int argc, char** argv) {
     }
     {
         InputCfg k = cfg("off");
+        k.head_look = "scroll";
+        k.rot_max = 20;
+        Mapper m(k);
+        auto key = [](int code, int v) { return InEvent{DEV_KBD, EV_KEY, code, v}; };
+        Controls c; c.head_ok = true; c.head_yaw = 170; c.head_pitch = -5;
+        auto ev = m.step(c, 0.1);                      // reference: 170 / -5
+        c.head_yaw = 185; ev = m.step(c, 0.1);         // 15 left (across +-180): inside
+        expect(ev.empty(), "head scroll: 15 deg left of the start -> nothing (view turns only)");
+        c.head_yaw = -165; ev = m.step(c, 0.1);        // 25 left
+        expect(has(ev, key(KEY_LEFT, 1)) && ev.size() == 1, "head scroll: 25 deg left -> KEY_LEFT held");
+        c.head_yaw = -171; ev = m.step(c, 0.1);        // 19 left: inside the 2 deg hysteresis
+        expect(ev.empty(), "head scroll: back to 19 deg -> still held (hysteresis)");
+        c.head_yaw = 187; c.head_pitch = -30; ev = m.step(c, 0.1);  // 17 left, 25 down
+        expect(has(ev, key(KEY_LEFT, 0)) && has(ev, key(KEY_DOWN, 1)) && ev.size() == 2, "head scroll: 17 left, 25 down -> LEFT released, DOWN held");
+        c.head_ok = false; ev = m.step(c, 0.1);
+        expect(has(ev, key(KEY_DOWN, 0)) && ev.size() == 1, "head scroll: tracking lost -> DOWN released");
+    }
+    {
+        InputCfg k = cfg("off");
         k.head_look = "mouse";
         Mapper m(k);
         Controls c; c.head_ok = true; c.head_yaw = 179; m.step(c, 0.01);

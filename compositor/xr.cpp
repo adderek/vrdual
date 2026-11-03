@@ -1280,10 +1280,10 @@ static int run(int argc, char** argv) {
                 hunt_on = mapper->input() == "hunt";
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
             }
-            bool rot = icfg.head_look == "clip";
+            bool rot = icfg.head_look == "clip" || icfg.head_look == "scroll";  // scroll: Mapper holds the arrows past the limit
             if (rot && anchored && !clip_warned) {  // a world-locked screen already shows the turn
-                fprintf(stderr, "[xr] head_look = clip needs a head-locked screen (--lock head, not frozen): rotation off\n");
-                notify("head_look = clip: rotation off, start vrdual xr --lock head");  // overrides the controls line
+                fprintf(stderr, "[xr] head_look = %s needs a head-locked screen (--lock head, not frozen): rotation off\n", icfg.head_look.c_str());
+                notify("head_look = " + icfg.head_look + ": rotation off, start vrdual xr --lock head");  // overrides the controls line
                 clip_warned = true;
             }
             rot &= !anchored;
@@ -1312,7 +1312,7 @@ static int run(int argc, char** argv) {
                 send_head(h);
             }
         }
-        if (!fresh || !mapper || !(icfg.lean || (icfg.head_look == "clip" && !anchored))) {  // nothing drives it: no stale offset
+        if (!fresh || !mapper || !(icfg.lean || ((icfg.head_look == "clip" || icfg.head_look == "scroll") && !anchored))) {  // nothing drives it: no stale offset
             const float zero[6] = {};
             send_head(zero);
         }
