@@ -1444,11 +1444,13 @@ print(*(next((x for x in range(512) if im.getpixel((x0 + x, 1))[1] > 32), -1) fo
     # 4. Mirror mode under Zink (OpenGL 2.1-era app), 64- and 32-bit; eyes must differ.
     # --shadow + auto_noshift: the FBO "shadow map" (shown unshifted, top left)
     # must match in both eyes, i.e. B's twin honours the pass flag under Zink.
+    # vblank_mode=0 everywhere: an occluded GL window under FIFO gets ~1 frame/s
+    # and never reaches the 30 presents auto_noshift needs (cf. MAILBOX in testapp).
     local gl
     for gl in "$B/vrdual-gltest" "$B/lib32/vrdual-gltest"; do
         [[ -x $gl ]] || { say "SKIP  mirror zink $(basename "$(dirname "$gl")") (make lib32)"; continue; }
         rm -f /dev/shm/vrdual-$sess-*
-        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 "$gl" --shadow --title "selftest zink" >"$tmp/gl.log" 2>&1 &
         label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped, dirty tracking on"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
@@ -1472,7 +1474,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     # Civ V: 1368x768) and a "shadow map" FBO of that same size: told apart
     # by target, the shadow FBO is not shifted, the 3D view still is.
     rm -f /dev/shm/vrdual-$sess-*
-    env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+    env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
         VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 "$B/vrdual-gltest" --shadow --view 800 600 --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
     label="auto_noshift by target: shadow FBO of the 3D view's size (800x600) not shifted, the view itself shifted"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/glv.log' && break; sleep 0.1; done
@@ -1501,7 +1503,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     # still reach A), only the right eye freezes. gltest animates its texture.
     if [[ -x $B/lib32/vrdual-gltest ]] && (( two )); then
         rm -f /dev/shm/vrdual-$sess-*
-        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B/lib32" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B/lib32" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_MIRROR_FAIL_AT=30 "$B/lib32/vrdual-gltest" --title "selftest stop" >"$tmp/stop.log" 2>&1 &
         local gp=$!
         for i in $(seq 300); do grep -q STOPPED "$tmp/stop.log" && break; sleep 0.1; done
@@ -1517,7 +1519,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
 
     # 4c. VRDUAL_BACKTRACE=1: SIGABRT logs native frames (module + offset), then the app dies as before.
     if [[ -x $B/vrdual-gltest ]]; then
-        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_BACKTRACE=1 "$B/vrdual-gltest" --title "selftest abort" >"$tmp/bt.log" 2>&1 &
         local bp=$!
         for i in $(seq 100); do grep -q GL_RENDERER "$tmp/bt.log" && break; sleep 0.1; done
@@ -1525,7 +1527,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
         label="backtrace: SIGABRT logs the frames, the app still aborts"
         check bash -c "(( $brc == 134 )) && grep -q 'SIGABRT in thread' '$tmp/bt.log' && grep -q '#0 .*libVkLayer_vrdual.so + 0x' '$tmp/bt.log' || { echo rc $brc; cat '$tmp/bt.log'; false; }"
         # SIGSEGV: also the faulting ip, then the previous handler (here the default: core, rc 139)
-        env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
             VRDUAL_BACKTRACE=1 "$B/vrdual-gltest" --title "selftest segv" >"$tmp/bts.log" 2>&1 &
         bp=$!
         for i in $(seq 100); do grep -q GL_RENDERER "$tmp/bts.log" && break; sleep 0.1; done
@@ -1698,7 +1700,7 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         # X11 game (gltest via Zink): its cursor reaches vrdual-xr, which draws it
         if [[ -x $B/vrdual-gltest ]]; then
             rm -f /dev/shm/vrdual-$sess-*
-            env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+            env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
                 VRDUAL_SESSION=$sess VRDUAL_EYE=both "$B/vrdual-gltest" --title "selftest xr cursor" >"$tmp/xrgl.log" 2>&1 &
             local gp=$!
             for i in $(seq 100); do grep -q exporting "$tmp/xrgl.log" && break; sleep 0.1; done
