@@ -77,6 +77,16 @@
   viewtopic.php?id=308562) fixed random Civ5XP null segfaults by raising
   `MaxSimultaneousThreads` (Aspyr config.ini, default 8; this box: 24
   threads). Owner to try that first.
+  Bisect 2026-11-03: Zink alone (no wrapper) ran 30 min clean; vrdual,
+  vrdual one eye (no mirror), one eye with `VRDUAL_FILTER=0`, and the layer
+  passive (`VRDUAL_STEREO=0`) all crashed, the passive one at Civ5XP+0xc90534
+  (GrannyDag2Resolver in cvUnitVisSystem), the very address of the Arch
+  thread. 9 cores today, all in the vis systems' TBB render jobs (Landmark,
+  City, Unit). `MaxSimultaneousThreads = 4`: crash; `= 1` plus affinity 0-7
+  set live (`taskset -a -cp`): crash after ~23 min. Verdict: the game's own
+  race, timing-sensitive; not pursued further. Side finding: `taskset -c
+  0-7` in the Steam launch options (after gamescope's `--`) does not reach
+  the game, which had `Cpus_allowed_list: 0-23`.
 - Fragment shader hunt + shader replacement (owner 2026-11-02, Civ V unit
   shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
   so hiding the shader that resolves shadows would hide the terrain too.
