@@ -100,9 +100,24 @@
   (vaddr 0x8dc282b, 19 bytes) returns 16 once initialized
   (`a1 08 14 0a 10 85 c0 74 05 b8 10 00 00 00 c3` + 4 nops), with
   `MaxSimultaneousThreads = 8` (indices up to 10). Applied by hand to the
-  owner's copy (`Civ5XP.orig` kept), in test. If it holds: `vrdual fix
+  owner's copy (`Civ5XP.orig` kept); first session over 30 min, no crash
+  (owner, 2026-11-03). Next: `vrdual fix
   on|off GAME` like `intro` (bytes from the profile, checked before
   writing, `.orig` backup), selftest check on a fake file.
+- Civ V (and other top-down strategy games): look around by turning the head
+  (owner 2026-11-03). Today `head_look = clip` turns the rendered view, but the
+  game culls everything outside its own frustum, so past the edge nothing is
+  drawn. Plan:
+  1. `head_look = scroll`: `clip` inside `head_rot_max`; past it vrdual-xr holds
+     the arrow keys (uinput), at a rate set by the angle past the limit. Generic
+     (most 4X/RTS games scroll with the arrows), Mapper scenario in selftest.
+  2. Wider culling only (game patch): the clip rotation happens in the vertex
+     shader before clipping, so anything the game submits shows up when the
+     head turns. Widening only Civ V's culling frustum (FCamera / vis systems;
+     the binary exports class symbols) keeps its projection, mouse picking and
+     UI as they are. Risks: the cached terrain texture
+     (DiffuseCachedTexture) and the shadow map may only cover the visible
+     area (blurry / unshadowed edges); more draws cost CPU.
 - Fragment shader hunt + shader replacement (owner 2026-11-02, Civ V unit
   shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
   so hiding the shader that resolves shadows would hide the terrain too.
