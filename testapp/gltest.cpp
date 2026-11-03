@@ -15,10 +15,13 @@
 // --view W H: the scene is drawn into a WxH FBO, then blitted to the window
 // (a 3D view at another size than the swapchain, like Civ V's 1368x768);
 // with --shadow the "shadow map" FBO is WxH too: same size, another target.
+// SIGUSR1 toggles a "menu": only the window is cleared, no 3D view drawn
+// (the layer then sends no head turn: selftest).
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
 
+#include <csignal>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -85,7 +88,10 @@ static void post(std::vector<V>& v, float x, float d, float r, float g, float b)
     v.insert(v.end(), q, q + 6);
 }
 
+static volatile sig_atomic_t g_menu = 0;
+
 int main(int argc, char** argv) {
+    signal(SIGUSR1, [](int) { g_menu = !g_menu; });
     long frames = -1;
     bool shadow = false;
     int vw = 0, vh = 0;  // --view
@@ -182,6 +188,14 @@ int main(int argc, char** argv) {
     glEnable(GL_DEPTH_TEST);
     for (long f = 0; frames < 0 || f < frames; ++f) {
         while (XPending(dpy)) { XEvent e; XNextEvent(dpy, &e); }
+        if (g_menu) {  // a menu: the window only
+            glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, 960, 720);
+            glClearColor(0.4f, 0.2f, 0.2f, 1);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glXSwapBuffers(dpy, win);
+            continue;
+        }
         glBindFramebuffer_(GL_FRAMEBUFFER, vfbo);
         glViewport(0, 0, W, H);
         glClearColor(0.25f, 0.27f, 0.33f, 1);

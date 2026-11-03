@@ -1031,7 +1031,7 @@ EOF
     label="head yaw 6 deg (clip rotation M = D R^T D^-1): posts where the turned camera sees them, HUD bar stays"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/yaw.png' && $M '$tmp/yaw.png' --ipd 0.064 --anchor center --head-yaw 6"
     set_live head_yaw=0 hud_yaw=6
-    label="hud_yaw 6 deg: HUD bar moved where a turned camera sees the screen centre, posts unchanged"
+    label="hud_yaw 6 deg: HUD bar turned like the scene (homography), posts unchanged"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hudyaw.png' && $M '$tmp/hudyaw.png' --ipd 0.064 --anchor center --hud-yaw 6"
     set_live hud_yaw=0
     # Shader hunt: both processes list the test shader's key; hide over the
@@ -1484,7 +1484,8 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     # by target, the shadow FBO is not shifted, the 3D view still is.
     rm -f /dev/shm/vrdual-$sess-*
     env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 "$B/vrdual-gltest" --shadow --view 800 600 --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 "$B/vrdual-gltest" --shadow --view 800 600 --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
+    local glv=$!
     label="auto_noshift by target: shadow FBO of the 3D view's size (800x600) not shifted, the view itself shifted"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/glv.log' && break; sleep 0.1; done
         grep -q 'auto_noshift: main view 800x600 (swapchain 960x720)' '$tmp/glv.log' && grep -q 'auto_noshift: main view target' '$tmp/glv.log' &&
@@ -1495,6 +1496,11 @@ im = Image.open(sys.argv[1]).convert(\"RGB\"); W = im.width // 2
 print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -1) for x0 in (0, W)),
       int(im.crop((0, 300, W, im.height)).tobytes() != im.crop((W, 300, 2 * W, im.height)).tobytes()))
 ' '$tmp/gv.png') && read l r d <<<\"\$e\" && (( l == r && l >= 55 && l <= 67 && d == 1 )) || { echo \"FBO edge L R, view differs: \$e\"; grep auto_noshift '$tmp/glv.log'; false; }"
+    # a "menu" (no pass into the main view): no head turn there, back with the view
+    label="head_look_menus = 0: head turn off before the 3D view exists and in a menu frame, on while the main view is drawn"
+    check bash -c "kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn off: no pass into a main view apart' '$tmp/glv.log' && break; sleep 0.1; done
+        kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn on: the main view 800x600 is drawn' '$tmp/glv.log' && break; sleep 0.1; done
+        (( \$(grep -c 'head turn off' '$tmp/glv.log') >= 2 && \$(grep -c 'head turn on' '$tmp/glv.log') >= 2 )) || { grep 'head turn\|main view' '$tmp/glv.log'; false; }"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     # 4. Under gamescope the 64-bit WSI layer sits above ours and hands down a
     # Wayland surface: the cursor comes from the root of gamescope's X screen.

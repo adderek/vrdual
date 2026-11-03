@@ -96,7 +96,7 @@ template <typename F> inline void ctl_write(vrdual_ctl* c, F fn) {
 
 static const char* const kLiveKeys[] = {"ipd", "ipd_near", "near_dist", "far_dist", "anchor", "hfov", "world_scale", "hud_depth"};
 // Live but never saved: the head offset (vrdual-xr writes it every frame).
-static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z", "head_yaw", "head_pitch", "head_roll", "hud_yaw", "hud_pitch"};
+static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z", "head_yaw", "head_pitch", "head_roll", "hud_yaw", "hud_pitch", "hud_roll"};
 
 inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
     char b[64];
@@ -105,7 +105,7 @@ inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
             : k == "far_dist" ? c.far_dist : k == "hfov" ? c.hfov : k == "head_x" ? c.head_x
             : k == "head_y" ? c.head_y : k == "head_z" ? c.head_z : k == "head_yaw" ? c.head_yaw
             : k == "head_pitch" ? c.head_pitch : k == "head_roll" ? c.head_roll : k == "hud_yaw" ? c.hud_yaw
-            : k == "hud_pitch" ? c.hud_pitch : k == "hud_depth" ? c.hud_depth : c.world_scale;
+            : k == "hud_pitch" ? c.hud_pitch : k == "hud_roll" ? c.hud_roll : k == "hud_depth" ? c.hud_depth : c.world_scale;
     snprintf(b, sizeof b, "%g", v);
     return b;
 }
@@ -138,11 +138,13 @@ inline std::string ctl_save(const vrdual_ctl& v, bool global) {
 //          M = D * R^T * D^-1, D = diag(P00, P11, 1), applied to (x, y, w)
 //          after the head offset and before the eye shift: the head rotation
 //          R (yaw, pitch, roll) for a perspective P whose w is view depth. M
-//          is the identity without rotation (bit-exact result). The rows' w
-//          (v[11], v[15]) is the HUD shift: NDC (tx, ty) added to w == 1
-//          vertices, where the turn (hud_yaw, hud_pitch) moves the view's
-//          centre: M_hud * (0, 0, 1) = (tx, ty) after the divide. 0 = none.
-struct EyeParams { float v[20]; };
+//          is the identity without rotation (bit-exact result).
+// vec4 #5..#7 (v[20..31], at +112, after the auto_noshift flag at +96): rows
+//          of M_hud, the same for the HUD turn (hud_yaw / pitch / roll),
+//          applied to w == 1 vertices (x, y, w) before the HUD disparity. The
+//          HUD gets the scene's homography up to hud_follow, so a cursor over
+//          either lands at the same place.
+struct EyeParams { float v[32]; };
 
 // R = Ry(yaw) Rx(pitch) Rz(roll) in x right, y up, z forward; M as above.
 inline void head_rot(const vrdual_ctl& c, float p00, float p11, float m[12]) {
@@ -175,28 +177,24 @@ inline EyeParams eye_params(const vrdual_ctl& c, int eye, float aspect = 16.0f /
     EyeParams e{{far_, near_, wf, inv, -p00 * c.world_scale * c.head_x, -p11 * c.world_scale * c.head_y,
                  -c.world_scale * c.head_z, c.hud_depth > 0 ? -p00 * eye_dx(an, eye, c.ipd) / c.hud_depth : 0}};
     head_rot(c, p00, p11, e.v + 8);
-    if (c.hud_yaw != 0 || c.hud_pitch != 0) {
-        vrdual_ctl h = c;
-        h.head_yaw = c.hud_yaw, h.head_pitch = c.hud_pitch, h.head_roll = 0;
-        float m[12];
-        head_rot(h, p00, p11, m);
-        e.v[11] = m[2] / m[10];
-        e.v[15] = m[6] / m[10];
-    }
+    vrdual_ctl h = c;
+    h.head_yaw = c.hud_yaw, h.head_pitch = c.hud_pitch, h.head_roll = c.hud_roll;
+    head_rot(h, p00, p11, e.v + 20);
     return e;
 }
 
 // Where a point the game shows at pixel (x, y) of a w x h eye image appears
 // after the head turn: (sx, sy) for the scene (homography M of eye_params),
-// (hx, hy) for the HUD (its shift). vrdual-xr draws the game's cursor there.
+// (hx, hy) for the HUD (M_hud). vrdual-xr draws the game's cursor there.
 inline void turned_px(const EyeParams& e, uint32_t w, uint32_t h, int x, int y, int& sx, int& sy, int& hx, int& hy) {
-    const float* m = e.v + 8;
     float nx = (x + 0.5f) * 2 / w - 1, ny = 1 - (y + 0.5f) * 2 / h;
-    float X = m[0] * nx + m[1] * ny + m[2], Y = m[4] * nx + m[5] * ny + m[6], W = m[8] * nx + m[9] * ny + m[10];
-    auto px = [&](float u, float v, int& ox, int& oy) { ox = int(lroundf((u + 1) * w / 2 - 0.5f)), oy = int(lroundf((1 - v) * h / 2 - 0.5f)); };
-    sx = x, sy = y;
-    if (W > 1e-6f) px(X / W, Y / W, sx, sy);
-    px(nx + m[3], ny + m[7], hx, hy);
+    auto map = [&](const float* m, int& ox, int& oy) {
+        float X = m[0] * nx + m[1] * ny + m[2], Y = m[4] * nx + m[5] * ny + m[6], W = m[8] * nx + m[9] * ny + m[10];
+        ox = x, oy = y;
+        if (W > 1e-6f) ox = int(lroundf((X / W + 1) * w / 2 - 0.5f)), oy = int(lroundf((1 - Y / W) * h / 2 - 0.5f));
+    };
+    map(e.v + 8, sx, sy);
+    map(e.v + 20, hx, hy);
 }
 
 }  // namespace vrdual

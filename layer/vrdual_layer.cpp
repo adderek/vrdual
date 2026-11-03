@@ -89,6 +89,7 @@ struct Config {
     bool depth_export = false; // the game's depth buffer with each frame (vrdual_passes.hpp)
     bool hunt_fragment = false; // fragment shaders join the hunt (spirv_patch.hpp patch_fragment)
     bool auto_noshift = false; // shaders drawn only in shadow passes not shifted (vrdual_passes.hpp)
+    bool head_look_menus = true; // false: head turn / offset only in frames drawing a main view apart from the swapchain
     bool lockstep = true;
     bool live = true;          // wanted; per device it also needs bufferDeviceAddress
     int lockstep_timeout_ms = 250;
@@ -290,6 +291,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.depth_export = st.i("depth_export") != 0;
     c.pass_trace = st.i("pass_trace");
     c.auto_noshift = st.i("auto_noshift") != 0;
+    c.head_look_menus = st.i("head_look_menus") != 0;
     if (st.i("game_fixes")) gamefix::run(exe_name(), st.f("cull_widen"), logf);
     c.hunt_fragment = st.i("hunt_fragment") != 0;
     c.lockstep = st.i("lockstep") != 0 && !c.mirror;
@@ -386,6 +388,9 @@ struct EyeBuf {
     float* params = nullptr;  // mapping
     float cur[24] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4
                               // (addr + 96: auto_noshift pass flag, written in the app's command buffers, vrdual_passes.hpp)
+    float hud[12] = {};       // staged: HUD rotation 3 x vec4 at addr + 112
+    bool scene_off = false;   // no main 3D view this frame: no head turn / offset (passes::Track::scene_on)
+    bool pushed_off = false;
     uint64_t addr = 0;
     uint64_t ctl_seq = ~0ull;
     float aspect = 0;  // of the exported swapchain when params were last pushed
@@ -1009,16 +1014,20 @@ static float g_aspect = 16.0f / 9;  // exported swapchain (head offset y needs P
 static void push_params(EyeBuf& ep) {
     if (!g_cfg.ctl || !ep.params) return;
     uint64_t seq = g_cfg.ctl->seq;
-    if (seq == ep.ctl_seq && ep.aspect == g_aspect && ep.pushed_eye == ep.eye) return;
+    if (seq == ep.ctl_seq && ep.aspect == g_aspect && ep.pushed_eye == ep.eye && ep.pushed_off == ep.scene_off) return;
     bool head_only = ep.ctl_seq != ~0ull && ep.aspect == g_aspect;
     vrdual_ctl c = vrdual::ctl_read(g_cfg.ctl);
+    if (ep.scene_off)  // menu / video: the head moves nothing
+        c.head_x = c.head_y = c.head_z = c.head_yaw = c.head_pitch = c.head_roll = c.hud_yaw = c.hud_pitch = c.hud_roll = 0;
+    ep.pushed_off = ep.scene_off;
     vrdual::EyeParams e = vrdual::eye_params(c, ep.eye, g_aspect, g_cfg.lean_y_sign);
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
-    static_assert(sizeof e.v == 20 * sizeof(float) && sizeof ep.cur == 24 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation, + hunt");
+    static_assert(sizeof e.v == 32 * sizeof(float) && sizeof ep.cur == 24 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation + 3 vec4 HUD rotation, + hunt");
     memcpy(ep.cur, e.v, 8 * sizeof(float));
     uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
     memcpy(ep.cur + 8, hunt, sizeof hunt);
     memcpy(ep.cur + 12, e.v + 8, 12 * sizeof(float));  // rotation rows at addr + 48
+    memcpy(ep.hud, e.v + 20, sizeof ep.hud);            // HUD rotation rows at addr + 112
     if (ep.ctl_seq != ~0ull && (c.hunt_mode != ep.hunt[2] || c.hunt_lo != ep.hunt[0] || c.hunt_hi != ep.hunt[1]))
         logf("hunt[%s]: mode %u keys %08x..%08x", ep.eye ? "R" : "L", c.hunt_mode, c.hunt_lo, c.hunt_hi);
     memcpy(ep.hunt, hunt, sizeof ep.hunt);
@@ -1033,7 +1042,7 @@ static void push_params(EyeBuf& ep) {
 
 // The CPU path: immediate, so draws still in flight may see it (mid-frame change).
 static void write_params_cpu(EyeBuf& ep) {
-    if (ep.params) memcpy(ep.params, ep.cur, sizeof ep.cur);
+    if (ep.params) memcpy(ep.params, ep.cur, sizeof ep.cur), memcpy(ep.params + 28, ep.hud, sizeof ep.hud);
 }
 
 // First memory type allowed by `bits` having all of `want` (then `fallback`).
@@ -1282,6 +1291,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
     if (autons && !dd->ep.params) logf("auto_noshift: needs live params, off"), autons = false;
     if (dep || autons) {
         dd->pt = passes::create(dd, dep, autons);
+        dd->pt->need_view = !g_cfg.head_look_menus;
         logf("tracking render passes for%s%s", dep ? " depth_export" : "", autons ? " auto_noshift" : "");
     }
     std::lock_guard<std::mutex> l(g_lock);
@@ -1688,6 +1698,7 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
     if (ep && ep->buf) {  // the barrier above orders it after all earlier work (no write under a draw's read)
         d.CmdUpdateBuffer(cb, ep->buf, 0, sizeof ep->cur, ep->cur);
+        d.CmdUpdateBuffer(cb, ep->buf, 112, sizeof ep->hud, ep->hud);
         VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_MEMORY_READ_BIT};
         d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
     }
@@ -1746,6 +1757,7 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
 
 static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     DeviceData* dd = dev_of(key(queue));
+    dd->ep.scene_off = dd->pt && !dd->pt->scene_on.load();
     push_params(dd->ep);  // live IPD: staged for the next frame's draws
     SwapchainData* s = nullptr;
     uint32_t family;

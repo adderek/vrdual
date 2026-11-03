@@ -1870,6 +1870,7 @@ static void destroy_swapchain_twin(DeviceData* dd, SwapchainData& s) {
 static void present_twin(DeviceData* dd, VkQueue queue, uint32_t family, const VkPresentInfoKHR* pi, SwapchainData* s, uint64_t frame, int own) {
     MDev* md = dd->md;
     if (!md->live) return;
+    md->bep.scene_off = dd->ep.scene_off;
     push_params(md->bep);
     VkQueue bq = xl_handle(queue);
     std::vector<VkSemaphore> waits;

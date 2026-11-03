@@ -187,21 +187,29 @@ int main(int argc, char** argv) {
     }
     {
         // cursor after a turn: head 10 right -> the screen centre's scene point
-        // at -P00 tan(10) (1920 wide, hfov 90: 960 - 169 = 791); HUD turned 10 right
-        // -> shifted the same at the centre; no turn -> where the game has it
+        // at -P00 tan(10) (1920 wide, hfov 90: 960 - 169 = 791). HUD turned the
+        // same -> the same homography: the same place everywhere (no guessing
+        // whether the cursor is over the HUD). HUD turned less -> elsewhere.
         vrdual_ctl k{};
-        k.hfov = 90; k.world_scale = 1; k.ipd = 0.064f; k.head_yaw = 10; k.hud_yaw = 10;
+        k.hfov = 90; k.world_scale = 1; k.ipd = 0.064f; k.head_yaw = 10; k.head_pitch = -8; k.hud_yaw = 10; k.hud_pitch = -8;
         auto e = eye_params(k, 0, 16.f / 9);
         int sx, sy, hx, hy;
-        turned_px(e, 1920, 1080, 960, 540, sx, sy, hx, hy);
-        bool centre = std::abs(sx - 791) <= 1 && std::abs(sy - 540) <= 1 && std::abs(hx - 791) <= 1 && hy == 540;
-        turned_px(e, 1920, 1080, 1500, 300, sx, sy, hx, hy);
-        bool off = hx == 1500 - (960 - 791) && sx < hx;  // HUD: a plain shift; scene: the homography moves the edge more
-        k.head_yaw = 0; k.hud_yaw = 0; k.head_pitch = 0;
+        k.head_pitch = k.hud_pitch = 0;
+        auto e0 = eye_params(k, 0, 16.f / 9);
+        turned_px(e0, 1920, 1080, 960, 540, sx, sy, hx, hy);
+        bool centre = std::abs(sx - 791) <= 1 && sy == 540 && hx == sx && hy == sy;
+        turned_px(e, 1920, 1080, 1500, 1000, sx, sy, hx, hy);
+        bool same = sx == hx && sy == hy && (sx != 1500 || sy != 1000);
+        k.hud_yaw = 3; e = eye_params(k, 0, 16.f / 9);
+        turned_px(e, 1920, 1080, 1500, 1000, sx, sy, hx, hy);
+        bool apart = hx > sx;
+        k.head_yaw = 0; k.hud_yaw = 0;
         e = eye_params(k, 0, 16.f / 9);
         turned_px(e, 1920, 1080, 1500, 300, sx, sy, hx, hy);
-        expect(centre && off && sx == 1500 && sy == 300 && hx == 1500 && hy == 300, "cursor after a head / HUD turn: scene homography, HUD shift, none without a turn");
-        expect(e.v[11] == 0 && e.v[15] == 0, "hud_yaw 0: no HUD shift (bit-exact HUD)");
+        expect(centre && same && apart && sx == 1500 && sy == 300 && hx == 1500 && hy == 300,
+               "cursor after a head / HUD turn: scene and HUD homographies equal when the HUD turns along, apart when it lags, none without a turn");
+        const float id[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+        expect(!memcmp(e.v + 20, id, sizeof id), "hud turn 0: HUD rows are the identity (bit-exact HUD)");
     }
     {
         InputCfg k = cfg("off");

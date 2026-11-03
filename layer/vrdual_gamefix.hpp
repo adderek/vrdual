@@ -20,6 +20,12 @@
 //            times wider view (tan of the half angles) holds, while drawing
 //            with its own projection. head_look = clip / scroll then has
 //            something to show past the screen edge.
+//   streams  with cull_widen: CRenderer9::CreateCommandStream(commands, n,
+//            constant bytes, flags), the per-frame buffers of every render
+//            system, built with commands, n and constant bytes times
+//            ceil(cull_widen^2) (the culled area): the fog of war's 1 MB of
+//            dynamic constants overflowed at 1.8 (the game's bounds check,
+//            ud2 in FGXConstantSet::LockDynamic: SIGILL).
 #pragma once
 #include <sys/mman.h>
 #include <unistd.h>
@@ -111,7 +117,17 @@ inline void clip_planes(const float* m, float* p, float widen) {
 }
 
 inline float g_widen = 1;
+inline unsigned g_stream_k = 1;
 #if defined(__i386__)
+// CRenderer9::CreateCommandStream as the game does it (operator new, the
+// CCommandStream constructor at its fixed addresses), the sizes scaled.
+extern "C" __attribute__((force_align_arg_pointer, used)) inline void* vrdual_civ5_create_stream(void*, unsigned a, unsigned b, unsigned c, unsigned d) {
+    auto game_new = (void* (*)(unsigned))0x8467960;
+    auto ctor = (void (*)(void*, unsigned, unsigned, unsigned, unsigned))0x8cf1af0;
+    void* p = game_new(0x1058);
+    ctor(p, a * g_stream_k, b * g_stream_k, c * g_stream_k, d);
+    return p;
+}
 // Called by the game in place of FGXGetClipPlanesFromMatrix (cdecl, same
 // arguments). The game's stack may be only 4-byte aligned.
 extern "C" __attribute__((force_align_arg_pointer, used)) inline void vrdual_civ5_clip_planes(const float* m, float* p) {
@@ -136,6 +152,10 @@ inline void run(const std::string& exe, float cull_widen, Log log) {
         jmp5(j, 0x8d017a0, uintptr_t(&vrdual_civ5_clip_planes));
         r = apply((uint8_t*)0x8d017a0, "53575683ec10e8000000005b81c3555860018b7424248b442420", j, 5);
         log("game fix Civ V cull_widen %.2f (culling frustum wider than the view): %s", cull_widen, result_str(r));
+        g_stream_k = unsigned(ceilf(cull_widen * cull_widen - 1e-3f));
+        jmp5(j, 0x8d1052c, uintptr_t(&vrdual_civ5_create_stream));
+        r = apply((uint8_t*)0x8d1052c, "5553575683ec1ce8000000005b81c3c86a5f01", j, 5);
+        log("game fix Civ V render streams x%u for cull_widen (per-frame command / constant buffers): %s", g_stream_k, result_str(r));
     }
 #else
     (void)exe; (void)cull_widen; (void)log;

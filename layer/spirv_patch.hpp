@@ -26,8 +26,9 @@
 // M = rows at addr+48/64/80, the head rotation (identity without one).
 // (z scaled with w keeps every vertex's depth z/w: no far-plane clipping,
 // depth order kept; same w == 1 skip). w == 1 vertices (HUD) get x' = v.x + h.w
-// instead: a constant disparity that puts the HUD at hud_depth, plus the HUD
-// turn (tx, ty) from the w of rotation rows 0 and 1 (0 = none).
+// instead: the HUD turn M_hud (rows at addr+112/128/144) on (x, y, w), z
+// scaled with w, then x' += h.w * w': a constant NDC disparity that puts the
+// HUD at hud_depth.
 //
 // Shader rules (docs/tasks/shader-rules.md): `hud` gives every vertex the
 // w == 1 treatment, `hide` stores (0,0,0,0) (nothing drawn). Live mode also
@@ -258,7 +259,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
-    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_flag = 0, c_u0 = 0;
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_hrot[3] = {}, c_flag = 0, c_u0 = 0;
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -284,6 +285,11 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             emit(globals, OpConstant, {t_uint, rl, uint32_t(a)});
             emit(globals, OpConstant, {t_uint, rh, uint32_t(a >> 32)});
             c_rot[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_rot[k], rl, rh});
+            uint64_t ha = o.addr + 112 + 16 * k;  // HUD rotation rows (after the auto_noshift flag at +96)
+            uint32_t hl = fresh(), hh = fresh();
+            emit(globals, OpConstant, {t_uint, hl, uint32_t(ha)});
+            emit(globals, OpConstant, {t_uint, hh, uint32_t(ha >> 32)});
+            c_hrot[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_hrot[k], hl, hh});
         }
         for (uint32_t k = 1; k < 4; ++k) { c_m[k] = fresh(); emit(globals, OpConstant, {t_uint, c_m[k], k}); }
         {  // auto_noshift pass flag
@@ -371,7 +377,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             emit(out, OpFSub, {t_float, d, b, a});
             emit(out, OpFMul, {t_float, e, d, t});
             emit(out, OpFAdd, {t_float, off, a, e});
-            uint32_t y = 0, y2 = 0, w2 = 0, z = 0, z2 = 0, hud_t[3] = {};
+            uint32_t y = 0, y2 = 0, w2 = 0, z = 0, z2 = 0;
             if (!live) emit(out, OpFAdd, {t_float, x2, x, off});
             if (live) {
                 uint32_t hx = fresh(), hy = fresh(), hw = fresh(), xt = fresh(), yt = fresh(), wt = fresh(), zr = fresh();
@@ -387,7 +393,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 // rotation: row k . (xt, yt, wt); identity rows give the input exactly
                 uint32_t rr[3];
                 for (int k = 0; k < 3; ++k) {
-                    uint32_t rw = 0;
+
                     uint32_t rp = fresh(), row = fresh(), m0 = fresh(), m1 = fresh(), m2 = fresh();
                     uint32_t p0 = fresh(), p1 = fresh(), p2 = fresh(), s0 = fresh();
                     emit(out, OpBitcast, {p_psb, rp, c_rot[k]});
@@ -395,8 +401,6 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                     emit(out, OpCompositeExtract, {t_float, m0, row, 0});
                     emit(out, OpCompositeExtract, {t_float, m1, row, 1});
                     emit(out, OpCompositeExtract, {t_float, m2, row, 2});
-                    if (k < 2) { rw = fresh(); emit(out, OpCompositeExtract, {t_float, rw, row, 3}); }
-                    hud_t[k] = rw;  // row k's w: HUD shift (tx, ty), vrdual_ctl.hpp EyeParams
                     emit(out, OpFMul, {t_float, p0, m0, xt});
                     emit(out, OpFMul, {t_float, p1, m1, yt});
                     emit(out, OpFMul, {t_float, p2, m2, wt});
@@ -418,15 +422,37 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpLogicalOr, {t_bool, keep, w0, h0});
                 emit(out, OpSelect, {t_float, z2, keep, z, zm});
             }
-            uint32_t xh = x, yh = y;  // x, y of the HUD treatment
-            if (live) {  // HUD at hud_depth: constant shift h.w; HUD turn: + (tx, ty)
-                uint32_t hh = fresh(), x1 = fresh();
+            uint32_t xh = x, yh = y, wh = wv, zh = z;  // the HUD treatment
+            if (live) {  // HUD turn: (x, y, w)' = M_hud (x, y, w), z scaled with w; then HUD at hud_depth: + h.w * w' (NDC shift h.w)
+                uint32_t hr[3];
+                for (int k = 0; k < 3; ++k) {
+                    uint32_t rp = fresh(), row = fresh(), m0 = fresh(), m1 = fresh(), m2 = fresh(), p0 = fresh(), p1 = fresh(), p2 = fresh(), s0 = fresh();
+                    emit(out, OpBitcast, {p_psb, rp, c_hrot[k]});
+                    emit(out, OpLoad, {t_vec4, row, rp, MemAccessAligned, 16});
+                    emit(out, OpCompositeExtract, {t_float, m0, row, 0});
+                    emit(out, OpCompositeExtract, {t_float, m1, row, 1});
+                    emit(out, OpCompositeExtract, {t_float, m2, row, 2});
+                    emit(out, OpFMul, {t_float, p0, m0, x});
+                    emit(out, OpFMul, {t_float, p1, m1, y});
+                    emit(out, OpFMul, {t_float, p2, m2, wv});
+                    emit(out, OpFAdd, {t_float, s0, p0, p1});
+                    hr[k] = fresh();
+                    emit(out, OpFAdd, {t_float, hr[k], s0, p2});
+                }
+                uint32_t hh = fresh(), hs = fresh(), zr = fresh(), zm = fresh(), w0 = fresh(), h0 = fresh(), keep = fresh();
                 xh = fresh();
-                yh = fresh();
                 emit(out, OpCompositeExtract, {t_float, hh, hp, 3});
-                emit(out, OpFAdd, {t_float, x1, x, hh});
-                emit(out, OpFAdd, {t_float, xh, x1, hud_t[0]});
-                emit(out, OpFAdd, {t_float, yh, y, hud_t[1]});
+                emit(out, OpFMul, {t_float, hs, hh, hr[2]});
+                emit(out, OpFAdd, {t_float, xh, hr[0], hs});
+                yh = hr[1];
+                wh = hr[2];
+                zh = fresh();  // as for the scene: unchanged w (no turn) keeps z bit-exact
+                emit(out, OpFDiv, {t_float, zr, wh, wv});
+                emit(out, OpFMul, {t_float, zm, z, zr});
+                emit(out, OpFOrdEqual, {t_bool, w0, wv, c_zero});
+                emit(out, OpFOrdEqual, {t_bool, h0, wh, wv});
+                emit(out, OpLogicalOr, {t_bool, keep, w0, h0});
+                emit(out, OpSelect, {t_float, zh, keep, z, zm});
             }
             if (hudpath) {
                 uint32_t is1 = c_true, xs = fresh();
@@ -435,9 +461,10 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 x2 = xs;
                 if (live) {
                     uint32_t ys = fresh(), ws = fresh(), zs = fresh();
-                    emit(out, OpSelect, {t_float, ys, is1, o.w1_hud || o.hud ? yh : y, y2});
-                    emit(out, OpSelect, {t_float, ws, is1, wv, w2});
-                    emit(out, OpSelect, {t_float, zs, is1, z, z2});
+                    bool hud = o.w1_hud || o.hud;
+                    emit(out, OpSelect, {t_float, ys, is1, hud ? yh : y, y2});
+                    emit(out, OpSelect, {t_float, ws, is1, hud ? wh : wv, w2});
+                    emit(out, OpSelect, {t_float, zs, is1, hud ? zh : z, z2});
                     y2 = ys;
                     w2 = ws;
                     z2 = zs;
@@ -463,9 +490,11 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpULessThanEqual, {t_bool, le, c_key, hi});
                 emit(out, OpLogicalAnd, {t_bool, inr, ge, le});
                 uint32_t vh = fresh();
-                uint32_t vh0 = fresh();
+                uint32_t vh0 = fresh(), vh1 = fresh(), vh2 = fresh();
                 emit(out, OpCompositeInsert, {t_vec4, vh0, xh, v, 0});
-                emit(out, OpCompositeInsert, {t_vec4, vh, yh, vh0, 1});
+                emit(out, OpCompositeInsert, {t_vec4, vh1, yh, vh0, 1});
+                emit(out, OpCompositeInsert, {t_vec4, vh2, zh, vh1, 2});
+                emit(out, OpCompositeInsert, {t_vec4, vh, wh, vh2, 3});
                 uint32_t res = v2;
                 {  // auto_noshift: the layer flags off-screen passes at addr+96 -> unshifted (the hunt below still applies)
                     uint32_t fq = fresh(), fv = fresh(), fx = fresh(), off = fresh();

@@ -411,14 +411,17 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
   already shows the turn and vrdual-xr sends 0. Beyond the game's frustum
   there is nothing (culled), so edges show the clear colour: meant for small
   turns. `vrdual set head_yaw 5` sets it by hand (selftest measures it).
-- HUD and cursor with `clip` / `scroll`: vrdual-xr writes `hud_yaw/pitch` =
-  the head turn clamped to `hud_follow`; the layer adds the NDC shift where
-  that turn moves the view centre (`tx, ty` in the w of rotation rows 0 and 1)
-  to w == 1 draws, so the HUD stays in place up to `hud_follow` and then moves
-  along. The game's cursor is drawn where the point it picks is shown: the
-  scene's homography M on the map, the HUD shift where the HUD's disparity is
-  found under the shifted position (`turned_px`). Without this the map turned
-  but the cursor did not, so clicks landed beside the drawn cursor.
+- HUD and cursor with `clip` / `scroll`: vrdual-xr writes `hud_yaw/pitch/roll`
+  = the scene's (soft-limited) turn clamped to `hud_follow`; the layer turns
+  w == 1 draws with that rotation's homography M_hud (rows at +112, after the
+  auto_noshift flag), so up to `hud_follow` HUD and map move as one, then the
+  HUD is held. The game's cursor is drawn where the point it picks is shown
+  (`turned_px`): M and M_hud give the same place until the HUD is held; only
+  then the HUD's disparity under the M_hud position decides which. Without
+  this the map turned but the cursor did not, so clicks landed beside it.
+- `head_look_menus = 0`: frames without a pass into a main view apart from the
+  swapchain (menus, videos, before the 3D view exists; `auto_noshift`'s main
+  view) get no head turn / offset (`head turn off` / `on` in the log).
 - `head_look = scroll`: `clip`, plus the Mapper presses `scroll_keys`
   (arrows) by the head angle from the start direction (yaw/pitch): past
   `scroll_angle` short taps (`scroll_tap_ms`, again every

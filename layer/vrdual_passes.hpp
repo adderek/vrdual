@@ -85,6 +85,12 @@ struct Track {
     std::unordered_map<uint64_t, Tgt> tgt;  // pass target -> its extent, shader keys drawn there
     std::atomic<uint64_t> main_tgt{0};      // the main view's target (0 = none: main view is the swapchain's size)
     std::set<uint64_t> off_tgt;             // off-screen targets of the main view's size seen (log new ones)
+    // The game has a main view apart from the swapchain (Civ V: 3D into its
+    // own target): frames without a pass into it (menu, video) get no head
+    // turn / offset, which would only show undrawn edges there.
+    std::atomic<int> main_passes{0};        // passes into the main view since the last present
+    std::atomic<bool> scene_on{true};       // last frame drew the main view (or there is no separate one)
+    bool need_view = false;                 // head_look_menus = 0: no separate main view (yet) = off too
     uint64_t presents = 0;
     std::string last_passes;  // log_passes: last logged
     std::atomic<uint64_t> main{0}, sc{0};  // main view and swapchain extents (0 = not known yet)
@@ -299,6 +305,7 @@ static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D 
     uint64_t main = t->main.load(), sc = t->sc.load(), mt = t->main_tgt.load();
     bool off = main && c.ext != main && c.ext != sc;
     bool off_t = mt && c.ext == main && target && target != mt;  // same size as the main view, another target
+    if (main && main != sc && c.ext == main && !off_t) t->main_passes++;
     if (off_t && t->off_tgt.insert(target).second)
         logf("auto_noshift: pass %ux%u into target %llx, not the main view's (%llx): not shifted", ext.width, ext.height,
              (unsigned long long)target, (unsigned long long)mt);
@@ -510,6 +517,15 @@ static void refresh_auto(Track& t, VkExtent2D sc) {
     if (!t.autons) return;
     t.sc = ext_key(sc);
     ++t.presents;
+    {
+        uint64_t m = t.main.load();
+        bool apart = m && m != ext_key(sc);
+        bool on = apart ? t.main_passes.exchange(0) > 0 : !t.need_view;
+        if (!apart) t.main_passes = 0;
+        if (on != t.scene_on.exchange(on))
+            logf(on ? "head turn on: the main view %ux%u is drawn" : "head turn off: no pass into a main view apart from the swapchain this frame (menu, video; main view %ux%u)",
+                 uint32_t(m >> 32), uint32_t(m));
+    }
     if (t.trace_at && (t.presents == t.trace_at || t.presents == t.trace_at + 1))
         logf("pass_trace: present %llu %s", (unsigned long long)t.presents, t.presents == t.trace_at ? "(tracing from here)" : "(end)");
     if (t.presents % 30) return;

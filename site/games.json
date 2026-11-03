@@ -195,8 +195,8 @@
    "Fix (applied by the vrdual layer in the game's process, `game_fixes`; the game file stays as it is): `JobManager_GetNumberThreads()` returns 16 (the port's own maximum), with `MaxSimultaneousThreads = 8`; over 30 minutes without a crash with the same patch in the file (before: 2-25 min).",
    "Shadows: the game draws its shadow map at the 3D view's size into another target; `auto_noshift = 1` leaves it unshifted, so both eyes' shadows agree.",
    "Wider culling (`cull_widen`): every culling frustum of the game comes from one function (`FGXGetClipPlanesFromMatrix`); vrdual replaces it with one that culls with a wider view while the game draws with its own.",
-   "HUD in place (`hud_follow`) and the cursor drawn where its target is shown after a turn: new, not tried in the game yet.",
-   "The `civ5` profile makes the map stay in place in the room (view counter-turns and counter-moves with the head, wider culling past the edges): new, not tried in the game yet."
+   "The `civ5` profile makes the map stay in place in the room (view counter-turns and counter-moves with the head, wider culling past the edges): new, not tried in the game yet.",
+   "With `cull_widen` 1.8 the fog of war's per-frame constant buffer overflowed (the game's own bounds check, SIGILL); the game fix now builds the render streams' buffers ceil(cull_widen²) times larger. HUD turning with the map (`hud_follow`), the cursor drawn where its target is shown, no head turn in menus (`head_look_menus = 0`): new, not tried in the game yet."
   ],
   "tested": "2026-11-03",
   "single": "",

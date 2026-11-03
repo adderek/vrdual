@@ -75,7 +75,7 @@ def main():
     ap.add_argument("--head-x", type=float, default=0.0)
     ap.add_argument("--head-yaw", type=float, default=0.0)
     ap.add_argument("--hud-depth", type=float, default=0.0)
-    ap.add_argument("--hud-yaw", type=float)  # HUD turned: bar centre at (1 - tan(yaw)) * eye_width / 2 (P00 = 1)
+    ap.add_argument("--hud-yaw", type=float)  # HUD turned: the bar's ends (x = +-0.8) through the turn's homography (P00 = 1)
     ap.add_argument("--depth")
     ap.add_argument("--tol-rel", type=float, default=0.04)
     ap.add_argument("--tol-px", type=float, default=1.0)
@@ -136,6 +136,24 @@ def main():
         ok &= good
         print(line + ("  ok" if good else "  FAIL"))
 
+    if a.hud_yaw is not None:
+        # HUD turned: the bar is a trapezoid now. For a yaw, x after the turn
+        # depends on x only, so its leftmost / rightmost grey pixels in the
+        # left eye sit at the ends x = +-0.8 through the homography.
+        cu, su = math.cos(math.radians(a.hud_yaw)), math.sin(math.radians(a.hud_yaw))
+        f = lambda x: (x * cu - su) / (x * su + cu)  # NDC x after the turn (vrdual_ctl.hpp head_rot, P00 = 1)
+        grey = lambda p: abs(p[0] - p[1]) < 8 and abs(p[1] - p[2]) < 8 and p[0] > 100
+        xs = [x for yy in range(H // 2, H) for x in range(ew) if grey(raw[(yy * W + x) * 3:(yy * W + x) * 3 + 3])]
+        if not xs:
+            print("HUD bar not found", file=sys.stderr)
+            return 2
+        lo, hi = min(xs), max(xs) + 1
+        lw, hw = (1 + f(-0.8)) * ew / 2, (1 + f(0.8)) * ew / 2
+        good = abs(lo - lw) <= 2 and abs(hi - hw) <= 2
+        ok &= good
+        print(f"HUD bar ends {lo} .. {hi} px (expected {lw:.1f} .. {hw:.1f})" + ("  ok" if good else "  FAIL"))
+        return 0 if ok else 1
+
     # HUD bar: lowest row whose widest run spans most of the eye in both halves
     for hy in range(H - 1, H // 2, -1):
         hrow = [tuple(raw[(hy * W + x) * 3:(hy * W + x) * 3 + 3]) for x in range(W)]
@@ -150,11 +168,6 @@ def main():
     good = abs(got - want) <= max(a.tol_px, a.tol_rel * want)
     ok &= good
     line = f"HUD bar row {hy}  disparity {got:7.1f} px  expected {want:7.1f} px"
-    if a.hud_yaw is not None:
-        cwant = (1 - math.tan(math.radians(a.hud_yaw))) * ew / 2
-        cgood = abs(hl - cwant) <= 1.5
-        good &= cgood
-        line += f"  centre {hl:6.1f} (expected {cwant:6.1f})"
     print(line + ("  ok" if good else "  FAIL"))
     return 0 if ok else 1
 

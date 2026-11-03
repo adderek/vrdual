@@ -924,17 +924,17 @@ static int run(int argc, char** argv) {
     float ref_p[3] = {}, ref_yaw = 0, ref_q[4] = {0, 0, 0, 1};
     int recentres = 0;
     // head offset (m) and rotation (deg, head_look = clip) -> control block
-    float sent[8] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};  // first call always writes (clears what a killed run left)
-    auto send_head = [&](const float h[8]) {  // offset xyz, turn yaw pitch roll, HUD turn yaw pitch
+    float sent[9] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};  // first call always writes (clears what a killed run left)
+    auto send_head = [&](const float h[9]) {  // offset xyz, turn yaw pitch roll, HUD turn yaw pitch roll
         bool same = true;
-        for (int i = 0; i < 8; ++i) same &= fabsf(h[i] - sent[i]) < (i < 3 ? 5e-4f : 0.02f);
+        for (int i = 0; i < 9; ++i) same &= fabsf(h[i] - sent[i]) < (i < 3 ? 5e-4f : 0.02f);
         if (same) return;
         if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
         if (!ctl) return;
         vrdual::ctl_write(ctl, [&](vrdual_ctl& k) {
             k.head_x = h[0]; k.head_y = h[1]; k.head_z = h[2];
             k.head_yaw = h[3]; k.head_pitch = h[4]; k.head_roll = h[5];
-            k.hud_yaw = h[6]; k.hud_pitch = h[7];
+            k.hud_yaw = h[6]; k.hud_pitch = h[7]; k.hud_roll = h[8];
         });
         memcpy(sent, h, sizeof sent);
     };
@@ -1305,7 +1305,7 @@ static int run(int argc, char** argv) {
                     lean_ref = true;
                     recentres = mapper->recentres;
                 }
-                float h[8] = {};
+                float h[9] = {};
                 if (icfg.lean) {
                     float d[3] = {c.head_px - ref_p[0], c.head_py - ref_p[1], c.head_pz - ref_p[2]};
                     // reference frame: forward (-sin, 0, -cos)(yaw), right (cos, 0, -sin)(yaw)
@@ -1316,16 +1316,17 @@ static int run(int argc, char** argv) {
                 }
                 if (rot) {
                     vrdual::head_turn(ref_q, c.head_q, h[3], h[4], h[5]);
-                    float A = std::max(icfg.hud_follow, 0.f);  // HUD: in place up to A, then along
-                    h[6] = std::clamp(h[3], -A, A), h[7] = std::clamp(h[4], -A, A);
                     float L = icfg.rot_max > 0 ? icfg.rot_max : 20;
                     for (int i = 3; i < 6; ++i) h[i] = L * tanhf(h[i] / L);
+                    // HUD: the scene's turn up to hud_follow (moves with the map), then held there
+                    float A = std::max(icfg.hud_follow, 0.f);
+                    for (int i = 0; i < 3; ++i) h[6 + i] = std::clamp(h[3 + i], -A, A);
                 }
                 send_head(h);
             }
         }
         if (!fresh || !mapper || !(icfg.lean || ((icfg.head_look == "clip" || icfg.head_look == "scroll") && !anchored))) {  // nothing drives it: no stale offset
-            const float zero[8] = {};
+            const float zero[9] = {};
             send_head(zero);
         }
         t_input = t_now;
@@ -1430,11 +1431,11 @@ static int run(int argc, char** argv) {
                     kd[1] = scene ? fr / (fl - fr) : 0;
                     int sx = cur.x, sy = cur.y, hx = cur.x, hy = cur.y;
                     if (ctl) vrdual::turned_px(e0, w, h, cur.x, cur.y, sx, sy, hx, hy);
-                    bool turned = sx != cur.x || sy != cur.y || hx != cur.x || hy != cur.y;
+                    bool apart = std::abs(sx - hx) > 1 || std::abs(sy - hy) > 1;  // HUD lags the scene (past hud_follow): which one is under it?
                     float hud0 = ctl ? e0.v[7] * float(w) / 2 : 0;
                     int d;  // on the staging pixels before the edge mask (R/B order does not matter to it)
                     if (!cur_auto) on_hud = true;
-                    else if (scene && turned && vrdual::scene_disparity(out[0].map, out[1].map, w, h, hx, hy, kd[0], kd[1], int(w / 8), &d) &&
+                    else if (scene && apart && vrdual::scene_disparity(out[0].map, out[1].map, w, h, hx, hy, kd[0], kd[1], int(w / 8), &d) &&
                              fabsf(float(d) * kd[0] - hud0) <= 1.5f)
                         on_hud = true;
                     if (!on_hud && scene && vrdual::scene_disparity(out[0].map, out[1].map, w, h, sx, sy, kd[0], kd[1], int(w / 8), &d)) {
