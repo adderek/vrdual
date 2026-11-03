@@ -131,8 +131,9 @@
      shadow pass (8d5184d7, 537b334a, a8403c1e) another. auto_noshift now
      also flags passes of the main view's size into another target when
      the main view is not the swapchain's size (selftest: gltest --view).
-     People's shadows confirmed by the noshift rule; deer by 537b334a
-     (untested in game).
+     Confirmed in the game 2026-11-03 without shader rules: main view
+     target found, the two other 1368x768 targets flagged, a snapshot of
+     both eyes shows no shadow only one eye has (people, deer). Done.
      Earlier plan: live with vrdual-ctl: `hunt noshift 7a6cdc31
      7a6cdc31` (does B fix?), `hunt hide` it (is it the caster?), head_look
      off (rotation?).
