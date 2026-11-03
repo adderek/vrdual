@@ -45,6 +45,9 @@
 // reads one row back and logs where the post's left edge is ("shadow edge
 // x=N"). Shifted per eye, the eyes see it ~33 px apart; auto_noshift (the
 // pass decides) makes them agree while the main view stays shifted.
+// The row is also copied raw into the top 4 rows of the presented image
+// (depth 1.0 = bytes 00 00 80 3f), so each eye's own shadow map shows in its
+// frame: in mirror mode the app only reads back A's, this shows B's too.
 //
 // --scene calib: static posts at 0.5, 1, 2, 5 and 20 m (eye height), for IPD
 // calibration: look at one post, adjust until it sits at a believable distance
@@ -274,7 +277,7 @@ int main(int argc, char** argv) {
     sci.imageColorSpace = fmt.colorSpace;
     sci.imageExtent = ext;
     sci.imageArrayLayers = 1;
-    sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (shadow ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0);
     sci.preTransform = caps.currentTransform;
     sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sci.presentMode = pm;
@@ -636,7 +639,7 @@ int main(int argc, char** argv) {
         sg.pColorBlendState = &scbs;
         sg.renderPass = srp;
         CK(vkCreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &sg, nullptr, &spipe));
-        VkBufferCreateInfo sbci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, 2 * SM * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        VkBufferCreateInfo sbci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, 2 * SM * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT};
         CK(vkCreateBuffer(dev, &sbci, nullptr, &sbuf));
         vkGetBufferMemoryRequirements(dev, sbuf, &smr);
         VkMemoryAllocateInfo bai2{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, smr.size,
@@ -935,6 +938,28 @@ int main(int argc, char** argv) {
         vkCmdPushConstants(cb, pl, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof pc, &pc);
         vkCmdDraw(cb, nverts, 1, 0, 0);
         vkCmdEndRenderPass(cb);
+        if (spipe) {  // this frame's shadow row, raw, into the top 4 rows of the image
+            VkImageMemoryBarrier ib{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            ib.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            ib.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ib.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            ib.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            ib.srcQueueFamilyIndex = ib.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            ib.image = imgs[ii];
+            ib.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT};
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0,
+                                 nullptr, 1, &ib);
+            VkBufferImageCopy reg[4];
+            for (int r = 0; r < 4; ++r)
+                reg[r] = {VkDeviceSize(f) * SM * 4, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, r, 0}, {std::min(SM, ext.width), 1, 1}};
+            vkCmdCopyBufferToImage(cb, sbuf, imgs[ii], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 4, reg);
+            ib.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ib.dstAccessMask = 0;
+            ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            ib.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
+        }
         vkEndCommandBuffer(cb);
         VkPipelineStageFlags wst = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired[f], &wst, 1, &cb, 1, &rendered[ii]};

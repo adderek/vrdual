@@ -91,6 +91,19 @@
      differ, so A shifts the shadow texture too: the pass that draws it is
      not flagged off-screen (all flagged extents logged; maybe it renders
      at the main view's 1368x768). Next: `pass_trace` in Civ V.
+     `pass_trace` 2026-11-03 (frame 6000): every non-main pass is flagged
+     (320x190, 1024², 2048² ×2 with the one shadow caster key 7a6cdc31,
+     512²), so that theory is out. Terrain FS shadow lookup reads world
+     position varyings (VAR1.zw, VAR2.x, also used for fog distance): eye
+     independent. Snapshot: after aligning the terrain (11 px), the left
+     eye's (A) unit shadows sit at the feet, the right eye's (B) ~35 px to
+     the left, i.e. B's shadow map looks shifted (or rotated by head_look).
+     But the mechanism works on B: new selftest checks show B's own shadow
+     map (cube: shadow row copied into the image; gltest --shadow: FBO
+     drawn as an unshifted quad) in the mirror, Zink 64 and 32 bit.
+     Next in the game, live with vrdual-ctl: `hunt noshift 7a6cdc31
+     7a6cdc31` (does B fix?), `hunt hide` it (is it the caster?), head_look
+     off (rotation?).
   2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
      offline) loaded instead of the game's module, 3Dmigoto ShaderFixes
      style (MODDING.md "Shaders"). Zink hashes depend on the Mesa version:

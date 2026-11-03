@@ -5,7 +5,13 @@
 //
 // Plain Xlib + GLX (like SDL 1.2 games, and it builds as 32-bit too).
 //
-//   MESA_LOADER_DRIVER_OVERRIDE=zink vrdual-gltest [--frames N] [--title T]
+//   MESA_LOADER_DRIVER_OVERRIDE=zink vrdual-gltest [--frames N] [--title T] [--shadow]
+//
+// --shadow: each frame first draws the 0.5 m post into a 512x512 FBO with
+// the scene's own shader (like a game's shadow map), then shows that texture
+// as a w == 1 quad in the top left corner (left 256x256 of the window). The
+// quad is never shifted, so it shows each eye's FBO as it was rendered: with
+// auto_noshift both eyes match, without it the post sits ~17 px apart.
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
@@ -31,6 +37,24 @@ GLF(void, glBufferData_, (GLenum, GLsizeiptr, const void*, GLenum));
 GLF(void, glBufferSubData_, (GLenum, GLintptr, GLsizeiptr, const void*));
 GLF(GLint, glGetUniformLocation_, (GLuint, const GLchar*));
 GLF(void, glUniform3f_, (GLint, GLfloat, GLfloat, GLfloat));
+GLF(void, glGenFramebuffers_, (GLsizei, GLuint*));
+GLF(void, glBindFramebuffer_, (GLenum, GLuint));
+GLF(void, glFramebufferTexture2D_, (GLenum, GLenum, GLenum, GLuint, GLint));
+GLF(void, glGenRenderbuffers_, (GLsizei, GLuint*));
+GLF(void, glBindRenderbuffer_, (GLenum, GLuint));
+GLF(void, glRenderbufferStorage_, (GLenum, GLenum, GLsizei, GLsizei));
+GLF(void, glFramebufferRenderbuffer_, (GLenum, GLenum, GLenum, GLuint));
+GLF(GLenum, glCheckFramebufferStatus_, (GLenum));
+#ifndef GL_FRAMEBUFFER
+#define GL_FRAMEBUFFER 0x8D40
+#define GL_RENDERBUFFER 0x8D41
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_DEPTH_ATTACHMENT 0x8D00
+#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#endif
+#ifndef GL_DEPTH_COMPONENT24
+#define GL_DEPTH_COMPONENT24 0x81A6
+#endif
 
 static const char* kVs = "#version 120\n"
                          "varying vec3 c;\n"
@@ -52,10 +76,12 @@ static void post(std::vector<V>& v, float x, float d, float r, float g, float b)
 
 int main(int argc, char** argv) {
     long frames = -1;
+    bool shadow = false;
     std::string title = "vrdual-gltest";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
         else if (!strcmp(argv[i], "--title") && i + 1 < argc) title = argv[++i];
+        else if (!strcmp(argv[i], "--shadow")) shadow = true;
     }
     Display* dpy = XOpenDisplay(nullptr);
     if (!dpy) { fprintf(stderr, "no X display\n"); return 1; }
@@ -74,6 +100,8 @@ int main(int argc, char** argv) {
 #define L(n) n##_ = (decltype(n##_))glXGetProcAddress((const GLubyte*)#n)
     L(glCreateShader); L(glShaderSource); L(glCompileShader); L(glCreateProgram); L(glAttachShader); L(glLinkProgram);
     L(glUseProgram); L(glGenBuffers); L(glBindBuffer); L(glBufferData); L(glBufferSubData); L(glGetUniformLocation); L(glUniform3f);
+    L(glGenFramebuffers); L(glBindFramebuffer); L(glFramebufferTexture2D); L(glGenRenderbuffers); L(glBindRenderbuffer);
+    L(glRenderbufferStorage); L(glFramebufferRenderbuffer); L(glCheckFramebufferStatus);
 #undef L
     fprintf(stderr, "vrdual-gltest: GL_RENDERER %s\n", (const char*)glGetString(GL_RENDERER));
 
@@ -105,6 +133,26 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> px(64 * 64);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
 
+    GLuint fbo = 0, stex = 0;
+    if (shadow) {
+        glGenTextures(1, &stex);
+        glBindTexture(GL_TEXTURE_2D, stex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        GLuint rb;
+        glGenRenderbuffers_(1, &rb);
+        glBindRenderbuffer_(GL_RENDERBUFFER, rb);
+        glRenderbufferStorage_(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 512, 512);
+        glGenFramebuffers_(1, &fbo);
+        glBindFramebuffer_(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, stex, 0);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rb);
+        if (glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) { fprintf(stderr, "vrdual-gltest: FBO incomplete\n"); return 1; }
+        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        glBindTexture(GL_TEXTURE_2D, tex);
+    }
+
     glEnable(GL_DEPTH_TEST);
     for (long f = 0; frames < 0 || f < frames; ++f) {
         while (XPending(dpy)) { XEvent e; XNextEvent(dpy, &e); }
@@ -126,6 +174,15 @@ int main(int argc, char** argv) {
         glEnableClientState(GL_COLOR_ARRAY);
         glVertexPointer(3, GL_FLOAT, sizeof(V), (void*)0);
         glColorPointer(3, GL_FLOAT, sizeof(V), (void*)12);
+        if (shadow) {  // the near post (first 6 vertices) into the FBO, same shader and matrices
+            glBindFramebuffer_(GL_FRAMEBUFFER, fbo);
+            glViewport(0, 0, 512, 512);
+            glClearColor(0, 0, 0, 1);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, 960, 720);
+        }
         glDrawArrays(GL_TRIANGLES, 0, GLsizei(v.size()));
         glDisableClientState(GL_COLOR_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
@@ -142,6 +199,23 @@ int main(int argc, char** argv) {
         glTexCoord2f(1, 1); glVertex3f(1.6f, -0.5f, -2);
         glTexCoord2f(0, 1); glVertex3f(-1.6f, -0.5f, -2);
         glEnd();
+        if (shadow) {  // the FBO as a w == 1 quad, top left 256x256 px, over everything
+            glBindTexture(GL_TEXTURE_2D, stex);
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            glMatrixMode(GL_MODELVIEW);
+            glLoadIdentity();
+            glDisable(GL_DEPTH_TEST);
+            float x1 = -1 + 512.0f / 960, y0 = 1 - 512.0f / 720;
+            glBegin(GL_QUADS);
+            glTexCoord2f(0, 0); glVertex2f(-1, y0);
+            glTexCoord2f(1, 0); glVertex2f(x1, y0);
+            glTexCoord2f(1, 1); glVertex2f(x1, 1);
+            glTexCoord2f(0, 1); glVertex2f(-1, 1);
+            glEnd();
+            glEnable(GL_DEPTH_TEST);
+            glBindTexture(GL_TEXTURE_2D, tex);
+        }
         glDisable(GL_TEXTURE_2D);
         glXSwapBuffers(dpy, win);
     }

@@ -1431,19 +1431,37 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     label="auto_noshift in the mirror: A's shadow pass unshifted, ipd 64mm"
     check bash -c "[[ -n '$xl' ]] && (( $xl >= 118 && $xl <= 122 )) && '$B/vrdual-compositor' --session $sess --snapshot '$tmp/shm.png' --at 80 --timeout 20 >/dev/null 2>&1 &&
         $M '$tmp/shm.png' --ipd 0.064 --anchor center && ! grep -q STOPPED '$tmp/shm.log' || { echo 'A edge $xl'; tail -5 '$tmp/shm.log'; false; }"
+    # The cube copies its shadow row into the top image rows: B's own shadow map.
+    label="auto_noshift in the mirror: B's shadow pass unshifted too (shadow row in the image, both eyes at A's edge)"
+    check bash -c "e=\$(python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert(\"RGB\"); W = im.width // 2
+print(*(next((x for x in range(512) if im.getpixel((x0 + x, 1))[1] > 32), -1) for x0 in (0, W)))
+' '$tmp/shm.png') && read l r <<<\"\$e\" && (( l == $xl && r == $xl )) || { echo \"image L R \$e, A edge $xl\"; false; }"
     kill "${sp[@]}" 2>/dev/null; wait "${sp[@]}" 2>/dev/null
 
     # 4. Mirror mode under Zink (OpenGL 2.1-era app), 64- and 32-bit; eyes must differ.
+    # --shadow + auto_noshift: the FBO "shadow map" (shown unshifted, top left)
+    # must match in both eyes, i.e. B's twin honours the pass flag under Zink.
     local gl
     for gl in "$B/vrdual-gltest" "$B/lib32/vrdual-gltest"; do
         [[ -x $gl ]] || { say "SKIP  mirror zink $(basename "$(dirname "$gl")") (make lib32)"; continue; }
         rm -f /dev/shm/vrdual-$sess-*
         env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$(dirname "$gl")" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-            VRDUAL_SESSION=$sess VRDUAL_EYE=both "$gl" --title "selftest zink" >"$tmp/gl.log" 2>&1 &
+            VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 "$gl" --shadow --title "selftest zink" >"$tmp/gl.log" 2>&1 &
         label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): both eyes, not stopped, dirty tracking on"
         check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/g.png' && grep -q 'zink' '$tmp/gl.log' && ! grep -q STOPPED '$tmp/gl.log' &&
             grep -q 'dirty tracking on' '$tmp/gl.log' &&
             [ \"\$(magick '$tmp/g.png' -crop 50%x100% +repage -format '%#\n' info: | sort -u | wc -l)\" = 2 ]"
+        label="mirror zink $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2) auto_noshift: FBO pass flagged, same in both eyes"
+        check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'auto_noshift: off-screen pass 512x512 not shifted (main view 960x720)' '$tmp/gl.log' && break; sleep 0.1; done
+            grep -q 'auto_noshift: off-screen pass 512x512' '$tmp/gl.log' && snap '$tmp/gs.png' && e=\$(python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert(\"RGB\"); W = im.width // 2
+print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -1) for x0 in (0, W)))
+' '$tmp/gs.png') && read l r <<<\"\$e\" && (( l == r && l >= 55 && l <= 67 )) || { echo \"FBO post edge L R: \$e\"; false; }"
         # the X11 cursor goes out with the frames (games with a hardware cursor)
         label="cursor $(file -b "$gl" | cut -d, -f1 | cut -d' ' -f2): X11 cursor image in the frame header"
         check bash -c "grep -q 'cursor: X11 cursor exported' '$tmp/gl.log' && c=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --cursor /dev/shm/vrdual-$sess-0) &&
