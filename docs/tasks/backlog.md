@@ -87,6 +87,22 @@
   race, timing-sensitive; not pursued further. Side finding: `taskset -c
   0-7` in the Steam launch options (after gamescope's `--`) does not reach
   the game, which had `Cpus_allowed_list: 0-23`.
+  Root cause 2026-11-03 (disassembly + both cores): `Civ5App::SetupJobManager`
+  sets n = `MaxSimultaneousThreads` clamped to 3..16 (so `= 1` gives 3) and
+  calls `JobManager_Initialize(n)` (`task_scheduler_init(n)`). The scheduler
+  observer gives each thread entering TBB `g_ThreadIDCount++` (never bounded)
+  as its index; the per-thread render data (`sm_pThreadRenderer` of the
+  Landmark/City/Unit vis systems, Granny pose caches, command streams) has
+  `JobManager_GetNumberThreads()` = n slots. Two threads more than n enter
+  (core 1: n 8, counter 10, crash at index 9; core 2: n 16, counter 18), and a
+  job on such a thread reads a null slot. The landmark renderer holds at most
+  16 slots inline, so slots cannot go above 16. Fix: `GetNumberThreads`
+  (vaddr 0x8dc282b, 19 bytes) returns 16 once initialized
+  (`a1 08 14 0a 10 85 c0 74 05 b8 10 00 00 00 c3` + 4 nops), with
+  `MaxSimultaneousThreads = 8` (indices up to 10). Applied by hand to the
+  owner's copy (`Civ5XP.orig` kept), in test. If it holds: `vrdual fix
+  on|off GAME` like `intro` (bytes from the profile, checked before
+  writing, `.orig` backup), selftest check on a fake file.
 - Fragment shader hunt + shader replacement (owner 2026-11-02, Civ V unit
   shadows): today's hunt and rules only cover the stages we patch (VS/TES/GS),
   so hiding the shader that resolves shadows would hide the terrain too.
