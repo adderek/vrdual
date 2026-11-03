@@ -60,6 +60,29 @@ automatically.
 | `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), UI translated on all three pages (English in the HTML `data-i18n` or in the scripts `t("key", "English")`, `site/i18n.json` for the rest, `site/i18n.js` language list + browser detection; `vrdual ci` checks every language has every key of the pages and scripts; game data stays English), deployed by `.github/workflows/pages.yml`; public material only, never unpublished notes |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
+## Game list and public site
+
+After testing a game (or learning something about it), in the same commit:
+
+1. Edit its entry in `site/games.json`: `status` (works / runs / broken / no
+   effect / retest, defined in `docs/GAMES.md`), `path` (store, API, renderer,
+   exe), `settings` (what a player must set: profile keys, game options, fixes),
+   `notes` (dated ISO findings, newest facts first in meaning, not a diary;
+   say what is confirmed and by whom: owner in the headset, snapshot, selftest).
+   Public material only: no unpublished notes, local paths or GPU addresses.
+   Media go to `screenshots/` (tracked) and are listed in `media`.
+2. `tools/gen_games.py` rewrites the table in `docs/GAMES.md`; update its
+   "Last update" date by hand.
+3. `./vrdual ci` (validates games.json, the table and site translations; new
+   UI strings in `site/` need every language in `site/i18n.json`).
+4. Commit and push to `master`: `.github/workflows/pages.yml` deploys `site/`
+   on changes to `site/**` or `screenshots/**`. Check it ran:
+   `gh run list --workflow pages.yml -L 1`; spot-check the live data with
+   `curl -s https://adderek.github.io/vrdual/games.json`.
+
+Keep `settings` in step with `notes`: a fix described in the notes but missing
+from the settings is invisible to players reading the table.
+
 ## Commands
 
 ```bash
