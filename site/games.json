@@ -184,7 +184,7 @@
   "store": "Steam: positive",
   "path": "native Linux port (Aspyr, `Civ5XP`, 32-bit, GL from the Mac code) → Zink; Steam runs it, not the Windows build, unless Proton is forced",
   "status": "works",
-  "settings": "curated profile `civ5` (map fixed in the room: `screen = full`, `lock = head`, `head_look = scroll`, `head_lean = on`, `cull_widen = 1.8`, `hud_follow = 90`, `auto_noshift = 1`, `world_scale` 0.1); Aspyr config.ini `MaxSimultaneousThreads = 8` (the thread fix is applied by vrdual, `game_fixes = 1`, the default)",
+  "settings": "curated profile `civ5` (map fixed in the room: `screen = full`, `lock = head`, `head_look = scroll`, `head_lean = on`, `cull_widen = 1.8`, `hud_follow = 90`, `auto_noshift = 1`, `world_scale` 0.1); Aspyr config.ini `MaxSimultaneousThreads = 8` (the thread fix is applied by vrdual, `game_fixes = 1`, the default); `vrdual intro off civ5` skips the unskippable opening movie (renamed to `.orig`, `intro on` brings it back)",
   "notes": [
    "Works in the headset: shadows agree in both eyes, no crash with the thread patch.",
    "Looking around works in the headset: with `cull_widen` the game draws past the screen edge, so a head turn (`head_look = scroll`) shows more of the map, and turning further scrolls it.",

@@ -141,7 +141,9 @@ machine unless a row says otherwise. Read them with its topology in mind:
   Exception by the owner's decision (2026-11-03): `game_fixes`, small
   in-memory patches for a known game build that fix its own bugs or widen its
   culling (`layer/vrdual_gamefix.hpp`); byte-checked, any other build is left
-  alone, off with `game_fixes = 0`. Never patch game files on disk.
+  alone, off with `game_fixes = 0`. Never patch game files on disk; the only
+  file change is `vrdual intro off GAME`, run by the user (renames the
+  profile's intro videos to `.orig`, `intro on` / Steam's file check undo it).
 - Config precedence: defaults < `[global]` < game profile (`profiles/`) < `[app:NAME]` < `VRDUAL_<KEY>` env.
   `VRDUAL_EYE`, `VRDUAL_GPU` and `VRDUAL_SESSION` are per process only.
 - Changing a struct in `vrdual_shm.h` → bump `VRDUAL_VERSION` or the ctl `version`.

@@ -35,7 +35,17 @@ WiVRn server and sends the game to the headset; leave it running across games.
 
 ## 3. Each game
 
-- **Steam**: game → Properties → Launch options: paste the line `install` printed.
+- **Steam**: game → Properties → Launch options: paste the line `install`
+  printed. It contains your own home directory, so copy yours, not this
+  example. For a user `alice` it looks like:
+
+  ```text
+  /home/alice/vrdual/run %command%                    # Flatpak Steam
+  /home/alice/.local/share/vrdual/run %command%       # Steam from the distribution
+  ```
+
+  With other launch options the wrapper goes right before `%command%`, e.g.
+  `gamescope -w 1920 -h 1080 -- /home/alice/vrdual/run %command%`.
 - **Heroic**: game settings → Advanced → Wrapper command: the same path without
   ` %command%`; Other → Gamescope 1920x1080.
 
