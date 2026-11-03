@@ -21,9 +21,12 @@
 //                            start direction (clip-space rotation in the
 //                            layer, head_turn), soft limit head_rot_max;
 //                            needs a head-locked screen (--lock head)
-//                     scroll: clip, and past head_rot_max from the start
-//                            direction the arrow keys are held (map
-//                            scrolling in strategy games); 2 deg hysteresis
+//                     scroll: clip, plus map scrolling (strategy games):
+//                            past scroll_angle from the start direction a
+//                            short tap of scroll_keys (arrows), repeated
+//                            while the head stays; past scroll_hold_angle
+//                            held until the head comes back inside
+//                            scroll_angle (2 deg hysteresis)
 //
 // Buttons are remapped with map_<mode>_<button> = KEY_*|BTN_*|none (mode:
 // gamepad, mouse) or map_<button> (both modes) in [global] or [app:NAME];
@@ -389,6 +392,9 @@ struct InputCfg {
     bool lean = false;
     float lean_max = 0.1f;
     float rot_max = 20;  // head_look = clip: soft limit, degrees
+    // head_look = scroll: start / hold angles (deg), tap length and repeat (s), keys up down left right
+    float scroll_angle = 0, scroll_hold = 0, scroll_tap = 0.12f, scroll_repeat = 0.5f;
+    int scroll_keys[4] = {KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT};
     int map[M_COUNT][B_COUNT];  // code, 0 = none, -1 = mode default
     std::string map_src[M_COUNT][B_COUNT];  // "[app:NAME] map_mouse_a", "" = built-in
     std::string input_src;  // where input came from (load_input_cfg)
@@ -487,6 +493,20 @@ inline InputCfg load_input_cfg(const std::string& app) {
     c.lean = st.s("head_lean") == "on";
     c.lean_max = st.f("lean_max");
     c.rot_max = st.f("head_rot_max");
+    c.scroll_angle = st.f("scroll_angle");
+    c.scroll_hold = st.f("scroll_hold_angle");
+    c.scroll_tap = st.f("scroll_tap_ms") / 1000;
+    c.scroll_repeat = st.f("scroll_tap_repeat_ms") / 1000;
+    {
+        std::stringstream ss(st.s("scroll_keys"));
+        std::string item;
+        for (int i = 0; i < 4 && std::getline(ss, item, ','); ++i) {
+            item = trim(item);
+            int code = lower(item) == "none" ? 0 : input_code(item);
+            if (code < 0) fprintf(stderr, "[input] scroll_keys: unknown code '%s'\n", item.c_str());
+            else c.scroll_keys[i] = code;
+        }
+    }
     load_input_maps(c, st.profile);
     return c;
 }
@@ -686,7 +706,10 @@ private:
     float hand_yaw_ = 0, hand_pitch_ = 0, pos_x_ = 0, pos_y_ = 0;
     bool head_prev_ok_ = false, head_ref_ok_ = false;
     float head_yaw_ = 0, head_pitch_ = 0, ref_yaw_ = 0, ref_pitch_ = 0;
-    bool scroll_[4] = {};  // head_look = scroll: arrows held (up down left right)
+    bool scroll_[4] = {};      // head_look = scroll: key down (up down left right)
+    bool scroll_in_[4] = {};   // past scroll_angle (this turn)
+    bool scroll_hold_[4] = {}; // past scroll_hold_angle this turn: held until back
+    double scroll_t_[4] = {-1, -1, -1, -1};  // time since the last tap started (-1 = outside the tap band)
 
     bool hyst(int b, float v) { return an_[b] = an_[b] ? v > 0.45f : v > 0.55f; }
     static void key(std::vector<InEvent>& ev, int code, bool down) {
@@ -779,12 +802,27 @@ private:
             bool on = cfg_.head_look == "scroll" && c.head_ok;
             if (on && !head_ref_ok_) { ref_yaw_ = c.head_yaw; ref_pitch_ = c.head_pitch; head_ref_ok_ = true; }
             float y = on ? wrap180(c.head_yaw - ref_yaw_) : 0, p = on ? c.head_pitch - ref_pitch_ : 0;  // + = left / up
-            float L = cfg_.rot_max > 0 ? cfg_.rot_max : 20;
+            float L = cfg_.scroll_angle > 0 ? cfg_.scroll_angle : cfg_.rot_max > 0 ? cfg_.rot_max : 20;
+            float H = cfg_.scroll_hold > 0 ? std::max(cfg_.scroll_hold, L) : L + 10;
             float a[4] = {p, -p, y, -y};
-            static const int keys[4] = {KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT};
             for (int i = 0; i < 4; ++i) {
-                bool want = a[i] > (scroll_[i] ? L - 2 : L);
-                if (want != scroll_[i]) { key(ev, keys[i], want); scroll_[i] = want; }
+                scroll_in_[i] = a[i] > (scroll_in_[i] ? L - 2 : L);
+                if (!scroll_in_[i]) scroll_hold_[i] = false, scroll_t_[i] = -1;
+                else if (a[i] > H) scroll_hold_[i] = true;
+                bool want = false;
+                if (scroll_hold_[i]) want = true;
+                else if (scroll_in_[i]) {  // tap band: down for scroll_tap, again every scroll_repeat
+                    if (scroll_t_[i] < 0) scroll_t_[i] = 0;  // tap starts now
+                    else scroll_t_[i] += dt;
+                    if (cfg_.scroll_repeat > 0 && scroll_t_[i] >= cfg_.scroll_repeat - 1e-6) scroll_t_[i] -= cfg_.scroll_repeat;
+                    if (scroll_t_[i] < 0) scroll_t_[i] = 0;
+                    want = scroll_t_[i] < cfg_.scroll_tap - 1e-6;
+                }
+                int code = cfg_.scroll_keys[i];
+                if (want != scroll_[i]) {
+                    if (code > 0) key(ev, code, want);
+                    scroll_[i] = want;
+                }
             }
         }
         head_prev_ok_ = c.head_ok;

@@ -151,20 +151,31 @@ int main(int argc, char** argv) {
     {
         InputCfg k = cfg("off");
         k.head_look = "scroll";
-        k.rot_max = 20;
+        k.rot_max = 20;  // scroll_angle 0 -> 20; hold angle 0 -> 30; tap 0.12 s every 0.5 s
+        k.scroll_keys[2] = KEY_A;  // left remapped
         Mapper m(k);
         auto key = [](int code, int v) { return InEvent{DEV_KBD, EV_KEY, code, v}; };
         Controls c; c.head_ok = true; c.head_yaw = 170; c.head_pitch = -5;
         auto ev = m.step(c, 0.1);                      // reference: 170 / -5
         c.head_yaw = 185; ev = m.step(c, 0.1);         // 15 left (across +-180): inside
         expect(ev.empty(), "head scroll: 15 deg left of the start -> nothing (view turns only)");
-        c.head_yaw = -165; ev = m.step(c, 0.1);        // 25 left
-        expect(has(ev, key(KEY_LEFT, 1)) && ev.size() == 1, "head scroll: 25 deg left -> KEY_LEFT held");
-        c.head_yaw = -171; ev = m.step(c, 0.1);        // 19 left: inside the 2 deg hysteresis
-        expect(ev.empty(), "head scroll: back to 19 deg -> still held (hysteresis)");
-        c.head_yaw = 187; c.head_pitch = -30; ev = m.step(c, 0.1);  // 17 left, 25 down
-        expect(has(ev, key(KEY_LEFT, 0)) && has(ev, key(KEY_DOWN, 1)) && ev.size() == 2, "head scroll: 17 left, 25 down -> LEFT released, DOWN held");
-        c.head_ok = false; ev = m.step(c, 0.1);
+        c.head_yaw = -165; ev = m.step(c, 0.1);        // 25 left: tap band
+        expect(has(ev, key(KEY_A, 1)) && ev.size() == 1, "head scroll: 25 deg left -> tap starts (scroll_keys: left = KEY_A)");
+        ev = m.step(c, 0.1);
+        auto ev2 = m.step(c, 0.1);
+        expect(ev.empty() && has(ev2, key(KEY_A, 0)) && ev2.size() == 1, "head scroll: tap released after scroll_tap_ms");
+        int downs = 0;
+        for (int i = 0; i < 3; ++i) for (auto& e : m.step(c, 0.1)) downs += e == key(KEY_A, 1);
+        expect(downs == 1, "head scroll: staying in the tap band -> next tap after scroll_tap_repeat_ms");
+        c.head_yaw = -155; ev = m.step(c, 0.1);        // 35 left: past the hold angle
+        c.head_yaw = -164; ev2 = m.step(c, 0.5); auto ev3 = m.step(c, 0.5);  // back to 26: still held
+        bool held = true;
+        for (auto& e : ev2) held &= !(e == key(KEY_A, 0));
+        for (auto& e : ev3) held &= !(e == key(KEY_A, 0));
+        expect(held, "head scroll: past scroll_hold_angle -> held, also back in the tap band");
+        c.head_yaw = 187; c.head_pitch = -30; ev = m.step(c, 0.1);  // 17 left (out, hysteresis 2), 25 down
+        expect(has(ev, key(KEY_A, 0)) && has(ev, key(KEY_DOWN, 1)) && ev.size() == 2, "head scroll: back inside -> left released; 25 down -> DOWN tap");
+        c.head_ok = false; ev = m.step(c, 0.05);
         expect(has(ev, key(KEY_DOWN, 0)) && ev.size() == 1, "head scroll: tracking lost -> DOWN released");
     }
     {
