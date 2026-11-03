@@ -1026,7 +1026,10 @@ EOF
     set_live ipd_near=0 head_yaw=6
     label="head yaw 6 deg (clip rotation M = D R^T D^-1): posts where the turned camera sees them, HUD bar stays"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/yaw.png' && $M '$tmp/yaw.png' --ipd 0.064 --anchor center --head-yaw 6"
-    set_live head_yaw=0
+    set_live head_yaw=0 hud_yaw=6
+    label="hud_yaw 6 deg: HUD bar moved where a turned camera sees the screen centre, posts unchanged"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hudyaw.png' && $M '$tmp/hudyaw.png' --ipd 0.064 --anchor center --hud-yaw 6"
+    set_live hud_yaw=0
     # Shader hunt: both processes list the test shader's key; hide over the
     # whole key range leaves only the background, off brings the posts back.
     label="shader list: test shader key, once"

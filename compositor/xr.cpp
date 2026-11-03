@@ -923,16 +923,17 @@ static int run(int argc, char** argv) {
     float ref_p[3] = {}, ref_yaw = 0, ref_q[4] = {0, 0, 0, 1};
     int recentres = 0;
     // head offset (m) and rotation (deg, head_look = clip) -> control block
-    float sent[6] = {NAN, NAN, NAN, NAN, NAN, NAN};  // first call always writes (clears what a killed run left)
-    auto send_head = [&](const float h[6]) {
+    float sent[8] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};  // first call always writes (clears what a killed run left)
+    auto send_head = [&](const float h[8]) {  // offset xyz, turn yaw pitch roll, HUD turn yaw pitch
         bool same = true;
-        for (int i = 0; i < 6; ++i) same &= fabsf(h[i] - sent[i]) < (i < 3 ? 5e-4f : 0.02f);
+        for (int i = 0; i < 8; ++i) same &= fabsf(h[i] - sent[i]) < (i < 3 ? 5e-4f : 0.02f);
         if (same) return;
         if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
         if (!ctl) return;
         vrdual::ctl_write(ctl, [&](vrdual_ctl& k) {
             k.head_x = h[0]; k.head_y = h[1]; k.head_z = h[2];
             k.head_yaw = h[3]; k.head_pitch = h[4]; k.head_roll = h[5];
+            k.hud_yaw = h[6]; k.hud_pitch = h[7];
         });
         memcpy(sent, h, sizeof sent);
     };
@@ -1295,7 +1296,7 @@ static int run(int argc, char** argv) {
                     lean_ref = true;
                     recentres = mapper->recentres;
                 }
-                float h[6] = {};
+                float h[8] = {};
                 if (icfg.lean) {
                     float d[3] = {c.head_px - ref_p[0], c.head_py - ref_p[1], c.head_pz - ref_p[2]};
                     // reference frame: forward (-sin, 0, -cos)(yaw), right (cos, 0, -sin)(yaw)
@@ -1306,6 +1307,8 @@ static int run(int argc, char** argv) {
                 }
                 if (rot) {
                     vrdual::head_turn(ref_q, c.head_q, h[3], h[4], h[5]);
+                    float A = std::max(icfg.hud_follow, 0.f);  // HUD: in place up to A, then along
+                    h[6] = std::clamp(h[3], -A, A), h[7] = std::clamp(h[4], -A, A);
                     float L = icfg.rot_max > 0 ? icfg.rot_max : 20;
                     for (int i = 3; i < 6; ++i) h[i] = L * tanhf(h[i] / L);
                 }
@@ -1313,7 +1316,7 @@ static int run(int argc, char** argv) {
             }
         }
         if (!fresh || !mapper || !(icfg.lean || ((icfg.head_look == "clip" || icfg.head_look == "scroll") && !anchored))) {  // nothing drives it: no stale offset
-            const float zero[6] = {};
+            const float zero[8] = {};
             send_head(zero);
         }
         t_input = t_now;
@@ -1397,26 +1400,40 @@ static int run(int argc, char** argv) {
                 mark(3);
                 // the game's X11 cursor (not in its swapchain). cursor_depth auto: at the
                 // depth of the scene under it (disparity of the two eye images there,
-                // smoothed; kept while the patch has no texture); hud: at hud_depth
+                // smoothed; kept while the patch has no texture); hud: at hud_depth.
+                // head_look clip / scroll turn the scene (homography M) and the HUD
+                // (shift) apart from the game's cursor position: drawn where what it
+                // points at is shown, on the HUD if the HUD's disparity is found there.
                 bool have_cur = vrdual::cursor_read(*src[0], cur);
                 vrdual_ctl k{};
                 uint32_t w = out[0].w, h = out[0].h;
                 float aspect = float(w) / float(h), kd[2] = {0, 0};
-                bool scene = false;
+                bool scene = false, on_hud = false;
                 if (have_cur) {
                     if (cur.serial != cur_logged) fprintf(stderr, "[xr] cursor %ux%u from the game\n", cur.w, cur.h);
                     cur_logged = cur.serial;
                     if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
                     if (ctl) k = vrdual::ctl_read(ctl);
-                    float fl = ctl ? vrdual::eye_params(k, 0, aspect).v[0] : 0, fr = ctl ? vrdual::eye_params(k, 1, aspect).v[0] : 0;
+                    auto e0 = vrdual::eye_params(k, 0, aspect);
+                    float fl = ctl ? e0.v[0] : 0, fr = ctl ? vrdual::eye_params(k, 1, aspect).v[0] : 0;
                     scene = cur_auto && fabsf(fl - fr) > 1e-9f;
                     kd[0] = scene ? fl / (fl - fr) : 0;
                     kd[1] = scene ? fr / (fl - fr) : 0;
+                    int sx = cur.x, sy = cur.y, hx = cur.x, hy = cur.y;
+                    if (ctl) vrdual::turned_px(e0, w, h, cur.x, cur.y, sx, sy, hx, hy);
+                    bool turned = sx != cur.x || sy != cur.y || hx != cur.x || hy != cur.y;
+                    float hud0 = ctl ? e0.v[7] * float(w) / 2 : 0;
                     int d;  // on the staging pixels before the edge mask (R/B order does not matter to it)
-                    if (scene && vrdual::scene_disparity(out[0].map, out[1].map, w, h, cur.x, cur.y, kd[0], kd[1], int(w / 8), &d)) {
+                    if (!cur_auto) on_hud = true;
+                    else if (scene && turned && vrdual::scene_disparity(out[0].map, out[1].map, w, h, hx, hy, kd[0], kd[1], int(w / 8), &d) &&
+                             fabsf(float(d) * kd[0] - hud0) <= 1.5f)
+                        on_hud = true;
+                    if (!on_hud && scene && vrdual::scene_disparity(out[0].map, out[1].map, w, h, sx, sy, kd[0], kd[1], int(w / 8), &d)) {
                         cur_d = cur_d_ok ? cur_d + 0.3f * (float(d) - cur_d) : float(d);
                         cur_d_ok = true;
                     }
+                    cur.x = on_hud ? hx : sx;  // drawn there (cursor_read reads the position again next frame)
+                    cur.y = on_hud ? hy : sy;
                 }
                 mark(5);
                 // stereo window: mask the strip at each eye's edge that its shifted view gets wrong
@@ -1440,7 +1457,7 @@ static int run(int argc, char** argv) {
                         EyeOut& o = out[e];
                         float hud = ctl ? vrdual::eye_params(k, e, aspect).v[7] * float(o.w) / 2 : 0;
                         bool bgra = (src[e]->fmt == VRDUAL_FMT_BGRA8) != o.swizzle;
-                        vrdual::cursor_draw(o.map, o.w, o.h, bgra, cur, int(lroundf(scene && cur_d_ok ? cur_d * kd[e] : hud)));
+                        vrdual::cursor_draw(o.map, o.w, o.h, bgra, cur, int(lroundf(scene && cur_d_ok && !on_hud ? cur_d * kd[e] : hud)));
                     }
                 }
             }

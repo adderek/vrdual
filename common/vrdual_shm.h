@@ -96,6 +96,10 @@ struct vrdual_ctl {
     // version 5: head rotation from vrdual-xr, degrees, same frame as head_x/y/z:
     // yaw + = turned right, pitch + = up, roll + = right ear down; 0 = none
     float head_yaw, head_pitch, head_roll;
+    // version 6: turn applied to w == 1 draws (HUD), degrees, same signs as
+    // head_yaw / head_pitch; vrdual-xr: the head turn clamped to hud_follow
+    // (0 = the HUD moves with the head, as before)
+    float hud_yaw, hud_pitch;
 };
 
 static inline const char* vrdual_anchor_name(int a) {

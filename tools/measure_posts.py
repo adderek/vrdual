@@ -6,7 +6,7 @@ parallel-camera pair the horizontal disparity (left-eye x minus right-eye x)
 of a post at distance d is  ipd(d) / d * eye_width / 2  pixels, where ipd(d)
 follows the near/far blend from common/vrdual_ctl.hpp.
 
-  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--head-yaw 5] [--hud-depth 1.5] [--depth LEFT.pfm]
+  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--head-yaw 5] [--hud-depth 1.5] [--hud-yaw 6] [--depth LEFT.pfm]
 
 --anchor also checks where the LEFT eye sees each post: the original camera
 sees post k at x = (1 + (-0.5 + 0.25k)) * eye_width / 2; the left eye adds
@@ -75,6 +75,7 @@ def main():
     ap.add_argument("--head-x", type=float, default=0.0)
     ap.add_argument("--head-yaw", type=float, default=0.0)
     ap.add_argument("--hud-depth", type=float, default=0.0)
+    ap.add_argument("--hud-yaw", type=float)  # HUD turned: bar centre at (1 - tan(yaw)) * eye_width / 2 (P00 = 1)
     ap.add_argument("--depth")
     ap.add_argument("--tol-rel", type=float, default=0.04)
     ap.add_argument("--tol-px", type=float, default=1.0)
@@ -148,7 +149,13 @@ def main():
     got = hl - hr
     good = abs(got - want) <= max(a.tol_px, a.tol_rel * want)
     ok &= good
-    print(f"HUD bar row {hy}  disparity {got:7.1f} px  expected {want:7.1f} px" + ("  ok" if good else "  FAIL"))
+    line = f"HUD bar row {hy}  disparity {got:7.1f} px  expected {want:7.1f} px"
+    if a.hud_yaw is not None:
+        cwant = (1 - math.tan(math.radians(a.hud_yaw))) * ew / 2
+        cgood = abs(hl - cwant) <= 1.5
+        good &= cgood
+        line += f"  centre {hl:6.1f} (expected {cwant:6.1f})"
+    print(line + ("  ok" if good else "  FAIL"))
     return 0 if ok else 1
 
 

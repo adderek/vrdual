@@ -393,6 +393,7 @@ struct InputCfg {
     float lean_max = 0.1f;
     float rot_max = 20;  // head_look = clip: soft limit, degrees
     // head_look = scroll: start / hold angles (deg), tap length and repeat (s), keys up down left right
+    float hud_follow = 0;  // head_look = clip / scroll: HUD turn = head turn clamped to this, degrees
     float scroll_angle = 0, scroll_hold = 0, scroll_tap = 0.12f, scroll_repeat = 0.5f;
     int scroll_keys[4] = {KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT};
     int map[M_COUNT][B_COUNT];  // code, 0 = none, -1 = mode default
@@ -493,6 +494,7 @@ inline InputCfg load_input_cfg(const std::string& app) {
     c.lean = st.s("head_lean") == "on";
     c.lean_max = st.f("lean_max");
     c.rot_max = st.f("head_rot_max");
+    c.hud_follow = st.f("hud_follow");
     c.scroll_angle = st.f("scroll_angle");
     c.scroll_hold = st.f("scroll_hold_angle");
     c.scroll_tap = st.f("scroll_tap_ms") / 1000;

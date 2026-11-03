@@ -85,6 +85,7 @@ static const Key kKeys[] = {
     {"head_lean", "off", "head translation moves the rendered viewpoint: off | on"},
     {"lean_max", "0.1", "head offset soft limit, meters (L in L*tanh(d/L))"},
     {"head_rot_max", "20", "head_look = clip / scroll: rotation soft limit, degrees (L in L*tanh(a/L))"},
+    {"hud_follow", "0", "head_look = clip / scroll: the HUD stays in place until the head turned this far, then moves along, degrees (0 = moves with the head; 90 = stays)"},
     {"scroll_angle", "0", "head_look = scroll: head angle from the start direction where scrolling starts, degrees (0 = head_rot_max)"},
     {"scroll_hold_angle", "0", "head_look = scroll: past this angle the key is held until the head comes back; between scroll_angle and it: short taps (0 = scroll_angle + 10)"},
     {"scroll_tap_ms", "120", "head_look = scroll: length of one tap, ms"},
