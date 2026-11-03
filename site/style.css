@@ -101,6 +101,8 @@ tr.det td { background: var(--bg); padding: 12px 16px 16px; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 8px; font-size: 14px; }
 dt { color: var(--muted); }
 dd { margin: 0; }
+ul.notes { margin: 0; padding-left: 1.2em; }
+ul.notes li + li { margin-top: .25em; }
 .pending { font-size: 14px; }
 .media { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 8px 0; }
 .media .load { justify-self: start; font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 8px; cursor: pointer;

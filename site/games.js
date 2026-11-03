@@ -16,7 +16,7 @@ function details(g) {
 
 function render() {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const hay = g => [g.game, g.store, g.path, g.settings, g.notes, g.alt].join(" ").toLowerCase();
+  const hay = g => [g.game, g.store, g.path, g.settings, ...g.notes, g.alt].join(" ").toLowerCase();
   const rows = games.filter(g => !hidden.has(modeSt(g)) && words.every(w => hay(g).includes(w)))
     .sort((a, b) => { const x = keyOf(a, sortK), y = keyOf(b, sortK); return (x < y ? -1 : x > y ? 1 : 0) * sortDir || (nameKey(a) < nameKey(b) ? -1 : 1); });
   // sorted by a status column: one labelled group per status

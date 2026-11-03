@@ -25,8 +25,10 @@ const tr = (k, en, v) => typeof t === "function" ? t(k, en, v) : en;
 const stLabel = s => tr(ST_KEY[s || "untested"] || "st_untested", s || "untested");
 const stHtml = s => `<span class="${stCls(s)}">${esc(stLabel(s))}</span>`;
 // The details list of a game (table row and game page).
-const detailRows = g => [[tr("d_store", "store: test"), g.store], [tr("d_path", "path"), g.path], [tr("d_settings", "settings"), g.settings], [tr("d_notes", "notes"), g.notes]]
-  .filter(r => r[1]).map(([h, v]) => `<dt>${esc(h)}</dt><dd>${md(v)}</dd>`).join("");
+// notes: a list of current facts (bullets); tested: date of the last test.
+const detailRows = g => [[tr("d_store", "store: test"), g.store], [tr("d_path", "path"), g.path], [tr("d_tested", "last tested"), g.tested],
+  [tr("d_settings", "settings"), g.settings], [tr("d_notes", "notes"), g.notes]]
+  .filter(r => r[1] && r[1].length).map(([h, v]) => `<dt>${esc(h)}</dt><dd>${Array.isArray(v) ? `<ul class="notes">${v.map(n => `<li>${md(n)}</li>`).join("")}</ul>` : md(v)}</dd>`).join("");
 const loadGames = () => fetch("games.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
 
 // One media file: gif = wiggle (left / right eye alternated), mp4 = video.

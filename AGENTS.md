@@ -67,8 +67,10 @@ After testing a game (or learning something about it), in the same commit:
 1. Edit its entry in `site/games.json`: `status` (works / runs / broken / no
    effect / retest, defined in `docs/GAMES.md`), `path` (store, API, renderer,
    exe), `settings` (what a player must set: profile keys, game options, fixes),
-   `notes` (dated ISO findings, newest facts first in meaning, not a diary;
-   say what is confirmed and by whom: owner in the headset, snapshot, selftest).
+   `notes` (a list: one current fact per item, what holds now; no dates and
+   no history diary: rewrite or drop an item that is no longer true; say what
+   is confirmed: in the headset, snapshot, selftest), `tested` (ISO date of
+   the last test; `gen_games.py --check` refuses dates inside notes).
    Public material only: no unpublished notes, local paths or GPU addresses.
    Media go to `screenshots/` (tracked) and are listed in `media`.
 2. `tools/gen_games.py` rewrites the table in `docs/GAMES.md`; update its
