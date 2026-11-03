@@ -80,7 +80,9 @@ After testing a game (or learning something about it), in the same commit:
    `gh run list --workflow pages.yml -L 1`; spot-check the live data with
    `curl -s https://adderek.github.io/vrdual/games.json`.
 
-Keep `settings` in step with `notes`: a fix described in the notes but missing
+Re-check `status` whenever the notes change: `works` as soon as the owner confirmed
+stereo in the headset and no blocker (crash, missing picture) is left; a fixed
+blocker is a reason to raise it. Keep `settings` in step with `notes`: a fix described in the notes but missing
 from the settings is invisible to players reading the table.
 
 ## Commands
