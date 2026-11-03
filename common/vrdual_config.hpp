@@ -91,6 +91,7 @@ static const Key kKeys[] = {
     {"scroll_tap_ms", "120", "head_look = scroll: length of one tap, ms"},
     {"scroll_tap_repeat_ms", "500", "head_look = scroll: next tap while the head stays in the tap band, ms (0 = one tap per turn)"},
     {"scroll_keys", "KEY_UP,KEY_DOWN,KEY_LEFT,KEY_RIGHT", "head_look = scroll: keys for up, down, left, right (KEY_* names as in map_*, none = nothing)"},
+    {"lock", "world", "vrdual-xr picture: world (stays where it was put) | head (follows the head; head_look clip / scroll need it); vrdual xr --lock wins"},
     {"screen", "curved", "vrdual-xr picture: curved (virtual cinema screen) | flat | full (game FOV)"},
     {"screen_dist", "2.5", "flat/curved screen distance, meters"},
     {"screen_fov", "60", "flat/curved screen width as seen from the centre, degrees"},

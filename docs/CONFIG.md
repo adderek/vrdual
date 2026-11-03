@@ -111,6 +111,7 @@ map_x = KEY_E
 
 | key | default | values | meaning |
 |---|---|---|---|
+| `lock` | `world` | `world` `head` | vrdual-xr picture per game: `world` = stays where it was put (menu held 1 s: in front of the gaze); `head` = follows the head (menu held 1 s freezes it), needed by `head_look = clip` / `scroll`. `vrdual xr --lock` overrides it for every game |
 | `screen` | `curved` | `curved` `flat` `full` | full = game FOV around you; flat / curved = cinema screen |
 | `screen_dist` | `2.5` | meters | flat/curved screen distance |
 | `screen_fov` | `60` | degrees | flat/curved screen width seen from the centre |

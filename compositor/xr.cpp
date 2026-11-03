@@ -4,7 +4,7 @@
 // Each eye's frame is submitted as one view of an XrCompositionLayerProjection
 // whose FOV is the game camera's FOV (hfov from the session, vertical from
 // the aspect ratio), so the image covers exactly the angle it was rendered for.
-//   --lock world  (default) the image stays where it was put (session start,
+//   --lock world  (default; config `lock` per game when not given) the image stays where it was put (session start,
 //                 or menu held 1 s: in front of the current gaze, level)
 //   --lock head   the image follows the head (films); menu held 1 s freezes
 //                 it in place, again: follows again
@@ -670,14 +670,14 @@ struct XrInput {
 // ----------------------------------------------------------------- main ----
 static int run(int argc, char** argv) {
     std::string session = getenv("VRDUAL_SESSION") ? getenv("VRDUAL_SESSION") : "default";
-    bool world = true, swap = false;
+    bool world = true, swap = false, lock_cli = false;  // lock_cli: --lock given, config `lock` ignored
     long max_frames = -1;
     long lose_at = getenv("VRDUAL_XR_LOSE_AT") ? atol(getenv("VRDUAL_XR_LOSE_AT")) : 0;  // selftest
     long hang_at = getenv("VRDUAL_XR_HANG_AT") ? atol(getenv("VRDUAL_XR_HANG_AT")) : 0;  // selftest: a runtime call that never returns
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--session" && i + 1 < argc) session = argv[++i];
-        else if (a == "--lock" && i + 1 < argc) world = std::string(argv[++i]) == "world";
+        else if (a == "--lock" && i + 1 < argc) world = std::string(argv[++i]) == "world", lock_cli = true;
         else if (a == "--frames" && i + 1 < argc) max_frames = atol(argv[++i]);
         else if (a == "--swap") swap = true;
         else { fprintf(stderr, "usage: %s [--session S] [--lock world|head] [--frames N] [--swap]\n", argv[0]); return 2; }
@@ -1041,6 +1041,11 @@ static int run(int argc, char** argv) {
             if (prof == "none") fprintf(stderr, "[xr] no vrdual profile for '%s' (ask for one: vrdual request)\n", input_app.c_str());
             frame_timeout = std::max(0.1f, st.f("frame_timeout"));
             if (st.src.count("frame_timeout")) fprintf(stderr, "[xr] frame_timeout %.1f s (no new frame that long: black)\n", frame_timeout);
+            if (!lock_cli && world != (st.s("lock") != "head")) {
+                world = !world;
+                frozen = have_world = false;
+                fprintf(stderr, "[xr] lock %s (config)\n", world ? "world" : "head");
+            }
             scr.mode = screen_parse(st.s("screen"));
             scr.dist = std::max(0.2f, st.f("screen_dist"));
             scr.fov = std::clamp(st.f("screen_fov"), 10.0f, 170.0f);
