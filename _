@@ -1468,6 +1468,23 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
             set -- \$c && [[ \$3 -gt 0 && \$4 -gt 0 ]] || { echo \"cursor: \$c\"; grep cursor '$tmp/gl.log'; false; }"
         kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     done
+    # 4. 3D view at another size than the swapchain (800x600 FBO, blitted;
+    # Civ V: 1368x768) and a "shadow map" FBO of that same size: told apart
+    # by target, the shadow FBO is not shifted, the 3D view still is.
+    rm -f /dev/shm/vrdual-$sess-*
+    env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 "$B/vrdual-gltest" --shadow --view 800 600 --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
+    label="auto_noshift by target: shadow FBO of the 3D view's size (800x600) not shifted, the view itself shifted"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/glv.log' && break; sleep 0.1; done
+        grep -q 'auto_noshift: main view 800x600 (swapchain 960x720)' '$tmp/glv.log' && grep -q 'auto_noshift: main view target' '$tmp/glv.log' &&
+        grep -q 'auto_noshift: pass 800x600 into target .*not the main view' '$tmp/glv.log' && snap '$tmp/gv.png' && e=\$(python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert(\"RGB\"); W = im.width // 2
+print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -1) for x0 in (0, W)),
+      int(im.crop((0, 300, W, im.height)).tobytes() != im.crop((W, 300, 2 * W, im.height)).tobytes()))
+' '$tmp/gv.png') && read l r d <<<\"\$e\" && (( l == r && l >= 55 && l <= 67 && d == 1 )) || { echo \"FBO edge L R, view differs: \$e\"; grep auto_noshift '$tmp/glv.log'; false; }"
+    kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     # 4. Under gamescope the 64-bit WSI layer sits above ours and hands down a
     # Wayland surface: the cursor comes from the root of gamescope's X screen.
     # Here: a Wayland window, gamescope's env var without its layer, XWayland's root.

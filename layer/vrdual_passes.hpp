@@ -22,6 +22,11 @@
 // extent is neither the swapchain's nor the main view's (the extent with
 // colour that has the most shader keys bound; a game may render its 3D view
 // at another size than the swapchain, Civ V: 1368x768 into 1920x1080).
+// When the main view is not the swapchain's size, its target is known too:
+// the one (framebuffer, or first attachment view) of that size with the most
+// shader keys. A pass of the same size into another target is off-screen as
+// well (Civ V draws its unit shadow map at 1368x768). Not when the main view
+// is the swapchain's size: there its targets rotate with the swapchain images.
 // Before each render pass the layer writes the decision into the param
 // buffer (addr+96, vkCmdUpdateBuffer between two barriers, on both mirror
 // devices); patched shaders read it and skip the shift. The pass decides,
@@ -71,11 +76,15 @@ struct Track {
     VkImage chosen = VK_NULL_HANDLE;  // last pick (log changes only)
     bool told_none = false;
     // auto_noshift
-    struct Cb { VkPipeline pipe = VK_NULL_HANDLE; int pass = 0; uint64_t ext = 0; };  // pass: 0 none, 1 with colour, 2 depth only
+    struct Cb { VkPipeline pipe = VK_NULL_HANDLE; int pass = 0; uint64_t ext = 0, target = 0; };  // pass: 0 none, 1 with colour, 2 depth only
     std::unordered_map<VkCommandBuffer, Cb> cbs;
     std::unordered_map<VkShaderModule, uint32_t> mod_key;
     std::unordered_map<VkPipeline, uint32_t> pipe_key;
     std::unordered_map<uint32_t, std::vector<uint64_t>> key_use;  // key -> (extent << 1 | depth only) seen
+    struct Tgt { uint64_t ext; std::vector<uint32_t> keys; };
+    std::unordered_map<uint64_t, Tgt> tgt;  // pass target -> its extent, shader keys drawn there
+    std::atomic<uint64_t> main_tgt{0};      // the main view's target (0 = none: main view is the swapchain's size)
+    std::set<uint64_t> off_tgt;             // off-screen targets of the main view's size seen (log new ones)
     uint64_t presents = 0;
     std::string last_passes;  // log_passes: last logged
     std::atomic<uint64_t> main{0}, sc{0};  // main view and swapchain extents (0 = not known yet)
@@ -273,6 +282,10 @@ static void note_draw(Track* t, const Track::Cb& c) {
     uint64_t u = c.ext << 1 | (c.pass == 2);
     auto& v = t->key_use[it->second];
     if (std::find(v.begin(), v.end(), u) == v.end() && v.size() < 16) v.push_back(u);
+    if (!c.target || (!t->tgt.count(c.target) && t->tgt.size() >= 256)) return;
+    auto& g = t->tgt[c.target];
+    g.ext = c.ext;
+    if (std::find(g.keys.begin(), g.keys.end(), it->second) == g.keys.end() && g.keys.size() < 64) g.keys.push_back(it->second);
 }
 // Returns the pass flag to write: 1 off-screen, 0 not, -1 none (t->m held).
 // `target`: the framebuffer, or (dynamic rendering) the first attachment's view, for pass_trace.
@@ -281,15 +294,20 @@ static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D 
     auto& c = t->cbs[cb];
     c.pass = depth_only ? 2 : 1;
     c.ext = ext_key(ext);
+    c.target = target;
     note_draw(t, c);
-    uint64_t main = t->main.load(), sc = t->sc.load();
+    uint64_t main = t->main.load(), sc = t->sc.load(), mt = t->main_tgt.load();
     bool off = main && c.ext != main && c.ext != sc;
+    bool off_t = mt && c.ext == main && target && target != mt;  // same size as the main view, another target
+    if (off_t && t->off_tgt.insert(target).second)
+        logf("auto_noshift: pass %ux%u into target %llx, not the main view's (%llx): not shifted", ext.width, ext.height,
+             (unsigned long long)target, (unsigned long long)mt);
     if (t->tracing())
         logf("pass_trace: cb %p %s %ux%u target %llx -> %s", (void*)cb, depth_only ? "depth only" : "colour", ext.width, ext.height,
-             (unsigned long long)target, off ? "off-screen (not shifted)" : "shifted");
+             (unsigned long long)target, off || off_t ? "off-screen (not shifted)" : "shifted");
     if (off && t->off_ext.insert(c.ext).second)
         logf("auto_noshift: off-screen pass %ux%u not shifted (main view %ux%u)", ext.width, ext.height, uint32_t(main >> 32), uint32_t(main));
-    return off;
+    return off || off_t;
 }
 
 static void pass_flag_twin(DeviceData* dd, VkCommandBuffer cb, uint32_t v);  // vrdual_mirror.hpp
@@ -508,6 +526,15 @@ static void refresh_auto(Track& t, VkExtent2D sc) {
     if (main != t.main.exchange(main)) {
         logf("auto_noshift: main view %ux%u (swapchain %ux%u)", uint32_t(main >> 32), uint32_t(main), sc.width, sc.height);
         t.off_ext.clear();  // log the off-screen extents again for this main view
+    }
+    uint64_t mt = 0;
+    size_t keys = 0;
+    if (main != sce)
+        for (auto& kv : t.tgt)
+            if (kv.second.ext == main && kv.second.keys.size() > keys) keys = kv.second.keys.size(), mt = kv.first;
+    if (mt != t.main_tgt.exchange(mt)) {
+        if (mt) logf("auto_noshift: main view target %llx (%zu shader keys); other targets of its size not shifted", (unsigned long long)mt, keys);
+        t.off_tgt.clear();
     }
 }
 

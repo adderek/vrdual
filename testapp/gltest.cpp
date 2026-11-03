@@ -12,6 +12,9 @@
 // as a w == 1 quad in the top left corner (left 256x256 of the window). The
 // quad is never shifted, so it shows each eye's FBO as it was rendered: with
 // auto_noshift both eyes match, without it the post sits ~17 px apart.
+// --view W H: the scene is drawn into a WxH FBO, then blitted to the window
+// (a 3D view at another size than the swapchain, like Civ V's 1368x768);
+// with --shadow the "shadow map" FBO is WxH too: same size, another target.
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
@@ -45,12 +48,17 @@ GLF(void, glBindRenderbuffer_, (GLenum, GLuint));
 GLF(void, glRenderbufferStorage_, (GLenum, GLenum, GLsizei, GLsizei));
 GLF(void, glFramebufferRenderbuffer_, (GLenum, GLenum, GLenum, GLuint));
 GLF(GLenum, glCheckFramebufferStatus_, (GLenum));
+GLF(void, glBlitFramebuffer_, (GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum));
 #ifndef GL_FRAMEBUFFER
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_RENDERBUFFER 0x8D41
 #define GL_COLOR_ATTACHMENT0 0x8CE0
 #define GL_DEPTH_ATTACHMENT 0x8D00
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
 #ifndef GL_DEPTH_COMPONENT24
 #define GL_DEPTH_COMPONENT24 0x81A6
@@ -59,6 +67,9 @@ GLF(GLenum, glCheckFramebufferStatus_, (GLenum));
 static const char* kVs = "#version 120\n"
                          "varying vec3 c;\n"
                          "void main() { c = gl_Color.rgb; gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; }\n";
+static const char* kVs2 = "#version 120\n"  // --view: the far posts, a second key in the 3D view
+                          "varying vec3 c;\n"
+                          "void main() { c = gl_Color.rgb * 0.98; gl_Position = ftransform(); }\n";
 static const char* kFs = "#version 120\n"
                          "varying vec3 c; uniform vec3 tint;\n"
                          "void main() { gl_FragColor = vec4(c * tint, 1.0); }\n";
@@ -77,11 +88,13 @@ static void post(std::vector<V>& v, float x, float d, float r, float g, float b)
 int main(int argc, char** argv) {
     long frames = -1;
     bool shadow = false;
+    int vw = 0, vh = 0;  // --view
     std::string title = "vrdual-gltest";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
         else if (!strcmp(argv[i], "--title") && i + 1 < argc) title = argv[++i];
         else if (!strcmp(argv[i], "--shadow")) shadow = true;
+        else if (!strcmp(argv[i], "--view") && i + 2 < argc) vw = atoi(argv[++i]), vh = atoi(argv[++i]);
     }
     Display* dpy = XOpenDisplay(nullptr);
     if (!dpy) { fprintf(stderr, "no X display\n"); return 1; }
@@ -101,7 +114,7 @@ int main(int argc, char** argv) {
     L(glCreateShader); L(glShaderSource); L(glCompileShader); L(glCreateProgram); L(glAttachShader); L(glLinkProgram);
     L(glUseProgram); L(glGenBuffers); L(glBindBuffer); L(glBufferData); L(glBufferSubData); L(glGetUniformLocation); L(glUniform3f);
     L(glGenFramebuffers); L(glBindFramebuffer); L(glFramebufferTexture2D); L(glGenRenderbuffers); L(glBindRenderbuffer);
-    L(glRenderbufferStorage); L(glFramebufferRenderbuffer); L(glCheckFramebufferStatus);
+    L(glRenderbufferStorage); L(glFramebufferRenderbuffer); L(glCheckFramebufferStatus); L(glBlitFramebuffer);
 #undef L
     fprintf(stderr, "vrdual-gltest: GL_RENDERER %s\n", (const char*)glGetString(GL_RENDERER));
 
@@ -114,6 +127,13 @@ int main(int argc, char** argv) {
     glAttachShader_(prog, fs);
     glLinkProgram_(prog);
     GLint tint = glGetUniformLocation_(prog, "tint");
+    GLuint vs2 = glCreateShader_(GL_VERTEX_SHADER), prog2 = glCreateProgram_();
+    glShaderSource_(vs2, 1, &kVs2, nullptr);
+    glCompileShader_(vs2);
+    glAttachShader_(prog2, vs2);
+    glAttachShader_(prog2, fs);
+    glLinkProgram_(prog2);
+    GLint tint2 = glGetUniformLocation_(prog2, "tint");
 
     std::vector<V> v;
     const float d[5] = {0.5f, 1, 2, 5, 20};
@@ -133,30 +153,37 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> px(64 * 64);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
 
-    GLuint fbo = 0, stex = 0;
-    if (shadow) {
-        glGenTextures(1, &stex);
-        glBindTexture(GL_TEXTURE_2D, stex);
+    // colour texture + depth renderbuffer FBO of w x h
+    auto make_fbo = [&](int w, int h, GLuint& ctex) {
+        glGenTextures(1, &ctex);
+        glBindTexture(GL_TEXTURE_2D, ctex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        GLuint rb;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        GLuint rb, f;
         glGenRenderbuffers_(1, &rb);
         glBindRenderbuffer_(GL_RENDERBUFFER, rb);
-        glRenderbufferStorage_(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 512, 512);
-        glGenFramebuffers_(1, &fbo);
-        glBindFramebuffer_(GL_FRAMEBUFFER, fbo);
-        glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, stex, 0);
+        glRenderbufferStorage_(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+        glGenFramebuffers_(1, &f);
+        glBindFramebuffer_(GL_FRAMEBUFFER, f);
+        glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ctex, 0);
         glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rb);
-        if (glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) { fprintf(stderr, "vrdual-gltest: FBO incomplete\n"); return 1; }
+        if (glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) { fprintf(stderr, "vrdual-gltest: FBO incomplete\n"); exit(1); }
         glBindFramebuffer_(GL_FRAMEBUFFER, 0);
         glBindTexture(GL_TEXTURE_2D, tex);
-    }
+        return f;
+    };
+    const int sw = vw ? vw : 512, sh = vw ? vh : 512;  // shadow FBO size
+    GLuint fbo = 0, stex = 0, vfbo = 0, vtex = 0;
+    if (shadow) fbo = make_fbo(sw, sh, stex);
+    if (vw) vfbo = make_fbo(vw, vh, vtex);
+    const int W = vw ? vw : 960, H = vw ? vh : 720;  // the 3D view's size
 
     glEnable(GL_DEPTH_TEST);
     for (long f = 0; frames < 0 || f < frames; ++f) {
         while (XPending(dpy)) { XEvent e; XNextEvent(dpy, &e); }
-        glViewport(0, 0, 960, 720);
+        glBindFramebuffer_(GL_FRAMEBUFFER, vfbo);
+        glViewport(0, 0, W, H);
         glClearColor(0.25f, 0.27f, 0.33f, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glMatrixMode(GL_PROJECTION);
@@ -176,14 +203,21 @@ int main(int argc, char** argv) {
         glColorPointer(3, GL_FLOAT, sizeof(V), (void*)12);
         if (shadow) {  // the near post (first 6 vertices) into the FBO, same shader and matrices
             glBindFramebuffer_(GL_FRAMEBUFFER, fbo);
-            glViewport(0, 0, 512, 512);
+            glViewport(0, 0, sw, sh);
             glClearColor(0, 0, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glDrawArrays(GL_TRIANGLES, 0, 6);
-            glBindFramebuffer_(GL_FRAMEBUFFER, 0);
-            glViewport(0, 0, 960, 720);
+            glBindFramebuffer_(GL_FRAMEBUFFER, vfbo);
+            glViewport(0, 0, W, H);
         }
-        glDrawArrays(GL_TRIANGLES, 0, GLsizei(v.size()));
+        if (vw) {  // near post with the shadow pass's shader, the rest with another
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glUseProgram_(prog2);
+            glUniform3f_(tint2, 1, 1, 1);
+            glDrawArrays(GL_TRIANGLES, 6, GLsizei(v.size() - 6));
+        } else {
+            glDrawArrays(GL_TRIANGLES, 0, GLsizei(v.size()));
+        }
         glDisableClientState(GL_COLOR_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
 
@@ -199,6 +233,13 @@ int main(int argc, char** argv) {
         glTexCoord2f(1, 1); glVertex3f(1.6f, -0.5f, -2);
         glTexCoord2f(0, 1); glVertex3f(-1.6f, -0.5f, -2);
         glEnd();
+        if (vfbo) {  // the 3D view to the window
+            glBindFramebuffer_(GL_READ_FRAMEBUFFER, vfbo);
+            glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, 0);
+            glBlitFramebuffer_(0, 0, W, H, 0, 0, 960, 720, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, 960, 720);
+        }
         if (shadow) {  // the FBO as a w == 1 quad, top left 256x256 px, over everything
             glBindTexture(GL_TEXTURE_2D, stex);
             glMatrixMode(GL_PROJECTION);
