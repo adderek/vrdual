@@ -1418,7 +1418,7 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
                 grep -q 'auto_noshift: off-screen pass 512x512 not shifted (main view 960x720)' '$tmp/sh1-left.log' || { echo 'left $xl right $xr'; false; }"
             label="pass_trace: one frame's passes (shadow pass off-screen, main view shifted) and binds logged"
             check bash -c "grep -q 'pass_trace: present 60 (tracing from here)' '$tmp/sh1-left.log' && grep -q 'pass_trace: present 61 (end)' '$tmp/sh1-left.log' &&
-                grep -q 'pass_trace: cb .* depth only 512x512 -> off-screen (not shifted)' '$tmp/sh1-left.log' && grep -q 'pass_trace: cb .* colour 960x720 -> shifted' '$tmp/sh1-left.log' &&
+                grep -qE 'pass_trace: cb .* depth only 512x512 target [0-9a-f]+ -> off-screen \(not shifted\)' '$tmp/sh1-left.log' && grep -qE 'pass_trace: cb .* colour 960x720 target [0-9a-f]+ -> shifted' '$tmp/sh1-left.log' &&
                 grep -qE 'pass_trace: cb .*   bind [0-9a-f]{8}' '$tmp/sh1-left.log' || { grep pass_trace '$tmp/sh1-left.log' | head; false; }"
         fi
         kill "${sp[@]}" 2>/dev/null; wait "${sp[@]}" 2>/dev/null

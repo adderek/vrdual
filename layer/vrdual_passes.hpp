@@ -275,7 +275,8 @@ static void note_draw(Track* t, const Track::Cb& c) {
     if (std::find(v.begin(), v.end(), u) == v.end() && v.size() < 16) v.push_back(u);
 }
 // Returns the pass flag to write: 1 off-screen, 0 not, -1 none (t->m held).
-static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D ext) {
+// `target`: the framebuffer, or (dynamic rendering) the first attachment's view, for pass_trace.
+static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D ext, uint64_t target) {
     if (!t->autons) return -1;
     auto& c = t->cbs[cb];
     c.pass = depth_only ? 2 : 1;
@@ -284,8 +285,8 @@ static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D 
     uint64_t main = t->main.load(), sc = t->sc.load();
     bool off = main && c.ext != main && c.ext != sc;
     if (t->tracing())
-        logf("pass_trace: cb %p %s %ux%u -> %s", (void*)cb, depth_only ? "depth only" : "colour", ext.width, ext.height,
-             off ? "off-screen (not shifted)" : "shifted");
+        logf("pass_trace: cb %p %s %ux%u target %llx -> %s", (void*)cb, depth_only ? "depth only" : "colour", ext.width, ext.height,
+             (unsigned long long)target, off ? "off-screen (not shifted)" : "shifted");
     if (off && t->off_ext.insert(c.ext).second)
         logf("auto_noshift: off-screen pass %ux%u not shifted (main view %ux%u)", ext.width, ext.height, uint32_t(main >> 32), uint32_t(main));
     return off;
@@ -315,7 +316,7 @@ static void use(Track& t, VkImage img, VkImageLayout layout) {
 static int begin_rp(Track* t, VkCommandBuffer cb, const VkRenderPassBeginInfo* bi) {
     std::lock_guard<std::mutex> l(t->m);
     auto rp = t->rp.find(bi->renderPass);
-    int flag = begin_pass(t, cb, rp != t->rp.end() && rp->second.depth_only, bi->renderArea.extent);
+    int flag = begin_pass(t, cb, rp != t->rp.end() && rp->second.depth_only, bi->renderArea.extent, (uint64_t)bi->framebuffer);
     if (rp == t->rp.end() || !t->depth) return flag;
     auto fb = t->fb.find(bi->framebuffer);
     if (fb == t->fb.end()) return flag;
@@ -367,7 +368,12 @@ static VKAPI_ATTR void VKAPI_CALL vrd_CmdBeginRendering(VkCommandBuffer cb, cons
         bool colour = false;
         for (uint32_t i = 0; i < ri->colorAttachmentCount; ++i) colour |= ri->pColorAttachments[i].imageView != VK_NULL_HANDLE;
         bool depth = ri->pDepthAttachment && ri->pDepthAttachment->imageView;
-        if (colour || depth) flag = begin_pass(t, cb, !colour, ri->renderArea.extent);
+        if (colour || depth) {
+            uint64_t tg = 0;
+            for (uint32_t i = 0; i < ri->colorAttachmentCount && !tg; ++i) tg = (uint64_t)ri->pColorAttachments[i].imageView;
+            if (!tg && depth) tg = (uint64_t)ri->pDepthAttachment->imageView;
+            flag = begin_pass(t, cb, !colour, ri->renderArea.extent, tg);
+        }
         if (ri->flags & VK_RENDERING_RESUMING_BIT) flag = -1;  // nothing may sit between a suspended pass and its resume
         if (t->depth && depth) {
             auto v = t->view.find(ri->pDepthAttachment->imageView);

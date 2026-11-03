@@ -118,7 +118,16 @@
      But the mechanism works on B: new selftest checks show B's own shadow
      map (cube: shadow row copied into the image; gltest --shadow: FBO
      drawn as an unshifted quad) in the mirror, Zink 64 and 32 bit.
-     Next in the game, live with vrdual-ctl: `hunt noshift 7a6cdc31
+     Found 2026-11-03 (live hunt per key, snapshots): hiding 7a6cdc31
+     (2048²) or 25ef3baf (1024²) changes nothing; f6228eab (512²) is the
+     terrain. The casters are 8d5184d74a754d9a (people; `noshift` makes
+     both eyes' shadows agree, `hide` removes them) and probably
+     a8403c1ec875af08 (other models), both in the frame's first pass at the
+     main view's size 1368x768, which the extent rule cannot tell from the
+     main view. Fix options: per-game `noshift` rules (Zink keys change with
+     Mesa), or auto_noshift by target image instead of extent (pass_trace
+     now logs the target to check the main view uses one image).
+     Earlier plan: live with vrdual-ctl: `hunt noshift 7a6cdc31
      7a6cdc31` (does B fix?), `hunt hide` it (is it the caster?), head_look
      off (rotation?).
   2. Replacement by key: `shader_dir/<key>.spv` (or `.glsl` via glslang
