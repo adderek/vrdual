@@ -5,7 +5,7 @@
 //
 // Plain Xlib + GLX (like SDL 1.2 games, and it builds as 32-bit too).
 //
-//   MESA_LOADER_DRIVER_OVERRIDE=zink vrdual-gltest [--frames N] [--title T] [--shadow]
+//   MESA_LOADER_DRIVER_OVERRIDE=zink vrdual-gltest [--frames N] [--title T] [--shadow] [--log-input]
 //
 // --shadow: each frame first draws the 0.5 m post into a 512x512 FBO with
 // the scene's own shader (like a game's shadow map), then shows that texture
@@ -97,13 +97,14 @@ int main(int argc, char** argv) {
     long frames = -1;
     bool shadow = false;
     int vw = 0, vh = 0;  // --view
-    bool vquad = false;
+    bool vquad = false, log_input = false;  // --log-input: X key / button / motion events on stdout
     std::string title = "vrdual-gltest";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
         else if (!strcmp(argv[i], "--title") && i + 1 < argc) title = argv[++i];
         else if (!strcmp(argv[i], "--shadow")) shadow = true;
         else if (!strcmp(argv[i], "--view-quad")) vquad = true;
+        else if (!strcmp(argv[i], "--log-input")) log_input = true;
         else if (!strcmp(argv[i], "--view") && i + 2 < argc) vw = atoi(argv[++i]), vh = atoi(argv[++i]);
     }
     Display* dpy = XOpenDisplay(nullptr);
@@ -113,7 +114,7 @@ int main(int argc, char** argv) {
     if (!vi) { fprintf(stderr, "no GLX visual\n"); return 1; }
     XSetWindowAttributes swa{};
     swa.colormap = XCreateColormap(dpy, RootWindow(dpy, vi->screen), vi->visual, AllocNone);
-    swa.event_mask = StructureNotifyMask;
+    swa.event_mask = StructureNotifyMask | (log_input ? KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask : 0);
     Window win = XCreateWindow(dpy, RootWindow(dpy, vi->screen), 0, 0, 960, 720, 0, vi->depth, InputOutput, vi->visual,
                                CWColormap | CWEventMask, &swa);
     XStoreName(dpy, win, title.c_str());
@@ -191,7 +192,15 @@ int main(int argc, char** argv) {
 
     glEnable(GL_DEPTH_TEST);
     for (long f = 0; frames < 0 || f < frames; ++f) {
-        while (XPending(dpy)) { XEvent e; XNextEvent(dpy, &e); }
+        while (XPending(dpy)) {
+            XEvent e;
+            XNextEvent(dpy, &e);
+            if (e.type == KeyPress || e.type == KeyRelease) printf("input: key %u %s\n", e.xkey.keycode, e.type == KeyPress ? "down" : "up");
+            else if (e.type == ButtonPress || e.type == ButtonRelease) printf("input: button %u %s\n", e.xbutton.button, e.type == ButtonPress ? "down" : "up");
+            else if (e.type == MotionNotify) printf("input: motion %d %d\n", e.xmotion.x, e.xmotion.y);
+            else continue;
+            fflush(stdout);
+        }
         if (g_menu) {  // a menu: the window only
             glBindFramebuffer_(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, 960, 720);

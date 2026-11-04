@@ -1568,7 +1568,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     # by target, the shadow FBO is not shifted, the 3D view still is.
     rm -f /dev/shm/vrdual-$sess-*
     env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 "$B/vrdual-gltest" --shadow --view 800 600 --view-quad --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 VRDUAL_INPUT_FOCUS=auto "$B/vrdual-gltest" --shadow --view 800 600 --view-quad --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
     local glv=$!
     label="auto_noshift by target: shadow FBO of the 3D view's size (800x600) not shifted, the view itself shifted"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/glv.log' && break; sleep 0.1; done
@@ -1588,11 +1588,13 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
         (( (f0 & 1) && (f1 & 1) )) || { echo \"menu frame flags L R: \$f0 \$f1\"; false; }
         kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn on: the main view 800x600 is drawn' '$tmp/glv.log' && break; sleep 0.1; done
         (( \$(grep -c 'head turn off' '$tmp/glv.log') >= 2 && \$(grep -c 'head turn on' '$tmp/glv.log') >= 2 )) || { grep 'head turn\|main view' '$tmp/glv.log'; false; }"
+    label="input_focus = auto: the layer reads the X focus of the game window (logged)"
+    check grep 'focus: the game window' "$tmp/glv.log"
     # the view scaled onto the window by a w == 1 quad (Civ V): turned once, in
     # the view; the quad itself not, so the window's magenta never shows
     label="head turn with the view drawn apart: the swapchain pass (view scaled by a quad) shifted but not turned again; frames flagged HUD twice"
     check bash -c "$(declare -f snap set_live); B='$B' sess=$sess; set_live head_yaw=8 hud_yaw=8 && snap '$tmp/gq.png' && set_live head_yaw=0 hud_yaw=0 &&
-        f=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --flags /dev/shm/vrdual-$sess-1 | cut -d' ' -f2) && (( f == 2 )) &&
+        f=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --flags /dev/shm/vrdual-$sess-1 | cut -d' ' -f2) && (( (f & 3) == 2 )) &&
         grep -q 'swapchain pass 960x720 with the main view 800x600 apart' '$tmp/glv.log' && e=\$(python3 -c '
 import sys
 from PIL import Image
@@ -1845,16 +1847,51 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         if [[ -x $B/vrdual-gltest ]]; then
             rm -f /dev/shm/vrdual-$sess-*
             env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-                VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_INPUT_FOCUS=auto "$B/vrdual-gltest" --title "selftest xr cursor" >"$tmp/xrgl.log" 2>&1 &
+                VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_INPUT_ROUTE=xtest VRDUAL_XTEST_DUMP="$tmp/xtest.txt" \
+                "$B/vrdual-gltest" --title "selftest xr cursor" >"$tmp/xrgl.log" 2>&1 &
             local gp=$!
             for i in $(seq 100); do grep -q exporting "$tmp/xrgl.log" && break; sleep 0.1; done
             label="openxr: game's X11 cursor drawn"
             check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr7.log' 2>&1;
                 grep -q 'cursor [0-9]*x[0-9]* from the game' '$tmp/xr7.log' && grep -q '30 frames submitted' '$tmp/xr7.log' || { grep '\\[xr\\]' '$tmp/xr7.log'; false; }"
-            label="input_focus = auto: the layer reads the X focus of the game window (logged)"
-            check grep 'focus: the game window' "$tmp/xrgl.log"
+            # input_route = xtest (auto: inside gamescope): the head scroll's
+            # arrows go through the control block to the game's layer, which
+            # injects them into its X server (here dumped, never sent)
+            label="input_route = xtest: head-scroll arrows reach the game's layer as XTEST key presses (X keycode = evdev + 8), no uinput keyboard"
+            check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 SIMULATED_ROTATE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LOOK=scroll VRDUAL_HEAD_ROT_MAX=10 VRDUAL_LOCK=head VRDUAL_SCROLL_ANGLE=1 \
+                timeout 30 '$B/vrdual-xr' --session $sess --frames 150 >'$tmp/xr-xt.log' 2>&1
+                for i in \$(seq 50); do (( \$(grep -cE '^2 ' '$tmp/xtest.txt') <= \$(grep -cE '^3 ' '$tmp/xtest.txt') )) && break; sleep 0.1; done  # exit release: at the next game frame
+                grep -q 'XTEST requests from vrdual-xr dumped' '$tmp/xrgl.log' && grep -q 'keys and mouse: XTEST into the game' '$tmp/xr-xt.log' &&
+                grep -qE '^2 (113|114) ' '$tmp/xtest.txt' && ! grep -q 'no vrdual keyboard created' '$tmp/xr-xt.log' &&
+                [[ \$(grep -cE '^2 ' '$tmp/xtest.txt') -le \$(grep -cE '^3 ' '$tmp/xtest.txt') ]] ||
+                { grep -E 'input|XTEST' '$tmp/xrgl.log'; grep -cE '^2 ' '$tmp/xtest.txt'; grep -cE '^3 ' '$tmp/xtest.txt'; grep 'keys and mouse' '$tmp/xr-xt.log'; grep -E '^\\[(xr|input)\\]' '$tmp/xr-xt.log' | tail; false; }"
             kill $gp 2>/dev/null || true; wait $gp 2>/dev/null || true
         fi
+        # XTEST for real: gltest inside a headless gamescope (on the headless
+        # GPU) gets keys / mouse written into the control block ring (as
+        # vrdual-xr does) through its layer; input_route auto picks XTEST there
+        label="input_route auto inside gamescope: ring -> layer -> XTEST -> the game's X events (key 113, motion +30 +20, button 1)"
+        if command -v gamescope >/dev/null && [[ -x $B/vrdual-gltest ]]; then
+            rm -f /dev/shm/vrdual-gsx-*
+            DRI_PRIME=pci-${gh//[:.]/_} timeout 40 gamescope --backend headless -w 960 -h 720 -- env __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink \
+                VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=gsx VRDUAL_EYE=left VRDUAL_LEFT_GPU=pci:$gh VRDUAL_INPUT_ROUTE=auto \
+                vblank_mode=0 "$B/vrdual-gltest" --log-input --title "selftest xtest" >"$tmp/gsx.log" 2>&1 &
+            local gsp=$!
+            check bash -c "for i in \$(seq 100); do grep -q 'injected with XTEST' '$tmp/gsx.log' && [[ -e /dev/shm/vrdual-gsx-ctl ]] && break; sleep 0.2; done
+                python3 -I -c '
+import mmap, os, struct, sys
+m = mmap.mmap(os.open(sys.argv[1], os.O_RDWR), 0)
+def push(*e):
+    h = struct.unpack_from(\"I\", m, 168)[0]; struct.pack_into(\"iiii\", m, 176 + 16 * (h % 256), *e); struct.pack_into(\"I\", m, 168, h + 1)
+for e in ((3, 1, 105, 1), (3, 1, 105, 0), (1, 2, 0, 30), (1, 2, 1, 20), (1, 1, 0x110, 1), (1, 1, 0x110, 0)): push(*e)' /dev/shm/vrdual-gsx-ctl &&
+                for i in \$(seq 50); do grep -q 'input: button 1 up' '$tmp/gsx.log' && break; sleep 0.1; done
+                grep -q 'input: key 113 down' '$tmp/gsx.log' && grep -q 'input: key 113 up' '$tmp/gsx.log' && grep -q 'input: button 1 up' '$tmp/gsx.log' &&
+                python3 -I -c '
+import re, sys
+m = [tuple(map(int, l.split()[2:])) for l in open(sys.argv[1]) if l.startswith(\"input: motion\")]
+sys.exit(0 if any(b[0] - a[0] == 30 and b[1] - a[1] == 20 for a, b in zip(m, m[1:])) else 1)' '$tmp/gsx.log' || { grep -E 'input|XTEST|error' '$tmp/gsx.log' | head; false; }"
+            kill $gsp 2>/dev/null; wait $gsp 2>/dev/null; rm -f /dev/shm/vrdual-gsx-*
+        else say "SKIP  $label (no gamescope)"; fi
         # one GPU (alternate eyes, on the headless one): settings hint in the log and the overlay
         rm -f /dev/shm/vrdual-$sess-*
         env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \

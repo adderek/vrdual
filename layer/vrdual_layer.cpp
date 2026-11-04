@@ -86,6 +86,7 @@ struct Config {
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
     int input_focus = -1;      // input_focus: -1 auto (X focus), 1 on, 0 off -> VRDUAL_SLOT_UNFOCUSED
+    int input_route = -1;      // input_route: -1 auto (XTEST inside gamescope), 1 xtest, 0 uinput (vrdual_cursor.hpp inject)
     int pass_trace = 0;        // debugging: log the render passes recorded after this present (vrdual_passes.hpp)
     bool depth_export = false; // the game's depth buffer with each frame (vrdual_passes.hpp)
     bool hunt_fragment = false; // fragment shaders join the hunt (spirv_patch.hpp patch_fragment)
@@ -290,6 +291,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.cached_wp = st.i("cached_wp") != 0;
     c.cursor = st.i("cursor") != 0;
     c.input_focus = st.s("input_focus") == "on" ? 1 : st.s("input_focus") == "off" ? 0 : -1;
+    c.input_route = st.s("input_route") == "xtest" ? 1 : st.s("input_route") == "uinput" ? 0 : -1;
     c.depth_export = st.i("depth_export") != 0;
     c.pass_trace = st.i("pass_trace");
     c.auto_noshift = st.i("auto_noshift") != 0;
@@ -1768,6 +1770,7 @@ static uint32_t slot_flags(const DeviceData* dd) {
     uint32_t f = dd->ep.scene_off ? VRDUAL_SLOT_UNTURNED : 0u;
     if (dd->pt && dd->pt->comp_on.load() && !g_cfg.hud_rules_only) f |= VRDUAL_SLOT_HUD_TWICE;
     if (g_cfg.cursor && cursor::g_unfocused) f |= VRDUAL_SLOT_UNFOCUSED;
+    if (g_cfg.cursor && cursor::g_xtest) f |= VRDUAL_SLOT_XTEST;
     return f;
 }
 
@@ -1844,7 +1847,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     dd->frame++;
     if (g_cfg.cursor) {
         vrdual_shm_header* h[2] = {g_out[0].hdr, g_out[1].hdr};
-        cursor::update(s->xwin, s->extent, h, 2, g_cfg.input_focus);
+        cursor::update(s->xwin, s->extent, h, 2, g_cfg.input_focus, g_cfg.input_route, g_cfg.eye == 0 ? g_cfg.ctl : nullptr);
     }
     // Alternate-eye rendering: pair F = frames 2F (left) and 2F+1 (right).
     dd->cr.pend[k] = {true, dd->aer ? frame / 2 : frame, sc_id(pi->pSwapchains[0]), dd->aer ? eye : g_cfg.eye, &s->rb[k], bytes,

@@ -67,6 +67,9 @@ struct vrdual_shm_header {
 // desktop, a Wayland client): vrdual-xr sends it no keys or mouse, since
 // uinput would land in the focused window instead
 #define VRDUAL_SLOT_UNFOCUSED 4u
+// this frame's layer injects vrdual-xr's keys and mouse into the game's X
+// server (XTEST, vrdual_ctl.xin): vrdual-xr sends them there, not to uinput
+#define VRDUAL_SLOT_XTEST 8u
 
 // Cursor image: premultiplied ARGB32 (B, G, R, A bytes), cursor_w * cursor_h
 // pixels at VRDUAL_CURSOR_OFF, cropped to VRDUAL_CURSOR_MAX square.
@@ -84,6 +87,8 @@ static inline uint64_t vrdual_file_bytes(uint64_t slot_bytes) {
 #define VRDUAL_CTL_MAGIC 0x56524443u /* "VRDC" */
 
 enum vrdual_anchor { VRDUAL_ANCHOR_CENTER = 0, VRDUAL_ANCHOR_LEFT = 1, VRDUAL_ANCHOR_RIGHT = 2 };
+
+#define VRDUAL_XIN_N 256u
 
 struct vrdual_ctl {
     uint32_t magic;
@@ -117,6 +122,14 @@ struct vrdual_ctl {
     // nothing; not in off-screen passes nor the pass that scales the main
     // view onto the swapchain), for screenshots; 0 = shown. Live mode only.
     uint32_t hud_mode;
+    // version 8: keys and mouse from vrdual-xr for a layer that injects them
+    // into its own X server with XTEST (VRDUAL_SLOT_XTEST; a game inside
+    // gamescope, whose desktop focus nobody can see). Single producer
+    // (vrdual-xr): fills ev[xin_head % N], then increments xin_head. The
+    // layer keeps its own tail and only reads (an overrun skips ahead).
+    volatile uint32_t xin_head;
+    uint32_t xin_pad;
+    struct { int32_t dev, type, code, value; } xin[VRDUAL_XIN_N];  // vrdual::InEvent: dev = vrdual::InDev, Linux event type / code
 };
 
 static inline const char* vrdual_anchor_name(int a) {

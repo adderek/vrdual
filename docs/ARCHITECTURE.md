@@ -368,6 +368,22 @@ pixels back column by column. Staging now prefers HOST_CACHED (2026-10-26).
 
 ### Input and head motion (in `vrdual-xr`)
 
+**Where keys and mouse go** (`input_focus`, `input_timeout`, `input_route`):
+uinput devices type into the desktop's focused window, so vrdual-xr feeds
+the Mapper only while the game presents (a frame younger than
+`input_timeout`) and its window has the X focus (the layer asks X with the
+cursor, `VRDUAL_SLOT_UNFOCUSED`); stopping releases everything held. Inside
+gamescope the game always has the focus of gamescope's X server and
+gamescope's own window is invisible to X on a Wayland desktop, so there
+(`input_route = auto`) the layer of the left eye injects the keys and mouse
+itself: vrdual-xr writes them into a ring in the control block (v8,
+`xin`), the layer reads it at each present and sends XTEST requests to its
+own X server (evdev code + 8 = keycode, relative motion, buttons, wheel as
+buttons 4-7, the tablet as absolute motion) and flags its frames
+`VRDUAL_SLOT_XTEST`; the pad stays uinput. The game gets them whatever
+window is active on the desktop. selftest: dumped requests from the head
+scroll, and for real through a headless gamescope.
+
 **Depth export** (`depth_export = 1`, frame file v5; `layer/vrdual_passes.hpp`):
 the layer tracks single-sample 2D depth attachments from `vkCreateImage`
 (adds `TRANSFER_SRC`), their views, render passes (depth attachment of the

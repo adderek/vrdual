@@ -25,7 +25,7 @@ inline std::string ctl_path(const std::string& session) { return shm_dir() + "/v
 
 // Live values from config (creation, and a new game joining an old block).
 inline void ctl_seed(vrdual_ctl& c, const Settings& s) {
-    c.version = 7;
+    c.version = 8;
     c.hunt_mode = 0;  // a hunt belongs to the game it ran on
     c.hud_mode = 0;   // so does a hidden HUD (a screenshot)
     c.ipd = s.f("ipd");

@@ -10,10 +10,13 @@
 // window). input_focus = on / off forces the answer.
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
+#include <xcb/xtest.h>
+#include <linux/input-event-codes.h>
 
 // tools/frame_hash.py --cursor reads the fields at this offset
 static_assert(offsetof(vrdual_shm_header, cursor_seq) == 304, "update tools/frame_hash.py");
 static_assert(offsetof(vrdual_shm_header, slot_flags) == 376, "update tools/frame_hash.py");
+static_assert(offsetof(vrdual_ctl, xin_head) == 168 && offsetof(vrdual_ctl, xin) == 176, "update the XTEST check in selftest (_)");
 
 namespace cursor {
 
@@ -25,6 +28,7 @@ using PFN_CreateSurface = VkResult(VKAPI_PTR*)(VkInstance, const void*, const Vk
 
 static std::mutex& g_lock = *new std::mutex;
 static std::atomic<bool> g_unfocused{false};  // last answer; false while unknown
+static std::atomic<bool> g_xtest{false};      // this layer injects vrdual-xr's keys and mouse (VRDUAL_SLOT_XTEST)
 static auto& g_windows = *new std::unordered_map<uint64_t, uint32_t>;  // VkSurfaceKHR -> X window
 
 static void remember(VkSurfaceKHR s, uint32_t win) {
@@ -45,8 +49,10 @@ struct X {
     XF(xfixes_get_cursor_image_reply); XF(xfixes_get_cursor_image_cursor_image);
     XF(get_input_focus); XF(get_input_focus_reply); XF(query_tree); XF(query_tree_reply);
 #undef XF
+    decltype(&::xcb_test_fake_input) fake_input = nullptr;  // libxcb-xtest, optional
     xcb_connection_t* c = nullptr;
     uint32_t root = 0;
+    uint16_t root_w = 0, root_h = 0;
     bool tried = false;
 
     bool init() {
@@ -70,7 +76,9 @@ struct X {
         if (!v) { logf("cursor: X server without XFixes"); return false; }
         free(v);
         c = cn;
-        root = setup_roots_iterator(get_setup(cn)).data->root;
+        xcb_screen_t* scr = setup_roots_iterator(get_setup(cn)).data;
+        root = scr->root, root_w = scr->width_in_pixels, root_h = scr->height_in_pixels;
+        if (void* t = dlopen("libxcb-xtest.so.0", RTLD_NOW | RTLD_LOCAL)) fake_input = (decltype(fake_input))dlsym(t, "xcb_test_fake_input");
         logf("cursor: X11 cursor exported (DISPLAY=%s)", getenv("DISPLAY") ? getenv("DISPLAY") : "");
         return true;
     }
@@ -101,7 +109,7 @@ static void focus(X& x, uint32_t win, xcb_get_input_focus_reply_t* f, int force)
     last_win = win;
     static const bool gamescope = getenv("GAMESCOPE_WAYLAND_DISPLAY");
     if (gamescope && force < 0 && !told)
-        logf("focus: inside gamescope the game always has its X server's focus; whether gamescope's window is the active one on the desktop is not visible here: vrdual-xr input goes to the active desktop window");
+        logf("focus: inside gamescope the game always has its X server's focus; gamescope's own focus on the desktop is not visible here (input_route auto: keys and mouse via XTEST into the game)");
     else if (on != last || !told) logf("focus: the game window %s the input focus%s", on ? "has" : "does not have", on ? "" : " (vrdual-xr sends no input)");
     last = on;
     told = true;
@@ -112,12 +120,75 @@ static void focus(X& x, uint32_t win, xcb_get_input_focus_reply_t* f, int force)
 // into every open frame header. Window unknown under gamescope: its WSI layer
 // (64-bit, above ours) turns the app's X11 surface into a Wayland one; the
 // game fills gamescope's nested X screen, so the root window stands in.
-// force: input_focus on (1) / off (0), auto -1
-static void update(uint32_t win, VkExtent2D ext, vrdual_shm_header* const* hdrs, int n, int force) {
+// vrdual-xr's keys and mouse (vrdual_ctl.xin) into this X server with XTEST:
+// a game inside gamescope gets them whatever window is active on the desktop
+// (uinput goes to the desktop's focused window, and gamescope's focus is not
+// visible). Evdev key codes + 8 = X keycodes (Xwayland's keymap). Sent once
+// per present, in order; relative motion summed until the next button / key.
+// route: input_route xtest 1 / uinput 0 / auto -1 (xtest inside gamescope).
+// VRDUAL_XTEST_DUMP=FILE: write the requests there instead of sending them
+// (selftest: never into the desktop's X server).
+static void inject(X& x, const vrdual_ctl* c, int route, bool gamescope) {
+    static const char* dump_path = getenv("VRDUAL_XTEST_DUMP");
+    static FILE* dump = dump_path && *dump_path ? fopen(dump_path, "a") : nullptr;
+    static uint32_t tail = 0;
+    static bool on = false;
+    bool want = c && (route == 1 || (route < 0 && gamescope)) && (x.fake_input || dump);
+    if (want != on) {
+        if (want) tail = c->xin_head;  // nothing from before
+        logf("input: %s", want ? (dump ? "XTEST requests from vrdual-xr dumped to VRDUAL_XTEST_DUMP (not sent)"
+                                      : "keys and mouse from vrdual-xr injected with XTEST into this X server (reach the game whatever window is active on the desktop)")
+                               : "XTEST injection off (vrdual-xr uses uinput)");
+        if (route != 0 && !x.fake_input && !dump) logf("input: libxcb-xtest not found, no XTEST");
+        on = want;
+        g_xtest = on;
+    }
+    if (!on) return;
+    uint32_t h = c->xin_head;
+    __sync_synchronize();
+    if (h - tail > VRDUAL_XIN_N) tail = h - VRDUAL_XIN_N;
+    int mx = 0, my = 0;
+    auto send = [&](uint8_t type, uint8_t detail, uint32_t root, int16_t rx, int16_t ry) {
+        if (dump) fprintf(dump, "%u %u %d %d\n", type, detail, rx, ry);
+        else x.fake_input(x.c, type, detail, XCB_CURRENT_TIME, root, rx, ry, 0);
+    };
+    auto flush_motion = [&] {
+        if (mx || my) send(XCB_MOTION_NOTIFY, 1, XCB_NONE, int16_t(mx), int16_t(my));  // detail 1: relative
+        mx = my = 0;
+    };
+    for (; tail != h; ++tail) {
+        auto e = c->xin[tail % VRDUAL_XIN_N];
+        if (e.type == EV_REL && (e.code == REL_X || e.code == REL_Y)) {
+            (e.code == REL_X ? mx : my) += e.value;
+            continue;
+        }
+        flush_motion();
+        if (e.type == EV_KEY && e.code < BTN_MISC) {
+            send(e.value ? XCB_KEY_PRESS : XCB_KEY_RELEASE, uint8_t(e.code + 8), XCB_NONE, 0, 0);
+        } else if (e.type == EV_KEY) {
+            int b = e.code == BTN_LEFT ? 1 : e.code == BTN_MIDDLE ? 2 : e.code == BTN_RIGHT ? 3 : e.code == BTN_SIDE ? 8 : e.code == BTN_EXTRA ? 9 : 0;
+            if (b) send(e.value ? XCB_BUTTON_PRESS : XCB_BUTTON_RELEASE, uint8_t(b), XCB_NONE, 0, 0);
+        } else if (e.type == EV_REL && (e.code == REL_WHEEL || e.code == REL_HWHEEL)) {
+            int b = e.code == REL_WHEEL ? (e.value > 0 ? 4 : 5) : (e.value > 0 ? 7 : 6);
+            for (int i = 0; i < std::min(abs(e.value), 8); ++i) send(XCB_BUTTON_PRESS, uint8_t(b), XCB_NONE, 0, 0), send(XCB_BUTTON_RELEASE, uint8_t(b), XCB_NONE, 0, 0);
+        } else if (e.type == EV_ABS && (e.code == ABS_X || e.code == ABS_Y) && x.root_w) {  // tablet: 0..65535 over the screen
+            static int ax = 0, ay = 0;
+            (e.code == ABS_X ? ax : ay) = e.value;
+            send(XCB_MOTION_NOTIFY, 0, x.root, int16_t(int64_t(ax) * x.root_w / 65536), int16_t(int64_t(ay) * x.root_h / 65536));
+        }
+    }
+    flush_motion();
+    if (dump) fflush(dump);
+}
+
+// force: input_focus on (1) / off (0), auto -1; route: see inject; xin: the
+// control block when this process injects (one layer per session: eye 0)
+static void update(uint32_t win, VkExtent2D ext, vrdual_shm_header* const* hdrs, int n, int force, int route = 0, const vrdual_ctl* xin = nullptr) {
     static X& x = *new X;
     static const bool gamescope = getenv("GAMESCOPE_WAYLAND_DISPLAY");
     if (force >= 0) focus(x, win, nullptr, force);  // no X needed
     if ((!win && !gamescope) || !x.init()) return;
+    inject(x, xin, route, gamescope);
     if (!win) {
         static std::once_flag once;
         std::call_once(once, [] { logf("cursor: surface window unknown (gamescope WSI), pointer over the root window"); });

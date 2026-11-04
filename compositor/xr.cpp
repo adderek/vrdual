@@ -927,6 +927,25 @@ static int run(int argc, char** argv) {
     GameLog games;
     std::unique_ptr<vrdual::Mapper> mapper;
     vrdual::Uinput uinput;
+    // keys and mouse: uinput (the desktop's focused window), or with
+    // VRDUAL_SLOT_XTEST the control block ring the game's layer injects into
+    // its own X server (a game inside gamescope); the pad always via uinput
+    bool xtest = false;
+    auto send_input = [&](const std::vector<vrdual::InEvent>& ev) {
+        if (!xtest) { uinput.emit(ev); return; }
+        if (!ctl) ctl = vrdual::ctl_open(session, nullptr);
+        std::vector<vrdual::InEvent> pad;
+        for (auto& e : ev) {
+            if (e.dev == vrdual::DEV_PAD) { pad.push_back(e); continue; }
+            if (!ctl) continue;  // never to the desktop instead
+            uint32_t h = ctl->xin_head;
+            auto& d = ctl->xin[h % VRDUAL_XIN_N];
+            d.dev = e.dev, d.type = e.type, d.code = e.code, d.value = e.value;
+            __sync_synchronize();
+            ctl->xin_head = h + 1;
+        }
+        if (!pad.empty()) uinput.emit(pad);
+    };
     bool fed = false;  // the Mapper was stepped last frame (release() when that stops)
     double t_input = vrdual::now_s();
     // head_lean: head position relative to a reference, in the frame of the
@@ -1043,7 +1062,7 @@ static int run(int argc, char** argv) {
             ctl = nullptr;
             input_app.assign(L.hdr->app, strnlen(L.hdr->app, sizeof L.hdr->app));
             vrdual::InputCfg ic = vrdual::load_input_cfg(input_app);
-            if (mapper) uinput.emit(mapper->release());  // the old game's held keys
+            if (mapper) send_input(mapper->release());  // the old game's held keys
             mapper.reset(new vrdual::Mapper(ic));  // also with input = off: menu + a / b switches the control mode
             control_changes = 0;
             fprintf(stderr, "[xr] app '%s': input=%s mouse_mode=%s head_look=%s head_lean=%s (input: %s)\n", input_app.c_str(), ic.input.c_str(),
@@ -1132,7 +1151,7 @@ static int run(int argc, char** argv) {
             fprintf(stderr, "[xr] game %s: %s\n", presenting ? "presents again" : "stopped presenting", presenting ? "input on" : "no keys or mouse sent until it presents");
         was_presenting = presenting;
         bool feed = xin.ok && presenting && !unfocused;
-        if (mapper && fed && !feed) uinput.emit(mapper->release());  // stopped feeding it: nothing stays pressed
+        if (mapper && fed && !feed) send_input(mapper->release());  // stopped feeding it: nothing stays pressed
         fed = mapper && feed;
         if (xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
             ScreenGeom G = screen_geom(scr, base, grab, hfov_now, aspect);
@@ -1294,7 +1313,7 @@ static int run(int argc, char** argv) {
                     }
                 }
             }
-            if (mapper && feed) mapper->scene_off = unturned, uinput.emit(mapper->step(c, t_now - t_input));
+            if (mapper && feed) mapper->scene_off = unturned, send_input(mapper->step(c, t_now - t_input));
             if (mapper && mapper->changes != control_changes) {
                 control_changes = mapper->changes;
                 if (mapper->input() != "map" && mapper->input() != "hunt" &&  // editing modes, not ones to start a game in
@@ -1439,6 +1458,12 @@ static int run(int argc, char** argv) {
                 if (bool u = fl & VRDUAL_SLOT_UNFOCUSED; u != unfocused)
                     fprintf(stderr, "[xr] game window %s: %s\n", u ? "not focused" : "focused", u ? "no keys or mouse sent (they would go to the focused window)" : "input on");
                 unfocused = fl & VRDUAL_SLOT_UNFOCUSED;
+                if (bool x = fl & VRDUAL_SLOT_XTEST; x != xtest) {
+                    if (mapper && fed) send_input(mapper->release());  // held ones released where they went
+                    if (x && !ctl) ctl = vrdual::ctl_open(session, nullptr);
+                    xtest = x;
+                    fprintf(stderr, "[xr] keys and mouse: %s\n", x ? "XTEST into the game's X server (its layer injects them; the pad stays uinput)" : "uinput");
+                }
                 if (unturned != was) fprintf(stderr, "[xr] frames %s head turn (cursor, scroll keys follow)\n", unturned ? "without" : "with");
                 float hk = fl & VRDUAL_SLOT_HUD_TWICE ? 2.f : 1.f;
                 if (hk != hud_k) fprintf(stderr, "[xr] HUD at %gx the HUD shift (%s): the cursor's HUD depth follows\n", hk,
@@ -1719,6 +1744,7 @@ static int run(int argc, char** argv) {
         }
         if (max_frames >= 0 && submitted >= max_frames) { fprintf(stderr, "[xr] %ld frames submitted\n", submitted); g_quit = g_user_quit = 1; }
     }
+    if (mapper && xtest) send_input(mapper->release());  // keys held in the game's X server (uinput releases its own)
     games.flush();
     vkDeviceWaitIdle(g.dev);
     for (auto& o : out)

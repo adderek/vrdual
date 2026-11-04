@@ -271,4 +271,5 @@
   cannot tell). Options: keys and mouse through XTEST into the game's own X
   server, sent by the layer once per frame (always reach the game, pad stays
   uinput); or gamescope on SDL's X11 backend and vrdual-xr checks the host's
-  `_NET_ACTIVE_WINDOW` for gamescope's window. Owner: only if not complex.
+  `_NET_ACTIVE_WINDOW` for gamescope's window. Done 2026-11-04 as XTEST
+  (`input_route`, owner's choice); headset test pending.
