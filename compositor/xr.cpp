@@ -891,6 +891,7 @@ static int run(int argc, char** argv) {
     Overlay ov;
     float overlay_time = vrdual::load_settings({}).f("overlay_time");
     float frame_timeout = std::max(0.1f, vrdual::load_settings({}).f("frame_timeout"));  // per game once its frames name it
+    float input_timeout = std::max(0.05f, vrdual::load_settings({}).f("input_timeout"));
     std::string ov_event;  // line 0 after "vrdual stereo VR | "
     bool one_gpu = false;  // both eyes from one GPU (alternate-eye rendering): settings hint in the overlay
     auto notify = [&](const std::string& what, bool log = true) {
@@ -919,6 +920,7 @@ static int run(int argc, char** argv) {
     bool blanked = false;
     bool unturned = false;  // newest frame drawn without head turn (VRDUAL_SLOT_UNTURNED)
     bool unfocused = false;  // the game's window has no input focus (VRDUAL_SLOT_UNFOCUSED): no keys / mouse
+    bool was_presenting = true;
     float hud_k = 1;        // the HUD's shift in the picture, in HUD shifts (VRDUAL_SLOT_HUD_TWICE: 2)
     // input: profile follows the game in the frame file (hdr->app)
     std::string input_app = "\x01";
@@ -1060,6 +1062,7 @@ static int run(int argc, char** argv) {
             if (prof == "none") fprintf(stderr, "[xr] no vrdual profile for '%s' (ask for one: vrdual request)\n", input_app.c_str());
             frame_timeout = std::max(0.1f, st.f("frame_timeout"));
             if (st.src.count("frame_timeout")) fprintf(stderr, "[xr] frame_timeout %.1f s (no new frame that long: black)\n", frame_timeout);
+            input_timeout = std::max(0.05f, st.f("input_timeout"));
             if (!lock_cli && world != (st.s("lock") != "head")) {
                 world = !world;
                 frozen = have_world = false;
@@ -1121,8 +1124,14 @@ static int run(int argc, char** argv) {
         bool anchored = world || frozen;
         float aspect = float(L.w ? L.w : 16) / float(L.h ? L.h : 9);
         XrPosef base = anchored && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
-        // uinput goes to the focused window: only while the game has the focus
-        bool feed = xin.ok && fresh && !unfocused;
+        // uinput goes to the focused window: only while the game has the focus,
+        // and only while it presents (a game that stops drawing when it loses
+        // the focus or exits leaves the last frame's focus answer behind)
+        bool presenting = fresh && std::max(vrdual::eye_age_s(L), vrdual::eye_age_s(R)) < input_timeout;
+        if (fresh && presenting != was_presenting)
+            fprintf(stderr, "[xr] game %s: %s\n", presenting ? "presents again" : "stopped presenting", presenting ? "input on" : "no keys or mouse sent until it presents");
+        was_presenting = presenting;
+        bool feed = xin.ok && presenting && !unfocused;
         if (mapper && fed && !feed) uinput.emit(mapper->release());  // stopped feeding it: nothing stays pressed
         fed = mapper && feed;
         if (xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop

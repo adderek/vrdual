@@ -100,6 +100,7 @@ static const Key kKeys[] = {
     {"screen_scale_x", "1", "picture width scale (all screen modes; two-hand grab changes it live)"},
     {"screen_scale_y", "1", "picture height scale"},
     {"frame_timeout", "1", "vrdual-xr: no new game frame this long (s) -> black (game exited / hung); longer for loading screens that present nothing"},
+    {"input_timeout", "0.5", "vrdual-xr: no new game frame this long (s) -> no keys / mouse / pad sent (game unfocused, exiting); frames keep showing up to frame_timeout"},
     {"overlay_time", "4", "vrdual-xr notice (event, current settings) shown this long, seconds (0 = off)"},
     {"lean_y_sign", "1", "1 = y-up clip space (GL/D3D games), -1 = Vulkan apps flipping y in the projection"},
 };

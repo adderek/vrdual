@@ -994,6 +994,8 @@ vrdual_selftest() {
     # test windows may lack the X focus: input as if they had it (one check
     # below turns it off, one reads the real focus)
     export VRDUAL_INPUT_FOCUS=on
+    # hidden test windows get ~1 frame/s: input must not pause between them
+    export VRDUAL_INPUT_TIMEOUT=5
     trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
     check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
     vrdual_build || return 1
@@ -1820,11 +1822,12 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
             "$B/vrdual-cube" --scene calib --title "selftest xr" >"$tmp/xrsrc3.log" 2>&1 &
         src=$!
         # game exits while streaming: WiVRn keeps the last image unless we send black
-        label="openxr: black frame after the game exits, not before frame_timeout (3 s)"
-        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_FRAME_TIMEOUT=3 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
+        label="openxr: black frame after the game exits, not before frame_timeout (3 s); input stops at input_timeout (0.5 s)"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_FRAME_TIMEOUT=3 VRDUAL_INPUT_TIMEOUT=0.5 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
             for i in \$(seq 40); do grep -q 'first frame' '$tmp/xr3.log' && break; sleep 0.5; done; kill $src; t0=\$(date +%s.%N)
             for i in \$(seq 100); do grep -q 'blank frame submitted' '$tmp/xr3.log' && break; sleep 0.1; done; t1=\$(date +%s.%N); kill \$p; wait \$p
             grep -q 'first frame' '$tmp/xr3.log' && grep -q 'blank frame submitted' '$tmp/xr3.log' && grep -q 'frame_timeout 3.0 s' '$tmp/xr3.log' &&
+                grep -B1000 'blank frame submitted' '$tmp/xr3.log' | grep -q 'game stopped presenting' &&
                 awk -v a=\$t0 -v b=\$t1 'BEGIN{d=b-a; exit !(d >= 2.5 && d <= 6)}' || { echo \"\$t0 \$t1\"; cat '$tmp/xr3.log'; false; }"
         kill $src 2>/dev/null || true; wait 2>/dev/null || true
         # game gone, frame files left behind: the headset must not get the frozen frame

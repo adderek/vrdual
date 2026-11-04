@@ -125,6 +125,7 @@ map_x = KEY_E
 | `screen_fov` | `60` | degrees | flat/curved screen width seen from the centre |
 | `screen_scale_x` | `1` | 0.1..10 | picture width scale (grab changes it; the release log prints the value) |
 | `screen_scale_y` | `1` | 0.1..10 | picture height scale |
+| `input_timeout` | `0.5` | seconds (min 0.05) | `vrdual xr`: no new game frame this long → no keys, mouse or pad sent, held ones released (log `game stopped presenting`). Separate from `frame_timeout`: a game that stops drawing when it loses the focus or exits must not get head-scroll arrows typed into the next window for the whole `frame_timeout` |
 | `frame_timeout` | `1` | seconds (min 0.1) | `vrdual xr`: no new game frame this long → the headset shows black (game exited or hung; WiVRn would keep the last image). Raise it per game for loading screens that present one frame and then nothing for a while (Civ V). The game's own value applies once its frames arrive; the log names it |
 | `overlay_time` | `4` | seconds, 0 = off | notice panel 1.5 m in front of the eyes on events (headset connected, game started / stopped, screen recentred or moved, tune changes): the event, the game, screen and input mode, ipd, world_scale, hud_depth, hfov |
 
