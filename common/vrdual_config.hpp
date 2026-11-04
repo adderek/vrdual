@@ -60,7 +60,7 @@ static const Key kKeys[] = {
     {"game_fixes", "1", "byte-checked fixes of known game binaries, applied in the game's process (docs/CONFIG.md: Civ V thread crash); 0 = off"},
     {"cull_widen", "1", "game fix: the game culls with a view this many times wider (tan of the half angles) than it draws, so head_look clip / scroll shows more past the edge (Civ V); 1 = off"},
     {"cursor", "1", "export the X11 cursor (position + image) with the frames; vrdual-xr draws it"},
-    {"input_route", "auto", "vrdual-xr keys and mouse: auto (XTEST into the game's X server inside gamescope, else uinput) | xtest (XTEST whenever the layer can) | uinput"},
+    {"input_route", "uinput", "vrdual-xr keys and mouse: uinput (lowest latency, to the desktop's focused window) | auto (XTEST into the game's X server inside gamescope, else uinput; up to one frame later) | xtest (XTEST whenever the layer can)"},
     {"input_focus", "auto", "vrdual-xr input only while the game window has the X focus: auto | on (always, focus not checked) | off (never; tests)"},
     {"cursor_depth", "auto", "vrdual-xr cursor depth: auto (the scene under it) | hud (at hud_depth)"},
     {"lockstep", "1", "hold each frame until the other eye has it"},

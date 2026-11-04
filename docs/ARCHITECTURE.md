@@ -375,7 +375,7 @@ the Mapper only while the game presents (a frame younger than
 cursor, `VRDUAL_SLOT_UNFOCUSED`); stopping releases everything held. Inside
 gamescope the game always has the focus of gamescope's X server and
 gamescope's own window is invisible to X on a Wayland desktop, so there
-(`input_route = auto`) the layer of the left eye injects the keys and mouse
+(`input_route = auto`, off by default: up to one frame of latency) the layer of the left eye injects the keys and mouse
 itself: vrdual-xr writes them into a ring in the control block (v8,
 `xin`), the layer reads it at each present and sends XTEST requests to its
 own X server (evdev code + 8 = keycode, relative motion, buttons, wheel as

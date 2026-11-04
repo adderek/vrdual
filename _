@@ -1870,6 +1870,8 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         # XTEST for real: gltest inside a headless gamescope (on the headless
         # GPU) gets keys / mouse written into the control block ring (as
         # vrdual-xr does) through its layer; input_route auto picks XTEST there
+        label="input_route defaults to uinput (XTEST only on request: it adds up to a frame of latency)"
+        check bash -c "VRDUAL_CONFIG=/nonexistent env -u VRDUAL_INPUT_ROUTE '$B/vrdual-ctl' show x | grep -qE '^input_route +uinput +# default'"
         label="input_route auto inside gamescope: ring -> layer -> XTEST -> the game's X events (key 113, motion +30 +20, button 1)"
         if command -v gamescope >/dev/null && [[ -x $B/vrdual-gltest ]]; then
             rm -f /dev/shm/vrdual-gsx-*

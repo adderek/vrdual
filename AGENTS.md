@@ -145,7 +145,7 @@ machine unless a row says otherwise. Read them with its topology in mind:
   file change is `vrdual intro off GAME`, run by the user (renames the
   profile's intro videos to `.orig`, `intro on` / Steam's file check undo it).
 - Exception by the owner's decision (2026-11-04): with `input_route` xtest
-  (auto: inside gamescope) the layer injects vrdual-xr's keys and mouse
+  (auto: inside gamescope; default uinput) the layer injects vrdual-xr's keys and mouse
   into the game's X server with XTEST, read from the control block once per
   present (no thread); see ARCHITECTURE "Where keys and mouse go".
 - Config precedence: defaults < `[global]` < game profile (`profiles/`) < `[app:NAME]` < `VRDUAL_<KEY>` env.

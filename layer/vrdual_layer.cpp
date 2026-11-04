@@ -86,7 +86,7 @@ struct Config {
     bool cached_wp = false;    // mirror: write tracking for cached memory (vrdual_mirror.hpp wp::)
     bool cursor = true;        // X11 cursor position + image into the frame header
     int input_focus = -1;      // input_focus: -1 auto (X focus), 1 on, 0 off -> VRDUAL_SLOT_UNFOCUSED
-    int input_route = -1;      // input_route: -1 auto (XTEST inside gamescope), 1 xtest, 0 uinput (vrdual_cursor.hpp inject)
+    int input_route = 0;       // input_route: 0 uinput (default), -1 auto (XTEST inside gamescope), 1 xtest (vrdual_cursor.hpp inject)
     int pass_trace = 0;        // debugging: log the render passes recorded after this present (vrdual_passes.hpp)
     bool depth_export = false; // the game's depth buffer with each frame (vrdual_passes.hpp)
     bool hunt_fragment = false; // fragment shaders join the hunt (spirv_patch.hpp patch_fragment)
@@ -291,7 +291,7 @@ static void load_config(const VkApplicationInfo* app) {
     c.cached_wp = st.i("cached_wp") != 0;
     c.cursor = st.i("cursor") != 0;
     c.input_focus = st.s("input_focus") == "on" ? 1 : st.s("input_focus") == "off" ? 0 : -1;
-    c.input_route = st.s("input_route") == "xtest" ? 1 : st.s("input_route") == "uinput" ? 0 : -1;
+    c.input_route = st.s("input_route") == "xtest" ? 1 : st.s("input_route") == "auto" ? -1 : 0;
     c.depth_export = st.i("depth_export") != 0;
     c.pass_trace = st.i("pass_trace");
     c.auto_noshift = st.i("auto_noshift") != 0;
