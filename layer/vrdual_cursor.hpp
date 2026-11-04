@@ -99,7 +99,10 @@ static void focus(X& x, uint32_t win, xcb_get_input_focus_reply_t* f, int force)
     else on = f->focus == XCB_INPUT_FOCUS_POINTER_ROOT || above(x, win, f->focus) || above(x, f->focus, win);
     if (f) last_focus = f->focus;
     last_win = win;
-    if (on != last || !told) logf("focus: the game window %s the input focus%s", on ? "has" : "does not have", on ? "" : " (vrdual-xr sends no input)");
+    static const bool gamescope = getenv("GAMESCOPE_WAYLAND_DISPLAY");
+    if (gamescope && force < 0 && !told)
+        logf("focus: inside gamescope the game always has its X server's focus; whether gamescope's window is the active one on the desktop is not visible here: vrdual-xr input goes to the active desktop window");
+    else if (on != last || !told) logf("focus: the game window %s the input focus%s", on ? "has" : "does not have", on ? "" : " (vrdual-xr sends no input)");
     last = on;
     told = true;
     g_unfocused = !on;

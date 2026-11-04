@@ -265,3 +265,10 @@
   research), which will be the better choice for those games.
 - Frame generation (DLSS FG / FSR FG) with two GPUs: untested (does each
   GPU generate its own frames, does pairing L[F]/R[F] hold?).
+- Input into a game inside gamescope regardless of the desktop focus (owner
+  2026-11-04, Civ V): uinput lands in the active desktop window, and
+  gamescope's window focus is invisible on GNOME Wayland (`input_focus`
+  cannot tell). Options: keys and mouse through XTEST into the game's own X
+  server, sent by the layer once per frame (always reach the game, pad stays
+  uinput); or gamescope on SDL's X11 backend and vrdual-xr checks the host's
+  `_NET_ACTIVE_WINDOW` for gamescope's window. Owner: only if not complex.
