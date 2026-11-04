@@ -189,7 +189,7 @@
    "Works in the headset: shadows agree in both eyes, no crash with the thread patch.",
    "Head scrolling (`head_look = scroll`): on the `civ5` profile's monitor fixed in the room, looking past a screen edge scrolls the map that way (taps, held further out); the thresholds count from the edge; confirmed in the headset (adjusting them with `input = tune` not tried yet).",
    "Alternative (head-locked full screen, `lock = head`, `screen = full`, `cull_widen`): the view counter-turns with the head and the game draws past the screen edge; confirmed in the headset, but looking at the edge itself would need a much wider culling.",
-   "The depth effect is modest for a top-down map.",
+   "At the profile's `world_scale` 0.1 the map itself is nearly flat in stereo (a screenshot measured one uniform disparity over the whole picture, the scaling quad's `hud_depth` shift); wiggle GIFs need `vrdual shot --hud hide --depth 800` (`world_scale` 80 for the shot); larger values in the headset not tried yet.",
    "Steam runs the native Linux port (Aspyr, from the Mac code), not the Windows build; Proton must be forced for that.",
    "Port vs Windows build: DX9 renderer (no DX11-only options), not updated with Windows (version mismatch in multiplayer with Windows players), no mods that replace the game core DLL (e.g. Vox Populi); players report both better and worse performance than under Proton.",
    "Port bug, also without vrdual (Steam reports since 2018): crash after a few to ~25 minutes. Each thread entering its TBB job system gets an index from an unbounded counter, but the per-thread render data has only n = `MaxSimultaneousThreads` slots (clamped to 3..16); two threads more than n enter, and a render job on such a thread reads a null slot.",
