@@ -17,7 +17,7 @@ frame index. Near cube shifts ~25 px between eyes, far cubes ~0, the HUD bar
 ./vrdual snapshot out.png 150                  # one paired SBS frame, no window
 ./vrdual record [--seconds 5] [--half]         # running game -> screenshots/<app>_<time>_LR.mp4 (SBS, audio)
 ./vrdual shot [--hud hide|still] [--depth K] [--gif]  # running game -> screenshots/<app>_<time>.png (SBS); HUD
-                                               # hidden or at the centre's depth (still in the wiggle GIF); K x stereo
+                                               # hidden or at the centre's depth (still in the wiggle GIF); K x world_scale
 ./vrdual run [--left-gpu G --right-gpu G --session S --snapshot PNG --at N] -- APP ARGS...
 ./vrdual config show [APP] | init | path
 ./vrdual live | set KEY VALUE | save [--global]
