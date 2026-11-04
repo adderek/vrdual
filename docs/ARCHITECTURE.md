@@ -382,7 +382,8 @@ own X server (evdev code + 8 = keycode, relative motion, buttons, wheel as
 buttons 4-7, the tablet as absolute motion) and flags its frames
 `VRDUAL_SLOT_XTEST`; the pad stays uinput. The game gets them whatever
 window is active on the desktop. selftest: dumped requests from the head
-scroll, and for real through a headless gamescope.
+scroll, and for real through a headless gamescope. Untested in a real game
+or the headset so far (backlog).
 
 **Depth export** (`depth_export = 1`, frame file v5; `layer/vrdual_passes.hpp`):
 the layer tracks single-sample 2D depth attachments from `vkCreateImage`

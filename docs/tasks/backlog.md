@@ -271,5 +271,8 @@
   cannot tell). Options: keys and mouse through XTEST into the game's own X
   server, sent by the layer once per frame (always reach the game, pad stays
   uinput); or gamescope on SDL's X11 backend and vrdual-xr checks the host's
-  `_NET_ACTIVE_WINDOW` for gamescope's window. Done 2026-11-04 as XTEST
-  (`input_route`, owner's choice); headset test pending.
+  `_NET_ACTIVE_WINDOW` for gamescope's window. Implemented 2026-11-04 as
+  XTEST (`input_route`, off by default, owner's choice); selftest passes,
+  untested in a real game / the headset. Next: Civ V in gamescope with
+  `input_route = auto`, alt-tab, look past the screen edge: the map scrolls,
+  the terminal gets nothing; feel the latency against uinput.
