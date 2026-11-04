@@ -1886,6 +1886,7 @@ static void present_twin(DeviceData* dd, VkQueue queue, uint32_t family, const V
                                 uint32_t(waits.size()), waits.data(), false, false, &md->bep);
         if (done) {
             md->bcr.pend[k] = {true, frame, sc_id(pi->pSwapchains[0]), 1, &s->b_rb[k], size_t(s->extent.width) * s->extent.height * 4};
+            md->bcr.pend[k].flags = slot_flags(dd);
             finish_readback(md->b, md->bdev, md->bcr, k ^ 1);
         }
     }

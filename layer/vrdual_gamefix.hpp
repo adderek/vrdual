@@ -19,7 +19,10 @@
 //            are divided by cull_widen: the game submits what a cull_widen
 //            times wider view (tan of the half angles) holds, while drawing
 //            with its own projection. head_look = clip / scroll then has
-//            something to show past the screen edge.
+//            something to show past the screen edge. Hooked also without
+//            cull_widen (same planes then): each call counts in
+//            g_scene_calls, which tells the layer when the game draws its 3D
+//            view (menus, loading screens and videos call it never).
 //   streams  with cull_widen: CRenderer9::CreateCommandStream(commands, n,
 //            constant bytes, flags), the per-frame buffers of every render
 //            system, built with commands, n and constant bytes times
@@ -30,6 +33,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -117,6 +121,8 @@ inline void clip_planes(const float* m, float* p, float widen) {
 }
 
 inline float g_widen = 1;
+inline std::atomic<uint32_t> g_scene_calls{0};
+inline bool g_scene_hook = false;  // g_scene_calls counts (the hook is in)
 inline unsigned g_stream_k = 1;
 #if defined(__i386__)
 // CRenderer9::CreateCommandStream as the game does it (operator new, the
@@ -131,6 +137,7 @@ extern "C" __attribute__((force_align_arg_pointer, used)) inline void* vrdual_ci
 // Called by the game in place of FGXGetClipPlanesFromMatrix (cdecl, same
 // arguments). The game's stack may be only 4-byte aligned.
 extern "C" __attribute__((force_align_arg_pointer, used)) inline void vrdual_civ5_clip_planes(const float* m, float* p) {
+    g_scene_calls.fetch_add(1, std::memory_order_relaxed);
     clip_planes(m, p, g_widen);
 }
 #endif
@@ -146,12 +153,13 @@ inline void run(const std::string& exe, float cull_widen, Log log) {
     static const uint8_t threads[] = {0xa1, 0x08, 0x14, 0x0a, 0x10, 0x85, 0xc0, 0x74, 0x05, 0xb8, 0x10, 0, 0, 0, 0xc3, 0x90, 0x90, 0x90, 0x90};
     Result r = apply((uint8_t*)0x8dc282b, "e8000000005881c0d04754018b8008a4d905c3", threads, sizeof threads);
     log("game fix Civ V threads (per-thread render data for 16 threads): %s", result_str(r));
+    g_widen = cull_widen > 1 ? cull_widen : 1.0f;
+    uint8_t j[5];
+    jmp5(j, 0x8d017a0, uintptr_t(&vrdual_civ5_clip_planes));
+    r = apply((uint8_t*)0x8d017a0, "53575683ec10e8000000005b81c3555860018b7424248b442420", j, 5);
+    g_scene_hook = r == APPLIED || r == ALREADY;
+    log("game fix Civ V culling frustum (cull_widen %.2f; 3D view frames counted for the head turn): %s", g_widen, result_str(r));
     if (cull_widen > 1) {
-        g_widen = cull_widen;
-        uint8_t j[5];
-        jmp5(j, 0x8d017a0, uintptr_t(&vrdual_civ5_clip_planes));
-        r = apply((uint8_t*)0x8d017a0, "53575683ec10e8000000005b81c3555860018b7424248b442420", j, 5);
-        log("game fix Civ V cull_widen %.2f (culling frustum wider than the view): %s", cull_widen, result_str(r));
         g_stream_k = unsigned(ceilf(cull_widen * cull_widen - 1e-3f));
         jmp5(j, 0x8d1052c, uintptr_t(&vrdual_civ5_create_stream));
         r = apply((uint8_t*)0x8d1052c, "5553575683ec1ce8000000005b81c3c86a5f01", j, 5);

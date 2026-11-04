@@ -26,7 +26,10 @@
 //                            short tap of scroll_keys (arrows), repeated
 //                            while the head stays; past scroll_hold_angle
 //                            held until the head comes back inside
-//                            scroll_angle (2 deg hysteresis)
+//                            scroll_angle (2 deg hysteresis). On a screen
+//                            fixed in the room (lock world / frozen): no
+//                            turn, the angles count past the screen's edges
+//                            (Controls::edge_past, may be < 0)
 //
 // Buttons are remapped with map_<mode>_<button> = KEY_*|BTN_*|none (mode:
 // gamepad, mouse) or map_<button> (both modes) in [global] or [app:NAME];
@@ -95,7 +98,36 @@ struct Controls {
     bool hands_ok = false;                  // both grip poses valid
     bool hand_p_ok[2] = {};                 // that grip's position valid
     float hand_p[2][3] = {};                // left, right grip position, meters, screen space
+    bool edge_ok = false;                   // screen fixed in the room: head direction vs its edges known
+    float edge_past[4] = {};                // degrees the head direction is past the top, bottom, left, right edge (< 0 inside)
 };
+
+// Degrees the head direction d (from position p, both in the screen's frame:
+// -z = forward, centre at the origin for flat, the viewer / cylinder axis
+// for full / curved) is past the screen's top, bottom, left and right edge
+// (< 0 inside). mode 0 full (tan_h / tan_v half-FOV tangents, picture at
+// infinity), 1 flat (w x h m), 2 curved (angle rad wide, h m high, radius
+// dist). false: behind a flat screen.
+inline bool edge_past(int mode, float tan_h, float tan_v, float w, float h, float angle, float dist, const float p[3], const float d[3],
+                      float out[4]) {
+    const float k = 180.0f / float(M_PI);
+    float gx = std::atan2(d[0], -d[2]), gy = std::atan2(d[1], std::sqrt(d[0] * d[0] + d[2] * d[2]));  // gaze yaw (+ right), pitch (+ up)
+    float r, l, t, b;  // edge angles: right, left (yaw), top, bottom (pitch)
+    if (mode == 1) {
+        if (p[2] <= 0.01f) return false;
+        r = std::atan2(w / 2 - p[0], p[2]), l = std::atan2(-w / 2 - p[0], p[2]);
+        t = std::atan2(h / 2 - p[1], p[2]), b = std::atan2(-h / 2 - p[1], p[2]);
+    } else if (mode == 2) {
+        r = angle / 2, l = -angle / 2;
+        t = std::atan2(h / 2 - p[1], dist), b = std::atan2(-h / 2 - p[1], dist);
+    } else {
+        r = std::atan(tan_h), l = -r;
+        t = std::atan(tan_v), b = -t;
+        gy = std::atan2(d[1], -d[2]);  // as the picture maps it (y / -z)
+    }
+    out[0] = (gy - t) * k, out[1] = (b - gy) * k, out[2] = (l - gx) * k, out[3] = (gx - r) * k;
+    return true;
+}
 
 // Quaternions as float[4] = x, y, z, w (OpenXR order).
 inline void qmul(const float a[4], const float b[4], float o[4]) {
@@ -262,13 +294,14 @@ struct ScreenGrab {
 // v[] and start[] from the control block (screen_fov: from the screen).
 enum { TUNE_CHANGED = 1, TUNE_SETTLED = 2, TUNE_SAVE = 4, TUNE_RESET = 8 };
 struct Tuner {
-    enum { WORLD_SCALE, HUD_DEPTH, HFOV, SCREEN_FOV, N };
-    float v[N] = {1, 0, 90, 60};
-    float start[N] = {1, 0, 90, 60};
-    float saved[N] = {NAN, NAN, NAN, NAN};  // NAN = not saved in this session
+    enum { WORLD_SCALE, HUD_DEPTH, HFOV, SCREEN_FOV, SCROLL, SCROLL_HOLD, N };
+    float v[N] = {1, 0, 90, 60, 0, 10};
+    float start[N] = {1, 0, 90, 60, 0, 10};
+    float saved[N] = {NAN, NAN, NAN, NAN, NAN, NAN};  // NAN = not saved in this session
     enum { UNDO_SAVED, UNDO_START, UNDO_DEFAULTS } undone_to = UNDO_SAVED;
     bool moving = false, a = false, b = false, undid = false;
     bool screen = false;  // right stick x = screen_fov
+    bool scroll = false;  // left stick x = scroll_angle (x held: scroll_hold_angle), degrees past the screen edge
     float dz = 0.15f;
 
     int step(const Controls& c, double dt) {
@@ -278,7 +311,7 @@ struct Tuner {
             float m = (std::fabs(s) - dz) / (1 - dz);
             return idle && m > 0 ? std::copysign(m * m, s) : 0.0f;
         };
-        float ws = rate(c.ly), hd = rate(c.ry), fv = rate(c.rx);
+        float ws = rate(c.ly), hd = rate(c.ry), fv = rate(c.rx), sc = scroll ? rate(c.lx) : 0;
         float old[N];
         memcpy(old, v, sizeof v);
         if (ws != 0) v[WORLD_SCALE] = std::fmin(10000.0f, std::fmax(0.01f, v[WORLD_SCALE] * std::exp2(ws * float(dt))));
@@ -289,7 +322,12 @@ struct Tuner {
         }
         if (fv != 0 && !screen) v[HFOV] = std::fmin(170.0f, std::fmax(20.0f, v[HFOV] + 20 * fv * float(dt)));
         if (fv != 0 && screen) v[SCREEN_FOV] = std::fmin(170.0f, std::fmax(10.0f, v[SCREEN_FOV] + 20 * fv * float(dt)));
-        bool now = ws != 0 || hd != 0 || fv != 0;
+        if (sc != 0) {  // 10 deg/s; the hold threshold stays at least 1 deg past the start
+            float& t = v[c.x ? SCROLL_HOLD : SCROLL];
+            t = std::fmin(60.0f, std::fmax(-30.0f, t + 10 * sc * float(dt)));
+            v[SCROLL_HOLD] = std::fmax(v[SCROLL_HOLD], v[SCROLL] + 1);
+        }
+        bool now = ws != 0 || hd != 0 || fv != 0 || sc != 0;
         if (memcmp(old, v, sizeof v)) r |= TUNE_CHANGED;
         if (moving && !now) r |= TUNE_SETTLED;
         moving = now;
@@ -299,7 +337,7 @@ struct Tuner {
         }
         if (idle && c.b && !b) {
             // first press: saved; each press with nothing moved since: one step further
-            static const float defaults[N] = {1, 0, 90, 60};
+            static const float defaults[N] = {1, 0, 90, 60, 0, 10};
             const float* to[3] = {saved, start, defaults};
             int i = undid && !memcmp(v, to[undone_to], sizeof v) ? undone_to + 1 : 0;
             while (i < UNDO_DEFAULTS && (to[i][0] != to[i][0] || !memcmp(v, to[i], sizeof v))) ++i;  // unsaved or no-op
@@ -621,6 +659,7 @@ public:
     // New button maps (config reloaded); held buttons release what they pressed.
     void remap(const InputCfg& c) { memcpy(cfg_.map, c.map, sizeof cfg_.map); }
     void set_speed(float s) { cfg_.speed = s; }
+    void set_scroll(float start, float hold) { cfg_.scroll_angle = start, cfg_.scroll_hold = hold; }
 
     std::vector<InEvent> step(const Controls& c, double dt) {
         std::vector<InEvent> ev;
@@ -807,6 +846,9 @@ private:
             }
         }
     }
+public:
+    bool scene_off = false;  // the game shows no turned view (menu, video): no scroll keys
+private:
     void head(const Controls& c, double dt, std::vector<InEvent>& ev) {
         if (cfg_.head_look == "mouse" && c.head_ok && head_prev_ok_) {
             fx_ -= wrap180(c.head_yaw - head_yaw_) * cfg_.head_cpd;
@@ -822,12 +864,21 @@ private:
             fy_ -= float(rate(c.head_pitch - ref_pitch_) * dt * cfg_.head_cpd);
         }
         if (cfg_.head_look == "scroll" || std::any_of(scroll_, scroll_ + 4, [](bool b) { return b; })) {
-            bool on = cfg_.head_look == "scroll" && c.head_ok;
-            if (on && !head_ref_ok_) { ref_yaw_ = c.head_yaw; ref_pitch_ = c.head_pitch; head_ref_ok_ = true; }
-            float y = on ? wrap180(c.head_yaw - ref_yaw_) : 0, p = on ? c.head_pitch - ref_pitch_ : 0;  // + = left / up
-            float L = cfg_.scroll_angle > 0 ? cfg_.scroll_angle : cfg_.rot_max > 0 ? cfg_.rot_max : 20;
-            float H = cfg_.scroll_hold > 0 ? std::max(cfg_.scroll_hold, L) : L + 10;
-            float a[4] = {p, -p, y, -y};
+            bool on = cfg_.head_look == "scroll" && c.head_ok && !scene_off;
+            float a[4] = {}, L, H;
+            if (c.edge_ok) {  // screen fixed in the room: degrees past its edges, thresholds from there (may be < 0)
+                if (on) memcpy(a, c.edge_past, sizeof a);
+                else std::fill(a, a + 4, -1000.f);
+                L = cfg_.scroll_angle;
+                H = cfg_.scroll_hold > L ? cfg_.scroll_hold : L + 10;
+            } else {  // head-locked: degrees from the start direction
+                if (on && !head_ref_ok_) { ref_yaw_ = c.head_yaw; ref_pitch_ = c.head_pitch; head_ref_ok_ = true; }
+                float y = on ? wrap180(c.head_yaw - ref_yaw_) : 0, p = on ? c.head_pitch - ref_pitch_ : 0;  // + = left / up
+                L = cfg_.scroll_angle > 0 ? cfg_.scroll_angle : cfg_.rot_max > 0 ? cfg_.rot_max : 20;
+                H = cfg_.scroll_hold > 0 ? std::max(cfg_.scroll_hold, L) : L + 10;
+                float b[4] = {p, -p, y, -y};
+                memcpy(a, b, sizeof a);
+            }
             for (int i = 0; i < 4; ++i) {
                 scroll_in_[i] = a[i] > (scroll_in_[i] ? L - 2 : L);
                 if (!scroll_in_[i]) scroll_hold_[i] = false, scroll_t_[i] = -1;

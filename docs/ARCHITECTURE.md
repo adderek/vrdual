@@ -122,7 +122,14 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
    (extent neither the swapchain's nor the main view's), which are then
    drawn unshifted and ignore `hud_depth` (`layer/vrdual_passes.hpp`:
    shadow maps, baked textures; the pass decides, so a vertex shader shared
-   by a unit and its shadow is right in both).
+   by a unit and its shadow is right in both). 2 for the swapchain pass
+   when the main view is drawn apart (Civ V scales its 1368x768 view onto
+   the swapchain with a quad): eye shift and `hud_depth` as usual, no head
+   turn or lean, since the view inside is turned already (turned twice,
+   the quad's texture edges were stretched into the picture). That quad,
+   being w == 1, gets the `hud_depth` shift, so the view's own HUD sits at
+   twice the HUD shift: such frames carry `VRDUAL_SLOT_HUD_TWICE` and
+   vrdual-xr expects (and draws) the cursor over the HUD at that disparity.
 3. **Frame export** — at `vkQueuePresentKHR` the swapchain image is copied to a
    host buffer and published into a 4-slot seqlocked ring in `/dev/shm`.
 4. **Lockstep** — frame N is held until the other eye has published N, so two
@@ -421,15 +428,22 @@ frames arrive; virtual devices via `/dev/uinput` (`common/vrdual_input.hpp`):
   this the map turned but the cursor did not, so clicks landed beside it.
 - `head_look_menus = 0`: frames without a pass into a main view apart from the
   swapchain (menus, videos, before the 3D view exists; `auto_noshift`'s main
-  view) get no head turn / offset (`head turn off` / `on` in the log).
+  view) get no head turn / offset (`head turn off` / `on` in the log). A game
+  that draws its menus into the 3D view's target too (Civ V) is told by a
+  game fix instead: the culling frustum hook counts the game's 3D view setups
+  (`gamefix::g_scene_calls`); no call for 4 presents = off.
 - `head_look = scroll`: `clip`, plus the Mapper presses `scroll_keys`
   (arrows) by the head angle from the start direction (yaw/pitch): past
   `scroll_angle` short taps (`scroll_tap_ms`, again every
   `scroll_tap_repeat_ms`), past `scroll_hold_angle` held until the head is
   back inside `scroll_angle` (2° hysteresis). Strategy games scroll the map
   with the arrows, so a short glance past the edge nudges the camera and a
-  strong turn keeps it moving (Civ V); within `scroll_angle` the view only
-  turns.
+  strong turn keeps it moving; within `scroll_angle` the view only
+  turns. On a screen fixed in the room (`lock = world`, frozen; Civ V's
+  profile: a flat 70° monitor) nothing turns: vrdual-xr locates the head in
+  the screen's frame and `edge_past` gives the degrees past each edge (from
+  the screen's size and place, also after a grab), which replace the angles
+  from the start direction; the thresholds then count from the edge.
 
 Stats, every 5 s in the `vrdual xr` log (`VRDUAL_XR_STATS` seconds): `N frames
 submitted, M new game frames (game fps), headset … Hz, … without a new game

@@ -35,8 +35,11 @@
 // reads a uvec4 (lo, hi, mode, 0) at addr+32 and, if lo <= key <= hi (key =
 // high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift | 3 hud
 // at runtime: the hunt for a shader's key. A uint at addr+96 (auto_noshift)
-// is set by the layer before each render pass: non-zero = an off-screen pass
-// (shadow map, baked texture), drawn unshifted.
+// is set by the layer before each render pass: 1 = an off-screen pass
+// (shadow map, baked texture), drawn unshifted; 2 = the swapchain pass of a
+// game whose 3D view is drawn apart (it scales that view onto the swapchain):
+// the eye shift and hud_depth as usual, no head turn or lean (the view is
+// already turned).
 //
 // Gate: the result is selected against the original by a specialization
 // constant (SpecId kGateSpecId, default true). A pipeline with TES or GS sets
@@ -259,7 +262,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_zero = fresh(); emit(globals, OpConstant, {t_float, c_zero, f2u(0.0f)});
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
-    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_hrot[3] = {}, c_flag = 0, c_u0 = 0;
+    uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_hrot[3] = {}, c_flag = 0, c_u0 = 0, c_u2 = 0;
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -298,6 +301,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             emit(globals, OpConstant, {t_uint, fh, uint32_t((o.addr + 96) >> 32)});
             c_flag = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_flag, fl, fh});
             c_u0 = fresh(); emit(globals, OpConstant, {t_uint, c_u0, 0});
+            c_u2 = fresh(); emit(globals, OpConstant, {t_uint, c_u2, 2});
         }
     } else {
         uint32_t c[4];
@@ -422,7 +426,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpLogicalOr, {t_bool, keep, w0, h0});
                 emit(out, OpSelect, {t_float, z2, keep, z, zm});
             }
-            uint32_t xh = x, yh = y, wh = wv, zh = z;  // the HUD treatment
+            uint32_t xh = x, yh = y, wh = wv, zh = z, hh = 0;  // the HUD treatment
             if (live) {  // HUD turn: (x, y, w)' = M_hud (x, y, w), z scaled with w; then HUD at hud_depth: + h.w * w' (NDC shift h.w)
                 uint32_t hr[3];
                 for (int k = 0; k < 3; ++k) {
@@ -439,8 +443,9 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                     hr[k] = fresh();
                     emit(out, OpFAdd, {t_float, hr[k], s0, p2});
                 }
-                uint32_t hh = fresh(), hs = fresh(), zr = fresh(), zm = fresh(), w0 = fresh(), h0 = fresh(), keep = fresh();
+                uint32_t hs = fresh(), zr = fresh(), zm = fresh(), w0 = fresh(), h0 = fresh(), keep = fresh();
                 xh = fresh();
+                hh = fresh();
                 emit(out, OpCompositeExtract, {t_float, hh, hp, 3});
                 emit(out, OpFMul, {t_float, hs, hh, hr[2]});
                 emit(out, OpFAdd, {t_float, xh, hr[0], hs});
@@ -496,13 +501,34 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 emit(out, OpCompositeInsert, {t_vec4, vh2, zh, vh1, 2});
                 emit(out, OpCompositeInsert, {t_vec4, vh, wh, vh2, 3});
                 uint32_t res = v2;
-                {  // auto_noshift: the layer flags off-screen passes at addr+96 -> unshifted (the hunt below still applies)
-                    uint32_t fq = fresh(), fv = fresh(), fx = fresh(), off = fresh();
+                {  // auto_noshift: the layer flags passes at addr+96: 1 off-screen -> unshifted, 2 -> unturned (the hunt below still applies)
+                    uint32_t fq = fresh(), fv = fresh(), fx = fresh(), untu = fresh();
                     emit(out, OpBitcast, {p_psb4, fq, c_flag});
                     emit(out, OpLoad, {t_uvec4, fv, fq, MemAccessAligned, 16});
                     emit(out, OpCompositeExtract, {t_uint, fx, fv, 0});
-                    emit(out, OpINotEqual, {t_bool, off, fx, c_u0});
-                    res = sel4(off, v, res);
+                    // unturned: x + eye shift, or for the HUD x + h.w * w (y, z, w as given)
+                    uint32_t xu = fresh();
+                    emit(out, OpFAdd, {t_float, xu, x, off});
+                    if (hudpath) {
+                        uint32_t is1 = c_true, xn = fresh();
+                        if (!o.hud) { is1 = fresh(); emit(out, OpFOrdEqual, {t_bool, is1, wv, c_one}); }
+                        uint32_t xw = x;
+                        if (o.w1_hud || o.hud) {
+                            uint32_t hs = fresh();
+                            xw = fresh();
+                            emit(out, OpFMul, {t_float, hs, hh, wv});
+                            emit(out, OpFAdd, {t_float, xw, x, hs});
+                        }
+                        emit(out, OpSelect, {t_float, xn, is1, xw, xu});
+                        xu = xn;
+                    }
+                    uint32_t vu = fresh();
+                    emit(out, OpCompositeInsert, {t_vec4, vu, xu, v, 0});
+                    emit(out, OpIEqual, {t_bool, untu, fx, c_u2});
+                    res = sel4(untu, vu, res);
+                    uint32_t one = fresh();
+                    emit(out, OpIEqual, {t_bool, one, fx, c_m[1]});
+                    res = sel4(one, v, res);
                 }
                 const uint32_t alt[4] = {0, c_zero4, v, vh};
                 for (uint32_t k = 3; k >= 1; --k) {

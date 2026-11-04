@@ -15,6 +15,8 @@
 // --view W H: the scene is drawn into a WxH FBO, then blitted to the window
 // (a 3D view at another size than the swapchain, like Civ V's 1368x768);
 // with --shadow the "shadow map" FBO is WxH too: same size, another target.
+// --view-quad: the view goes to the window as a textured w == 1 quad over a
+// magenta clear (Civ V scales its view with a shader), not by a blit.
 // SIGUSR1 toggles a "menu": only the window is cleared, no 3D view drawn
 // (the layer then sends no head turn: selftest).
 #include <GL/gl.h>
@@ -95,11 +97,13 @@ int main(int argc, char** argv) {
     long frames = -1;
     bool shadow = false;
     int vw = 0, vh = 0;  // --view
+    bool vquad = false;
     std::string title = "vrdual-gltest";
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
         else if (!strcmp(argv[i], "--title") && i + 1 < argc) title = argv[++i];
         else if (!strcmp(argv[i], "--shadow")) shadow = true;
+        else if (!strcmp(argv[i], "--view-quad")) vquad = true;
         else if (!strcmp(argv[i], "--view") && i + 2 < argc) vw = atoi(argv[++i]), vh = atoi(argv[++i]);
     }
     Display* dpy = XOpenDisplay(nullptr);
@@ -247,7 +251,26 @@ int main(int argc, char** argv) {
         glTexCoord2f(1, 1); glVertex3f(1.6f, -0.5f, -2);
         glTexCoord2f(0, 1); glVertex3f(-1.6f, -0.5f, -2);
         glEnd();
-        if (vfbo) {  // the 3D view to the window
+        if (vfbo && vquad) {  // the 3D view to the window: a quad over all of it
+            glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, 960, 720);
+            glClearColor(1, 0, 1, 1);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glBindTexture(GL_TEXTURE_2D, vtex);
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            glMatrixMode(GL_MODELVIEW);
+            glLoadIdentity();
+            glDisable(GL_DEPTH_TEST);
+            glBegin(GL_QUADS);
+            glTexCoord2f(0, 0); glVertex2f(-1, -1);
+            glTexCoord2f(1, 0); glVertex2f(1, -1);
+            glTexCoord2f(1, 1); glVertex2f(1, 1);
+            glTexCoord2f(0, 1); glVertex2f(-1, 1);
+            glEnd();
+            glEnable(GL_DEPTH_TEST);
+            glBindTexture(GL_TEXTURE_2D, tex);
+        } else if (vfbo) {  // the 3D view to the window
             glBindFramebuffer_(GL_READ_FRAMEBUFFER, vfbo);
             glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, 0);
             glBlitFramebuffer_(0, 0, W, H, 0, 0, 960, 720, GL_COLOR_BUFFER_BIT, GL_LINEAR);

@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #define VRDUAL_MAGIC 0x56524455u /* "VRDU" */
-#define VRDUAL_VERSION 5u
+#define VRDUAL_VERSION 6u
 #define VRDUAL_SLOTS 4u
 
 enum { VRDUAL_DEPTH_F32 = 1 };
@@ -53,7 +53,16 @@ struct vrdual_shm_header {
     uint32_t depth_fmt;
     uint32_t depth_src;                         // VkFormat of the game's depth image (info)
     volatile uint64_t depth_frame[VRDUAL_SLOTS]; // frame + 1 whose depth the slot holds, 0 = none (inside the slot's seqlock)
+    // v6: per slot (inside its seqlock), VRDUAL_SLOT_* bits
+    volatile uint32_t slot_flags[VRDUAL_SLOTS];
 };
+// drawn without head turn / lean (head_look_menus = 0: a menu, loading screen,
+// video): the cursor is not moved by the turn, scroll keys stay up
+#define VRDUAL_SLOT_UNTURNED 1u
+// the picture is a view drawn apart, scaled onto the swapchain by a w == 1
+// quad that got the hud_depth shift (Civ V): the view's own HUD (w == 1, also
+// shifted) sits at twice the HUD shift
+#define VRDUAL_SLOT_HUD_TWICE 2u
 
 // Cursor image: premultiplied ARGB32 (B, G, R, A bytes), cursor_w * cursor_h
 // pixels at VRDUAL_CURSOR_OFF, cropped to VRDUAL_CURSOR_MAX square.

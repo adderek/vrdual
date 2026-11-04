@@ -374,6 +374,7 @@ struct CopyRes {
         size_t bytes = 0;
         Readback* drb = nullptr;  // depth copy of the same frame, if any
         VkFormat dfmt = VK_FORMAT_UNDEFINED;
+        uint32_t flags = 0;  // VRDUAL_SLOT_*
     } pend[2];
 };
 
@@ -564,8 +565,10 @@ static void copy_opaque(uint32_t* d, const uint32_t* p, size_t n) {
 #endif
 
 namespace passes { static void to_float(float* d, const void* src, VkFormat f, size_t n); }
+static uint32_t slot_flags(const DeviceData* dd);  // after vrdual_passes.hpp
 // depth: the depth copy (texels of dfmt), nullptr = none this frame.
-static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n, const void* depth = nullptr, VkFormat dfmt = VK_FORMAT_UNDEFINED) {
+static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n, const void* depth = nullptr, VkFormat dfmt = VK_FORMAT_UNDEFINED,
+                        uint32_t flags = 0) {
     auto* hd = g_out[eye].hdr;
     if (!hd) return;
     auto& s = hd->slots[frame % VRDUAL_SLOTS];
@@ -579,6 +582,7 @@ static void shm_publish(int eye, uint64_t frame, const void* pixels, size_t n, c
     bool dep = depth && hd->depth_fmt == VRDUAL_DEPTH_F32 && hd->slot_bytes >= 2 * n;
     if (dep) passes::to_float((float*)((char*)d + n), depth, dfmt, n / 4), hd->depth_src = uint32_t(dfmt);
     hd->depth_frame[frame % VRDUAL_SLOTS] = dep ? frame + 1 : 0;
+    hd->slot_flags[frame % VRDUAL_SLOTS] = flags;
     s.present_ns = now_ns();
     __sync_synchronize();
     s.seq++;
@@ -1292,6 +1296,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
     if (dep || autons) {
         dd->pt = passes::create(dd, dep, autons);
         dd->pt->need_view = !g_cfg.head_look_menus;
+        if (!g_cfg.head_look_menus && gamefix::g_scene_hook) dd->pt->scene_src = &gamefix::g_scene_calls;
         logf("tracking render passes for%s%s", dep ? " depth_export" : "", autons ? " auto_noshift" : "");
     }
     std::lock_guard<std::mutex> l(g_lock);
@@ -1654,7 +1659,7 @@ static void finish_readback(const Dispatch& d, VkDevice dev, CopyRes& cr, int k)
             d.InvalidateMappedMemoryRanges(dev, 1, &mr);
         }
     uint64_t t1 = now_ns();
-    if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes, p.drb ? p.drb->map : nullptr, p.dfmt);
+    if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes, p.drb ? p.drb->map : nullptr, p.dfmt, p.flags);
     // where the game's present thread spends export time (g_shm_lock held)
     static uint64_t wait_ns = 0, pub_ns = 0, n = 0;
     wait_ns += t1 - t0;
@@ -1755,6 +1760,13 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     return true;
 }
 
+// VRDUAL_SLOT_* of the frame being presented
+static uint32_t slot_flags(const DeviceData* dd) {
+    uint32_t f = dd->ep.scene_off ? VRDUAL_SLOT_UNTURNED : 0u;
+    if (dd->pt && dd->pt->comp_on.load() && !g_cfg.hud_rules_only) f |= VRDUAL_SLOT_HUD_TWICE;
+    return f;
+}
+
 static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     DeviceData* dd = dev_of(key(queue));
     dd->ep.scene_off = dd->pt && !dd->pt->scene_on.load();
@@ -1832,7 +1844,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     }
     // Alternate-eye rendering: pair F = frames 2F (left) and 2F+1 (right).
     dd->cr.pend[k] = {true, dd->aer ? frame / 2 : frame, sc_id(pi->pSwapchains[0]), dd->aer ? eye : g_cfg.eye, &s->rb[k], bytes,
-                      dp.img ? &s->drb[k] : nullptr, dp.fmt};
+                      dp.img ? &s->drb[k] : nullptr, dp.fmt, slot_flags(dd)};
     finish_readback(dd->d, dd->device, dd->cr, k ^ 1);  // frame - 1
     el.unlock();
     if (frame && !dd->aer) lockstep_wait(frame - 1);

@@ -184,6 +184,12 @@ int main(int argc, char** argv) {
         expect(has(ev, key(KEY_A, 0)) && has(ev, key(KEY_DOWN, 1)) && ev.size() == 2, "head scroll: back inside -> left released; 25 down -> DOWN tap");
         c.head_ok = false; ev = m.step(c, 0.05);
         expect(has(ev, key(KEY_DOWN, 0)) && ev.size() == 1, "head scroll: tracking lost -> DOWN released");
+        c.head_ok = true; c.head_pitch = -5; c.head_yaw = -155; ev = m.step(c, 0.1);  // 35 left: held
+        m.scene_off = true; ev2 = m.step(c, 0.1); ev3 = m.step(c, 0.1);
+        expect(has(ev, key(KEY_A, 1)) && has(ev2, key(KEY_A, 0)) && ev2.size() == 1 && ev3.empty(),
+               "head scroll: frames without head turn (menu) -> held key released, no new ones");
+        m.scene_off = false; ev = m.step(c, 0.1);
+        expect(has(ev, key(KEY_A, 1)), "head scroll: turned view back -> scrolls again");
     }
     {
         // cursor after a turn: head 10 right -> the screen centre's scene point
@@ -380,6 +386,54 @@ int main(int argc, char** argv) {
         c.rx = 1;
         s.step(c, 0.5);
         expect(s.v[Tuner::HFOV] == 90 && std::fabs(s.v[Tuner::SCREEN_FOV] - 70) < 0.01f, "tune, flat/curved screen: right stick x -> screen_fov 20 deg/s, hfov kept");
+    }
+    {  // scroll thresholds in tune: left stick x, only with head_look = scroll on a screen fixed in the room
+        Tuner t;
+        Controls c;
+        c.lx = 1;
+        t.step(c, 0.5);
+        bool off = t.v[Tuner::SCROLL] == 0;
+        t.scroll = true;
+        t.step(c, 0.5);
+        bool start = std::fabs(t.v[Tuner::SCROLL] - 5) < 0.01f && std::fabs(t.v[Tuner::SCROLL_HOLD] - 10) < 0.01f;
+        c.x = true; c.lx = -1;
+        t.step(c, 1.0);  // hold down 10 -> stops 1 past the start
+        expect(off && start && std::fabs(t.v[Tuner::SCROLL_HOLD] - 6) < 0.01f && std::fabs(t.v[Tuner::SCROLL] - 5) < 0.01f,
+               "tune scroll: left stick x -> scroll_angle 10 deg/s (only on a fixed screen), x held -> scroll_hold_angle, kept 1 past the start");
+    }
+    {  // screen fixed in the room: degrees past its edges
+        float p[3] = {0, 0, 2}, d[3] = {0, 0, -1}, o[4];
+        bool ok = edge_past(1, 0, 0, 2, 1, 0, 0, p, d, o);  // flat 2 x 1 m, 2 m ahead
+        bool a = ok && std::fabs(o[3] + 26.565f) < 0.01f && std::fabs(o[2] + 26.565f) < 0.01f && std::fabs(o[0] + 14.036f) < 0.01f;
+        float s30 = std::sin(float(M_PI) / 6), c30 = std::cos(float(M_PI) / 6), d2[3] = {s30, 0, -c30};
+        edge_past(1, 0, 0, 2, 1, 0, 0, p, d2, o);
+        bool b = std::fabs(o[3] - 3.435f) < 0.01f;
+        float p2[3] = {1, 0, 2};  // stepped 1 m right: the right edge straight ahead
+        edge_past(1, 0, 0, 2, 1, 0, 0, p2, d, o);
+        bool c = std::fabs(o[3]) < 0.01f;
+        float behind[3] = {0, 0, -1};
+        bool e = !edge_past(1, 0, 0, 2, 1, 0, 0, behind, d, o);
+        edge_past(0, 1, 0.5f, 0, 0, 0, 0, p, d2, o);  // full: edges at 45 deg (tan 1)
+        expect(a && b && c && e && std::fabs(o[3] + 15) < 0.01f,
+               "edge_past: flat screen ahead, gaze 30 deg right = 3.4 past, stepped to the edge = 0, behind = none; full 45 deg edge");
+        InputCfg k = cfg("off");
+        k.head_look = "scroll";
+        k.scroll_angle = 0; k.scroll_hold = 0;  // at the edge; hold 10 past
+        Mapper m(k);
+        auto key = [](int code, int v) { return InEvent{DEV_KBD, EV_KEY, code, v}; };
+        Controls q; q.head_ok = q.edge_ok = true;
+        float in[4] = {-10, -10, -10, -10};
+        memcpy(q.edge_past, in, sizeof in);
+        auto ev = m.step(q, 0.1);
+        q.edge_past[3] = 1; auto ev1 = m.step(q, 0.1);  // 1 past the right edge
+        q.edge_past[3] = -1; auto ev2 = m.step(q, 0.5);  // 1 back inside: hysteresis keeps it in the band (next tap)
+        q.edge_past[3] = -3; m.step(q, 0.1); auto ev3 = m.step(q, 0.1);
+        q.edge_past[3] = 11; auto ev4 = m.step(q, 0.1); auto ev5 = m.step(q, 1.0);
+        bool held = true;
+        for (auto& x : ev5) held &= !(x == key(KEY_RIGHT, 0));
+        expect(ev.empty() && has(ev1, key(KEY_RIGHT, 1)) && ev3.empty() && has(ev4, key(KEY_RIGHT, 1)) && held,
+               "head scroll, fixed screen: inside nothing; past the right edge -> tap; 11 past (hold 10) -> held");
+        (void)ev2;
     }
 
     {  // cursor depth: the scene's disparity under the pointer (block matching)

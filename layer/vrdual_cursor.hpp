@@ -10,6 +10,7 @@
 
 // tools/frame_hash.py --cursor reads the fields at this offset
 static_assert(offsetof(vrdual_shm_header, cursor_seq) == 304, "update tools/frame_hash.py");
+static_assert(offsetof(vrdual_shm_header, slot_flags) == 376, "update tools/frame_hash.py");
 
 namespace cursor {
 

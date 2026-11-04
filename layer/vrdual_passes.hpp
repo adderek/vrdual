@@ -91,6 +91,14 @@ struct Track {
     std::atomic<int> main_passes{0};        // passes into the main view since the last present
     std::atomic<bool> scene_on{true};       // last frame drew the main view (or there is no separate one)
     bool need_view = false;                 // head_look_menus = 0: no separate main view (yet) = off too
+    bool comp_logged = false;
+    std::atomic<int> comp_passes{0};        // swapchain passes with the main view apart, since the last present
+    std::atomic<bool> comp_on{false};       // last frame had one (VRDUAL_SLOT_HUD_TWICE)
+    // a game fix counts the game's 3D view setups (Civ V: culling frustum):
+    // head turn on while it changes (more exact than passes: menus drawn into the view)
+    const std::atomic<uint32_t>* scene_src = nullptr;
+    uint32_t scene_seen = 0;
+    int scene_idle = 0;
     uint64_t presents = 0;
     std::string last_passes;  // log_passes: last logged
     std::atomic<uint64_t> main{0}, sc{0};  // main view and swapchain extents (0 = not known yet)
@@ -293,7 +301,9 @@ static void note_draw(Track* t, const Track::Cb& c) {
     g.ext = c.ext;
     if (std::find(g.keys.begin(), g.keys.end(), it->second) == g.keys.end() && g.keys.size() < 64) g.keys.push_back(it->second);
 }
-// Returns the pass flag to write: 1 off-screen, 0 not, -1 none (t->m held).
+// Returns the pass flag to write: 1 off-screen, 2 the swapchain pass of a
+// main view drawn apart (it scales the view onto the swapchain: shifted, not
+// turned again), 0 neither, -1 none (t->m held).
 // `target`: the framebuffer, or (dynamic rendering) the first attachment's view, for pass_trace.
 static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D ext, uint64_t target) {
     if (!t->autons) return -1;
@@ -305,16 +315,23 @@ static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D 
     uint64_t main = t->main.load(), sc = t->sc.load(), mt = t->main_tgt.load();
     bool off = main && c.ext != main && c.ext != sc;
     bool off_t = mt && c.ext == main && target && target != mt;  // same size as the main view, another target
+    bool comp = main && main != sc && c.ext == sc;
     if (main && main != sc && c.ext == main && !off_t) t->main_passes++;
+    if (comp) t->comp_passes++;
+    if (comp && !t->comp_logged) {
+        t->comp_logged = true;
+        logf("auto_noshift: swapchain pass %ux%u with the main view %ux%u apart: shifted, no head turn (the view is turned already)", ext.width,
+             ext.height, uint32_t(main >> 32), uint32_t(main));
+    }
     if (off_t && t->off_tgt.insert(target).second)
         logf("auto_noshift: pass %ux%u into target %llx, not the main view's (%llx): not shifted", ext.width, ext.height,
              (unsigned long long)target, (unsigned long long)mt);
     if (t->tracing())
         logf("pass_trace: cb %p %s %ux%u target %llx -> %s", (void*)cb, depth_only ? "depth only" : "colour", ext.width, ext.height,
-             (unsigned long long)target, off || off_t ? "off-screen (not shifted)" : "shifted");
+             (unsigned long long)target, off || off_t ? "off-screen (not shifted)" : comp ? "shifted, not turned" : "shifted");
     if (off && t->off_ext.insert(c.ext).second)
         logf("auto_noshift: off-screen pass %ux%u not shifted (main view %ux%u)", ext.width, ext.height, uint32_t(main >> 32), uint32_t(main));
-    return off || off_t;
+    return off || off_t ? 1 : comp ? 2 : 0;
 }
 
 static void pass_flag_twin(DeviceData* dd, VkCommandBuffer cb, uint32_t v);  // vrdual_mirror.hpp
@@ -520,9 +537,17 @@ static void refresh_auto(Track& t, VkExtent2D sc) {
     {
         uint64_t m = t.main.load();
         bool apart = m && m != ext_key(sc);
+        t.comp_on = t.comp_passes.exchange(0) > 0;
         bool on = apart ? t.main_passes.exchange(0) > 0 : !t.need_view;
         if (!apart) t.main_passes = 0;
-        if (on != t.scene_on.exchange(on))
+        if (t.scene_src) {  // a few presents of slack: the game's thread runs ahead of or behind the present
+            uint32_t n = t.scene_src->load(std::memory_order_relaxed);
+            t.scene_idle = n != t.scene_seen ? 0 : std::min(t.scene_idle + 1, 1000);
+            t.scene_seen = n;
+            on = t.scene_idle < 4;
+            if (on != t.scene_on.exchange(on))
+                logf(on ? "head turn on: the game draws its 3D view (game fix)" : "head turn off: the game draws no 3D view (menu, loading, video; game fix)");
+        } else if (on != t.scene_on.exchange(on))
             logf(on ? "head turn on: the main view %ux%u is drawn" : "head turn off: no pass into a main view apart from the swapchain this frame (menu, video; main view %ux%u)",
                  uint32_t(m >> 32), uint32_t(m));
     }

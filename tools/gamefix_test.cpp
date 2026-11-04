@@ -72,7 +72,10 @@ int main() {
     float h[24] = {};
     // called like the game: cdecl, stack misaligned by 4 on purpose
     asm volatile("sub $4, %%esp\n\tpush %2\n\tpush %1\n\tcall *%0\n\tadd $12, %%esp" : : "r"(page + 64), "r"(m), "r"(h) : "eax", "ecx", "edx", "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7");
-    expect(r4 == gamefix::APPLIED && !memcmp(h, w, sizeof h), "32-bit: jmp into the hook, called with a misaligned stack, gives the widened planes");
+    uint32_t c0 = gamefix::g_scene_calls.load();
+    asm volatile("sub $4, %%esp\n\tpush %2\n\tpush %1\n\tcall *%0\n\tadd $12, %%esp" : : "r"(page + 64), "r"(m), "r"(h) : "eax", "ecx", "edx", "memory", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7");
+    expect(r4 == gamefix::APPLIED && !memcmp(h, w, sizeof h) && gamefix::g_scene_calls.load() == c0 + 1,
+           "32-bit: jmp into the hook, called with a misaligned stack, gives the widened planes and counts a 3D view frame");
 #endif
     return fails ? 1 : 0;
 }

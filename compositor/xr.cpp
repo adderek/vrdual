@@ -393,20 +393,23 @@ static void config_copy_out(const char* tag) {
 }
 
 // input = tune, a: keep world_scale / hud_depth / hfov (+ screen_fov for a
-// flat / curved screen) for this game.
+// flat / curved screen, + scroll_angle / scroll_hold_angle for head_look =
+// scroll on a screen fixed in the room) for this game.
 static void tune_save(const char* app, const vrdual::Tuner& t) {
     std::string sec = app[0] ? std::string("app:") + app : "global", path = vrdual::config_path();
-    const char* keys[vrdual::Tuner::N] = {"world_scale", "hud_depth", "hfov", "screen_fov"};
+    const char* keys[vrdual::Tuner::N] = {"world_scale", "hud_depth", "hfov", "screen_fov", "scroll_angle", "scroll_hold_angle"};
     const float* v = t.v;
     std::vector<std::pair<std::string, std::string>> kvs;
-    for (int i = 0; i < (t.screen ? 4 : 3); ++i) {
+    for (int i = 0; i < vrdual::Tuner::N; ++i) {
+        if ((i == vrdual::Tuner::SCREEN_FOV && !t.screen) || (i >= vrdual::Tuner::SCROLL && !t.scroll)) continue;
         char b[32];
         snprintf(b, sizeof b, "%g", v[i]);
         kvs.push_back({keys[i], b});
     }
     if (!vrdual::save_keys(path, sec, kvs)) { fprintf(stderr, "[xr] tune: cannot write %s\n", path.c_str()); return; }
-    fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g%s into [%s] of %s\n", v[0], v[1], v[2],
-            t.screen ? (" screen_fov " + std::to_string(int(lroundf(v[3])))).c_str() : "", sec.c_str(), path.c_str());
+    std::string extra = t.screen ? " screen_fov " + std::to_string(int(lroundf(v[3]))) : "";
+    if (t.scroll) extra += " scroll_angle " + std::to_string(int(lroundf(v[4]))) + " scroll_hold_angle " + std::to_string(int(lroundf(v[5])));
+    fprintf(stderr, "[xr] tune: saved world_scale %g hud_depth %g hfov %g%s into [%s] of %s\n", v[0], v[1], v[2], extra.c_str(), sec.c_str(), path.c_str());
     config_copy_out("tune");
 }
 
@@ -497,7 +500,8 @@ struct GameLog {
 
 static void tune_help(int mode) {
     fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = %s, a = save, b = undo (saved, start, defaults); "
-                    "both grips = move / scale the screen, + left trigger = turn it\n", mode == SCREEN_FULL ? "hfov" : "screen_fov");
+                    "both grips = move / scale the screen, + left trigger = turn it; head_look = scroll on a screen fixed in the room: "
+                    "left stick x = scroll_angle (x held: scroll_hold_angle), degrees past the edge\n", mode == SCREEN_FULL ? "hfov" : "screen_fov");
 }
 static int screen_parse(const std::string& s) { return s == "flat" ? SCREEN_FLAT : s == "curved" ? SCREEN_CURVED : SCREEN_FULL; }
 static const char* screen_name(int m) { return m == SCREEN_FLAT ? "flat" : m == SCREEN_CURVED ? "curved" : "full"; }
@@ -601,7 +605,8 @@ struct XrInput {
         return xrGetActionStateVector2f(s, &gi, &st) == XR_SUCCESS && st.isActive ? st.currentState : XrVector2f{0, 0};
     }
     // screen: the space the game picture is shown in (layer space), G where it is.
-    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, const ScreenGeom& G) {
+    // edges: the screen is fixed in the room, head direction vs its edges (scroll).
+    vrdual::Controls read(XrSession s, XrTime t, XrSpace local, XrSpace view, XrSpace screen, const ScreenGeom& G, bool edges) {
         vrdual::Controls c;
         XrActiveActionSet aas{set, XR_NULL_PATH};
         XrActionsSyncInfo sy{XR_TYPE_ACTIONS_SYNC_INFO, nullptr, 1, &aas};
@@ -662,6 +667,15 @@ struct XrInput {
             c.head_px = loc.pose.position.x;
             c.head_py = loc.pose.position.y;
             c.head_pz = loc.pose.position.z;
+        }
+        loc = {XR_TYPE_SPACE_LOCATION};
+        if (edges && xrLocateSpace(view, screen, t, &loc) == XR_SUCCESS && (loc.locationFlags & rot) && (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
+            const XrQuaternionf& fq = G.frame.orientation;
+            XrQuaternionf inv{-fq.x, -fq.y, -fq.z, fq.w};
+            XrVector3f d = qrot(inv, qrot(loc.pose.orientation, {0, 0, -1}));
+            XrVector3f p = qrot(inv, vsub(loc.pose.position, G.frame.position));
+            float pa[3] = {p.x, p.y, p.z}, da[3] = {d.x, d.y, d.z};
+            c.edge_ok = vrdual::edge_past(G.mode, G.tan_h, G.tan_v, G.w, G.h, G.angle, G.dist, pa, da, c.edge_past);
         }
         return c;
     }
@@ -903,6 +917,8 @@ static int run(int argc, char** argv) {
     uint64_t shown = 0;
     int live = -1;  // game frames fresh? -1 = not reported yet
     bool blanked = false;
+    bool unturned = false;  // newest frame drawn without head turn (VRDUAL_SLOT_UNTURNED)
+    float hud_k = 1;        // the HUD's shift in the picture, in HUD shifts (VRDUAL_SLOT_HUD_TWICE: 2)
     // input: profile follows the game in the frame file (hdr->app)
     std::string input_app = "\x01";
     GameLog games;
@@ -1108,7 +1124,7 @@ static int run(int argc, char** argv) {
         fed = mapper && xin.ok && fresh;
         if (xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
             ScreenGeom G = screen_geom(scr, base, grab, hfov_now, aspect);
-            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G);
+            vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G, anchored);
             bool was = grab.both;
             memcpy(grab.basis, &base.orientation, sizeof grab.basis);
             chord_hold = c.menu && (chord_hold || c.a || c.b);
@@ -1142,7 +1158,11 @@ static int run(int argc, char** argv) {
             if (tune_on && !ctl) ctl = vrdual::ctl_open(session, nullptr);
             if (tune_on && ctl) {
                 vrdual_ctl k = vrdual::ctl_read(ctl);
-                if (!tune.moving) { tune.v[0] = k.world_scale; tune.v[1] = k.hud_depth; tune.v[2] = k.hfov; tune.v[3] = scr.fov; }  // `vrdual set` counts too
+                tune.scroll = icfg.head_look == "scroll" && anchored;
+                if (!tune.moving) {  // `vrdual set` counts too
+                    tune.v[0] = k.world_scale; tune.v[1] = k.hud_depth; tune.v[2] = k.hfov; tune.v[3] = scr.fov;
+                    tune.v[4] = icfg.scroll_angle; tune.v[5] = icfg.scroll_hold > icfg.scroll_angle ? icfg.scroll_hold : icfg.scroll_angle + 10;
+                }
                 if (!tune_seeded) { memcpy(tune.start, tune.v, sizeof tune.v); tune_seeded = true; }
                 vrdual::Controls ct = c;
                 if (c.menu) ct.a = ct.b = false;  // menu + a / b switches the control mode
@@ -1150,10 +1170,14 @@ static int run(int argc, char** argv) {
                 if (r & vrdual::TUNE_CHANGED) {
                     vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = tune.v[0]; w.hud_depth = tune.v[1]; w.hfov = tune.v[2]; });
                     scr.fov = tune.v[3];
+                    if (tune.scroll) {
+                        icfg.scroll_angle = tune.v[4], icfg.scroll_hold = tune.v[5];
+                        if (mapper) mapper->set_scroll(tune.v[4], tune.v[5]);
+                    }
                 }
                 if (r & (vrdual::TUNE_SETTLED | vrdual::TUNE_RESET))
-                    fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g screen_fov %.3g\n", r & vrdual::TUNE_RESET ? " (undo)" : "",
-                            tune.v[0], tune.v[1], tune.v[2], tune.v[3]);
+                    fprintf(stderr, "[xr] tune%s: world_scale %.3g hud_depth %.3g hfov %.3g screen_fov %.3g scroll_angle %.3g scroll_hold_angle %.3g\n",
+                            r & vrdual::TUNE_RESET ? " (undo)" : "", tune.v[0], tune.v[1], tune.v[2], tune.v[3], tune.v[4], tune.v[5]);
                 if (r & vrdual::TUNE_CHANGED) notify(!(r & vrdual::TUNE_RESET) ? "tune"
                                                    : tune.undone_to == vrdual::Tuner::UNDO_SAVED ? "tune: back to the saved values"
                                                    : tune.undone_to == vrdual::Tuner::UNDO_START ? "tune: back to the start values"
@@ -1258,7 +1282,7 @@ static int run(int argc, char** argv) {
                     }
                 }
             }
-            if (mapper) uinput.emit(mapper->step(c, t_now - t_input));
+            if (mapper) mapper->scene_off = unturned, uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && mapper->changes != control_changes) {
                 control_changes = mapper->changes;
                 if (mapper->input() != "map" && mapper->input() != "hunt" &&  // editing modes, not ones to start a game in
@@ -1291,7 +1315,11 @@ static int run(int argc, char** argv) {
                 notify("controls: " + mapper->controls() + " (menu + a / b: switch)", false);
             }
             bool rot = icfg.head_look == "clip" || icfg.head_look == "scroll";  // scroll: Mapper holds the arrows past the limit
-            if (rot && anchored && !clip_warned) {  // a world-locked screen already shows the turn
+            if (rot && anchored && !clip_warned && icfg.head_look == "scroll") {  // a monitor in the room: scroll past its edges
+                fprintf(stderr, "[xr] head_look = scroll, screen fixed in the room: scrolls past its edges (scroll_angle %g, scroll_hold_angle %g deg past)\n",
+                        icfg.scroll_angle, icfg.scroll_hold > icfg.scroll_angle ? icfg.scroll_hold : icfg.scroll_angle + 10);
+                clip_warned = true;
+            } else if (rot && anchored && !clip_warned) {  // a world-locked screen already shows the turn
                 fprintf(stderr, "[xr] head_look = %s needs a head-locked screen (--lock head, not frozen): rotation off\n", icfg.head_look.c_str());
                 notify("head_look = " + icfg.head_look + ": rotation off, start vrdual xr --lock head");  // overrides the controls line
                 clip_warned = true;
@@ -1393,6 +1421,14 @@ static int run(int argc, char** argv) {
             if (got) {
                 shown = F + 1;
                 blanked = false;
+                bool was = unturned;  // the layer drew it without head turn (menu, video): cursor and scroll follow
+                uint32_t fl = L.hdr->slot_flags[F % VRDUAL_SLOTS];
+                unturned = fl & VRDUAL_SLOT_UNTURNED;
+                if (unturned != was) fprintf(stderr, "[xr] frames %s head turn (cursor, scroll keys follow)\n", unturned ? "without" : "with");
+                float hk = fl & VRDUAL_SLOT_HUD_TWICE ? 2.f : 1.f;
+                if (hk != hud_k) fprintf(stderr, "[xr] HUD at %gx the HUD shift (%s): the cursor's HUD depth follows\n", hk,
+                                         hk > 1 ? "view scaled onto the screen by a shifted quad" : "drawn once");
+                hud_k = hk;
                 const vrdual_slot &sl = L.hdr->slots[F % VRDUAL_SLOTS], &sr = R.hdr->slots[F % VRDUAL_SLOTS];
                 if (sl.frame == F && sr.frame == F && sl.present_ns && sr.present_ns) {
                     double age = vrdual::now_s() - double(sl.present_ns) * 1e-9;
@@ -1430,9 +1466,9 @@ static int run(int argc, char** argv) {
                     kd[0] = scene ? fl / (fl - fr) : 0;
                     kd[1] = scene ? fr / (fl - fr) : 0;
                     int sx = cur.x, sy = cur.y, hx = cur.x, hy = cur.y;
-                    if (ctl) vrdual::turned_px(e0, w, h, cur.x, cur.y, sx, sy, hx, hy);
+                    if (ctl && !unturned) vrdual::turned_px(e0, w, h, cur.x, cur.y, sx, sy, hx, hy);
                     bool apart = std::abs(sx - hx) > 1 || std::abs(sy - hy) > 1;  // HUD lags the scene (past hud_follow): which one is under it?
-                    float hud0 = ctl ? e0.v[7] * float(w) / 2 : 0;
+                    float hud0 = ctl ? hud_k * e0.v[7] * float(w) / 2 : 0;
                     int d;  // on the staging pixels before the edge mask (R/B order does not matter to it)
                     if (!cur_auto) on_hud = true;
                     else if (scene && apart && vrdual::scene_disparity(out[0].map, out[1].map, w, h, hx, hy, kd[0], kd[1], int(w / 8), &d) &&
@@ -1465,7 +1501,7 @@ static int run(int argc, char** argv) {
                 if (have_cur) {
                     for (int e = 0; e < 2; ++e) {
                         EyeOut& o = out[e];
-                        float hud = ctl ? vrdual::eye_params(k, e, aspect).v[7] * float(o.w) / 2 : 0;
+                        float hud = ctl ? hud_k * vrdual::eye_params(k, e, aspect).v[7] * float(o.w) / 2 : 0;
                         bool bgra = (src[e]->fmt == VRDUAL_FMT_BGRA8) != o.swizzle;
                         vrdual::cursor_draw(o.map, o.w, o.h, bgra, cur, int(lroundf(scene && cur_d_ok && !on_hud ? cur_d * kd[e] : hud)));
                     }
@@ -1601,7 +1637,10 @@ static int run(int argc, char** argv) {
                     b[2][0] = 0;
                 }
                 // 80 characters: the panel takes 86
-                snprintf(b[3], sizeof b[3], "%s", fresh && one_gpu ? "one GPU: turn off TAA / DLSS / FSR / XeSS, motion blur, frame generation" : "");
+                if (tune_on && tune.scroll)
+                    snprintf(b[3], sizeof b[3], "scroll past the edge: start %.0f, hold %.0f deg (left stick x; x held: hold)", tune.v[4], tune.v[5]);
+                else
+                    snprintf(b[3], sizeof b[3], "%s", fresh && one_gpu ? "one GPU: turn off TAA / DLSS / FSR / XeSS, motion blur, frame generation" : "");
                 for (int l = 0; l < 4; ++l) ov.text[l] = b[l];
             }
             std::string all;

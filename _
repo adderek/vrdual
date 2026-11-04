@@ -1484,7 +1484,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     # by target, the shadow FBO is not shifted, the 3D view still is.
     rm -f /dev/shm/vrdual-$sess-*
     env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 "$B/vrdual-gltest" --shadow --view 800 600 --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 "$B/vrdual-gltest" --shadow --view 800 600 --view-quad --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
     local glv=$!
     label="auto_noshift by target: shadow FBO of the 3D view's size (800x600) not shifted, the view itself shifted"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/glv.log' && break; sleep 0.1; done
@@ -1497,10 +1497,25 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
       int(im.crop((0, 300, W, im.height)).tobytes() != im.crop((W, 300, 2 * W, im.height)).tobytes()))
 ' '$tmp/gv.png') && read l r d <<<\"\$e\" && (( l == r && l >= 55 && l <= 67 && d == 1 )) || { echo \"FBO edge L R, view differs: \$e\"; grep auto_noshift '$tmp/glv.log'; false; }"
     # a "menu" (no pass into the main view): no head turn there, back with the view
-    label="head_look_menus = 0: head turn off before the 3D view exists and in a menu frame, on while the main view is drawn"
+    label="head_look_menus = 0: head turn off before the 3D view exists and in a menu frame (frames flagged unturned for vrdual-xr), on while the main view is drawn"
     check bash -c "kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn off: no pass into a main view apart' '$tmp/glv.log' && break; sleep 0.1; done
+        for i in \$(seq 100); do f0=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --flags /dev/shm/vrdual-$sess-0 | cut -d' ' -f2)
+            f1=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --flags /dev/shm/vrdual-$sess-1 | cut -d' ' -f2); (( (f0 & 1) && (f1 & 1) )) && break; sleep 0.1; done
+        (( (f0 & 1) && (f1 & 1) )) || { echo \"menu frame flags L R: \$f0 \$f1\"; false; }
         kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn on: the main view 800x600 is drawn' '$tmp/glv.log' && break; sleep 0.1; done
         (( \$(grep -c 'head turn off' '$tmp/glv.log') >= 2 && \$(grep -c 'head turn on' '$tmp/glv.log') >= 2 )) || { grep 'head turn\|main view' '$tmp/glv.log'; false; }"
+    # the view scaled onto the window by a w == 1 quad (Civ V): turned once, in
+    # the view; the quad itself not, so the window's magenta never shows
+    label="head turn with the view drawn apart: the swapchain pass (view scaled by a quad) shifted but not turned again; frames flagged HUD twice"
+    check bash -c "$(declare -f snap set_live); B='$B' sess=$sess; set_live head_yaw=8 hud_yaw=8 && snap '$tmp/gq.png' && set_live head_yaw=0 hud_yaw=0 &&
+        f=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --flags /dev/shm/vrdual-$sess-1 | cut -d' ' -f2) && (( f == 2 )) &&
+        grep -q 'swapchain pass 960x720 with the main view 800x600 apart' '$tmp/glv.log' && e=\$(python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert(\"RGB\")
+b = im.tobytes()
+print(sum(1 for i in range(0, len(b), 3) if b[i] > 200 and b[i + 1] < 60 and b[i + 2] > 200))
+' '$tmp/gq.png') && (( e == 0 )) || { echo \"magenta px: \$e\"; grep 'auto_noshift\|head turn' '$tmp/glv.log'; false; }"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     # 4. Under gamescope the 64-bit WSI layer sits above ours and hands down a
     # Wayland surface: the cursor comes from the root of gamescope's X screen.
