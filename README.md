@@ -30,6 +30,8 @@ via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should wo
 ![Mirror's Edge](screenshots/MirrorsEdge.gif)
 ![Alan Wake's American Nightmare](screenshots/AlanWakeAmericanNightmare.gif)
 ![Duke Nukem Forever](screenshots/DukeNukem4ever_1.gif)
+![Civilization V](screenshots/Civ5.gif)
+![Civilization V](screenshots/Civ5-2.gif)
 ![Magicka](screenshots/Magicka_1.gif)
 ![The Witcher 3](screenshots/Witcher3.gif)
 
