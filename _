@@ -991,6 +991,9 @@ vrdual_selftest() {
     # virtual pad may be created, never a keyboard or mouse that would type
     # into the desktop (head_look = scroll once left arrows stuck there).
     export VRDUAL_UINPUT_PAD_ONLY=1
+    # test windows may lack the X focus: input as if they had it (one check
+    # below turns it off, one reads the real focus)
+    export VRDUAL_INPUT_FOCUS=on
     trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "${_VRDUAL_SELFTEST_TMP:-/nonexistent}"; rm -f /dev/shm/vrdual-selftest-*; trap - RETURN' RETURN
     check() { if "$@" >"$tmp/out" 2>&1; then say "PASS  $label"; else say "FAIL  $label"; sed 's/^/      /' "$tmp/out" >&2; fails=$((fails+1)); fi; }
     vrdual_build || return 1
@@ -1799,6 +1802,23 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         label="openxr: frame loop stuck in a runtime call -> watchdog reconnects in a new process"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_XR_HANG_AT=20 VRDUAL_XR_HANG_S=2 timeout 40 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr7.log' 2>&1;
             rc=\$?; [[ \$rc == 0 ]] && grep -q 'frame loop stuck' '$tmp/xr7.log' && [[ \$(grep -c 'session state 5' '$tmp/xr7.log') == 2 ]] && grep -q '30 frames submitted' '$tmp/xr7.log' || { echo rc=\$rc; grep '\\[xr\\]' '$tmp/xr7.log'; false; }"
+        # the game window without the X focus (alt-tab, game closing): uinput
+        # would type into the focused window, so the head scroll sends nothing
+        kill $src 2>/dev/null; wait $src 2>/dev/null; rm -f /dev/shm/vrdual-$sess-*
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_INPUT_FOCUS=off \
+            "$B/vrdual-cube" --scene calib --title "selftest xr unfocused" >"$tmp/xrsrc2.log" 2>&1 &
+        src=$!
+        label="input_focus: game window not focused -> frames flagged, vrdual-xr sends no keys (head scroll), logs why"
+        check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 SIMULATED_ROTATE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_HEAD_LOOK=scroll VRDUAL_HEAD_ROT_MAX=10 VRDUAL_LOCK=head VRDUAL_SCROLL_ANGLE=1 \
+            timeout 30 '$B/vrdual-xr' --session $sess --frames 150 >'$tmp/xr-unf.log' 2>&1
+            grep -q 'focus: the game window does not have the input focus' '$tmp/xrsrc2.log' &&
+            f=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --flags /dev/shm/vrdual-$sess-0 | cut -d' ' -f2) && (( f & 4 )) &&
+            grep -q 'game window not focused: no keys or mouse sent' '$tmp/xr-unf.log' && grep -q '150 frames submitted' '$tmp/xr-unf.log' &&
+            ! grep -q 'no vrdual keyboard created' '$tmp/xr-unf.log' || { echo flags=\$f; grep focus '$tmp/xrsrc2.log'; grep -E '^\\[(xr|input)\\]' '$tmp/xr-unf.log' | tail; false; }"
+        kill $src 2>/dev/null; wait $src 2>/dev/null; rm -f /dev/shm/vrdual-$sess-*
+        env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
+            "$B/vrdual-cube" --scene calib --title "selftest xr" >"$tmp/xrsrc3.log" 2>&1 &
+        src=$!
         # game exits while streaming: WiVRn keeps the last image unless we send black
         label="openxr: black frame after the game exits, not before frame_timeout (3 s)"
         check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 VRDUAL_FRAME_TIMEOUT=3 timeout 30 '$B/vrdual-xr' --session $sess >'$tmp/xr3.log' 2>&1 & p=\$!
@@ -1822,12 +1842,14 @@ sys.exit(0 if row(520)[3 + 4 * 100] > 0 and max(row(575)[3::4]) == 0 else 1)' '$
         if [[ -x $B/vrdual-gltest ]]; then
             rm -f /dev/shm/vrdual-$sess-*
             env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-                VRDUAL_SESSION=$sess VRDUAL_EYE=both "$B/vrdual-gltest" --title "selftest xr cursor" >"$tmp/xrgl.log" 2>&1 &
+                VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_INPUT_FOCUS=auto "$B/vrdual-gltest" --title "selftest xr cursor" >"$tmp/xrgl.log" 2>&1 &
             local gp=$!
             for i in $(seq 100); do grep -q exporting "$tmp/xrgl.log" && break; sleep 0.1; done
             label="openxr: game's X11 cursor drawn"
             check bash -c "XR_RUNTIME_JSON='$xrj' SIMULATED_ENABLE=1 XRT_COMPOSITOR_NULL=1 timeout 30 '$B/vrdual-xr' --session $sess --frames 30 >'$tmp/xr7.log' 2>&1;
                 grep -q 'cursor [0-9]*x[0-9]* from the game' '$tmp/xr7.log' && grep -q '30 frames submitted' '$tmp/xr7.log' || { grep '\\[xr\\]' '$tmp/xr7.log'; false; }"
+            label="input_focus = auto: the layer reads the X focus of the game window (logged)"
+            check grep 'focus: the game window' "$tmp/xrgl.log"
             kill $gp 2>/dev/null || true; wait $gp 2>/dev/null || true
         fi
         # one GPU (alternate eyes, on the headless one): settings hint in the log and the overlay

@@ -63,6 +63,10 @@ struct vrdual_shm_header {
 // quad that got the hud_depth shift (Civ V): the view's own HUD (w == 1, also
 // shifted) sits at twice the HUD shift
 #define VRDUAL_SLOT_HUD_TWICE 2u
+// the game's window does not have the X input focus (another window, the
+// desktop, a Wayland client): vrdual-xr sends it no keys or mouse, since
+// uinput would land in the focused window instead
+#define VRDUAL_SLOT_UNFOCUSED 4u
 
 // Cursor image: premultiplied ARGB32 (B, G, R, A bytes), cursor_w * cursor_h
 // pixels at VRDUAL_CURSOR_OFF, cropped to VRDUAL_CURSOR_MAX square.

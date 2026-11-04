@@ -918,6 +918,7 @@ static int run(int argc, char** argv) {
     int live = -1;  // game frames fresh? -1 = not reported yet
     bool blanked = false;
     bool unturned = false;  // newest frame drawn without head turn (VRDUAL_SLOT_UNTURNED)
+    bool unfocused = false;  // the game's window has no input focus (VRDUAL_SLOT_UNFOCUSED): no keys / mouse
     float hud_k = 1;        // the HUD's shift in the picture, in HUD shifts (VRDUAL_SLOT_HUD_TWICE: 2)
     // input: profile follows the game in the frame file (hdr->app)
     std::string input_app = "\x01";
@@ -1120,8 +1121,10 @@ static int run(int argc, char** argv) {
         bool anchored = world || frozen;
         float aspect = float(L.w ? L.w : 16) / float(L.h ? L.h : 9);
         XrPosef base = anchored && have_world ? world_base : XrPosef{{0, 0, 0, 1}, {0, 0, 0}};
-        if (mapper && fed && !(xin.ok && fresh)) uinput.emit(mapper->release());  // stopped feeding it: nothing stays pressed
-        fed = mapper && xin.ok && fresh;
+        // uinput goes to the focused window: only while the game has the focus
+        bool feed = xin.ok && fresh && !unfocused;
+        if (mapper && fed && !feed) uinput.emit(mapper->release());  // stopped feeding it: nothing stays pressed
+        fed = mapper && feed;
         if (xin.ok && fresh) {  // only while a game shows frames: never drive the bare desktop
             ScreenGeom G = screen_geom(scr, base, grab, hfov_now, aspect);
             vrdual::Controls c = xin.read(s, fs.predictedDisplayTime, local_space, view_space, anchored ? local_space : view_space, G, anchored);
@@ -1282,7 +1285,7 @@ static int run(int argc, char** argv) {
                     }
                 }
             }
-            if (mapper) mapper->scene_off = unturned, uinput.emit(mapper->step(c, t_now - t_input));
+            if (mapper && feed) mapper->scene_off = unturned, uinput.emit(mapper->step(c, t_now - t_input));
             if (mapper && mapper->changes != control_changes) {
                 control_changes = mapper->changes;
                 if (mapper->input() != "map" && mapper->input() != "hunt" &&  // editing modes, not ones to start a game in
@@ -1424,6 +1427,9 @@ static int run(int argc, char** argv) {
                 bool was = unturned;  // the layer drew it without head turn (menu, video): cursor and scroll follow
                 uint32_t fl = L.hdr->slot_flags[F % VRDUAL_SLOTS];
                 unturned = fl & VRDUAL_SLOT_UNTURNED;
+                if (bool u = fl & VRDUAL_SLOT_UNFOCUSED; u != unfocused)
+                    fprintf(stderr, "[xr] game window %s: %s\n", u ? "not focused" : "focused", u ? "no keys or mouse sent (they would go to the focused window)" : "input on");
+                unfocused = fl & VRDUAL_SLOT_UNFOCUSED;
                 if (unturned != was) fprintf(stderr, "[xr] frames %s head turn (cursor, scroll keys follow)\n", unturned ? "without" : "with");
                 float hk = fl & VRDUAL_SLOT_HUD_TWICE ? 2.f : 1.f;
                 if (hk != hud_k) fprintf(stderr, "[xr] HUD at %gx the HUD shift (%s): the cursor's HUD depth follows\n", hk,
