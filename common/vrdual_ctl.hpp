@@ -25,8 +25,9 @@ inline std::string ctl_path(const std::string& session) { return shm_dir() + "/v
 
 // Live values from config (creation, and a new game joining an old block).
 inline void ctl_seed(vrdual_ctl& c, const Settings& s) {
-    c.version = 6;
+    c.version = 7;
     c.hunt_mode = 0;  // a hunt belongs to the game it ran on
+    c.hud_mode = 0;   // so does a hidden HUD (a screenshot)
     c.ipd = s.f("ipd");
     c.ipd_near = s.f("ipd_near");
     c.near_dist = s.f("near_dist");
@@ -95,12 +96,14 @@ template <typename F> inline void ctl_write(vrdual_ctl* c, F fn) {
 }
 
 static const char* const kLiveKeys[] = {"ipd", "ipd_near", "near_dist", "far_dist", "anchor", "hfov", "world_scale", "hud_depth"};
-// Live but never saved: the head offset (vrdual-xr writes it every frame).
-static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z", "head_yaw", "head_pitch", "head_roll", "hud_yaw", "hud_pitch", "hud_roll"};
+// Live but never saved: the head offset (vrdual-xr writes it every frame) and
+// hud (show / hide, for screenshots).
+static const char* const kHeadKeys[] = {"head_x", "head_y", "head_z", "head_yaw", "head_pitch", "head_roll", "hud_yaw", "hud_pitch", "hud_roll", "hud"};
 
 inline std::string live_value(const vrdual_ctl& c, const std::string& k) {
     char b[64];
     if (k == "anchor") return vrdual_anchor_name(c.anchor);
+    if (k == "hud") return c.hud_mode == 1 ? "hide" : "show";
     float v = k == "ipd" ? c.ipd : k == "ipd_near" ? c.ipd_near : k == "near_dist" ? c.near_dist
             : k == "far_dist" ? c.far_dist : k == "hfov" ? c.hfov : k == "head_x" ? c.head_x
             : k == "head_y" ? c.head_y : k == "head_z" ? c.head_z : k == "head_yaw" ? c.head_yaw
@@ -134,6 +137,7 @@ inline std::string ctl_save(const vrdual_ctl& v, bool global) {
 //          Vulkan apps that flip y in the projection.
 //          w = clip_dx added to w == 1 vertices (HUD): the NDC disparity of a
 //          point at hud_depth, -P00 * eye_dx / hud_depth (0 = HUD at infinity).
+// uvec4 at +32: hunt_lo, hunt_hi, hunt_mode, hud_mode (live mode only).
 // vec4 #2..#4 (at +48, after the hunt uvec4 at +32; live mode only): rows of
 //          M = D * R^T * D^-1, D = diag(P00, P11, 1), applied to (x, y, w)
 //          after the head offset and before the eye shift: the head rotation

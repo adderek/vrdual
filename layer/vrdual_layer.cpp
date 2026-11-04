@@ -1028,12 +1028,13 @@ static void push_params(EyeBuf& ep) {
     head_only &= !memcmp(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));  // head moves every frame: don't log it
     static_assert(sizeof e.v == 32 * sizeof(float) && sizeof ep.cur == 24 * sizeof(float), "EyeParams: 2 vec4 + 3 vec4 rotation + 3 vec4 HUD rotation, + hunt");
     memcpy(ep.cur, e.v, 8 * sizeof(float));
-    uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, 0};  // read by patched shaders at addr + 32
+    uint32_t hunt[4] = {c.hunt_lo, c.hunt_hi, c.hunt_mode, c.hud_mode};  // read by patched shaders at addr + 32
     memcpy(ep.cur + 8, hunt, sizeof hunt);
     memcpy(ep.cur + 12, e.v + 8, 12 * sizeof(float));  // rotation rows at addr + 48
     memcpy(ep.hud, e.v + 20, sizeof ep.hud);            // HUD rotation rows at addr + 112
     if (ep.ctl_seq != ~0ull && (c.hunt_mode != ep.hunt[2] || c.hunt_lo != ep.hunt[0] || c.hunt_hi != ep.hunt[1]))
         logf("hunt[%s]: mode %u keys %08x..%08x", ep.eye ? "R" : "L", c.hunt_mode, c.hunt_lo, c.hunt_hi);
+    if (ep.ctl_seq != ~0ull && c.hud_mode != ep.hunt[3]) logf("hud[%s]: %s", ep.eye ? "R" : "L", c.hud_mode == 1 ? "hidden" : "shown");
     memcpy(ep.hunt, hunt, sizeof ep.hunt);
     memcpy(ep.last[ep.eye & 1], e.v, 4 * sizeof(float));
     ep.aspect = g_aspect;

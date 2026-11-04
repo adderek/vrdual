@@ -109,6 +109,10 @@ struct vrdual_ctl {
     // head_yaw / pitch / roll; vrdual-xr: the scene's turn clamped to
     // hud_follow (0 = the HUD moves with the head, as before)
     float hud_yaw, hud_pitch, hud_roll;
+    // version 7: 1 = HUD hidden (the w == 1 draws hud_depth moves draw
+    // nothing; not in off-screen passes nor the pass that scales the main
+    // view onto the swapchain), for screenshots; 0 = shown. Live mode only.
+    uint32_t hud_mode;
 };
 
 static inline const char* vrdual_anchor_name(int a) {

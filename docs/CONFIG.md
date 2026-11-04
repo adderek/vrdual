@@ -39,6 +39,13 @@ them too.
   `./vrdual set KEY VALUE`, read back with `./vrdual live`, kept with
   `./vrdual save` (`--global` for `[global]`; `ipd`, `ipd_near`, `near_dist`,
   `far_dist` are personal and only saved with `--global`).
+- `./vrdual set hud hide|show` (live only, never saved, not a config key):
+  hides what `hud_depth` moves (every `w == 1` draw, or with
+  `hud_depth_scope = rules` the `hud` rule shaders), except in off-screen
+  passes and the pass that scales a game's view onto the screen
+  (`auto_noshift`). For screenshots: `./vrdual shot --hud hide|still` sets
+  and restores it. Games whose full-screen post passes are `w == 1` lose
+  those too: then `hud_depth_scope = rules` with the HUD shader's rule.
 
 ## Where the file is
 

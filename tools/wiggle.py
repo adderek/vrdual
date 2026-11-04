@@ -2,6 +2,8 @@
 """Side-by-side PNG -> wiggle GIF (left/right eye alternating, ~7 Hz).
 
   wiggle.py SBS.png OUT.gif [WIDTH]     prints "dx" (alignment shift, px) on stdout
+  wiggle.py SBS.png -                   only prints dx (the right eye's disparity
+                                        at the centre, px; vrdual shot --hud still)
 
 The right eye is shifted horizontally so the centre of the image lines up
 (the dominant object stands still, the rest of the scene rocks), then both
@@ -18,18 +20,27 @@ w, h = sbs.size
 ew0 = w // 2
 L, R = sbs.crop((0, 0, ew0, h)), sbs.crop((ew0, 0, 2 * ew0, h))
 
-# search on a 1/4 grey copy, centre region only (HUD lives at the edges)
+# search on a 1/4 copy, centre region only (HUD lives at the edges); colour
+# kept: same-brightness objects of another colour must not match
 k = 4
-a, b = (e.convert("L").resize((ew0 // k, h // k)) for e in (L, R))
+a, b = (e.resize((ew0 // k, h // k)) for e in (L, R))
 W, H = a.size
 box = (W // 5, H // 5, W * 4 // 5, H * 4 // 5)
 ac = a.crop(box)
 
 def cost(d):
     bc = b.crop((box[0] + d, box[1], box[2] + d, box[3]))
-    return ImageStat.Stat(ImageChops.difference(ac, bc)).mean[0]
+    return sum(ImageStat.Stat(ImageChops.difference(ac, bc)).mean)
 
 dx = min(range(-W // 8, W // 8 + 1), key=cost) * k
+# refine at full resolution around the coarse result
+fa, fb = L, R
+fbox = tuple(c * k for c in box)
+fac = fa.crop(fbox)
+dx = min(range(dx - k, dx + k + 1), key=lambda d: sum(ImageStat.Stat(ImageChops.difference(fac, fb.crop((fbox[0] + d, fbox[1], fbox[2] + d, fbox[3])))).mean))
+if out == "-":
+    print(dx)
+    sys.exit(0)
 ew = ew0 - abs(dx)
 lx, rx = (0, dx) if dx >= 0 else (-dx, 0)
 eyes = (L.crop((lx, 0, lx + ew, h)), R.crop((rx, 0, rx + ew, h)))

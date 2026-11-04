@@ -6,7 +6,7 @@ parallel-camera pair the horizontal disparity (left-eye x minus right-eye x)
 of a post at distance d is  ipd(d) / d * eye_width / 2  pixels, where ipd(d)
 follows the near/far blend from common/vrdual_ctl.hpp.
 
-  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--head-yaw 5] [--hud-depth 1.5] [--hud-yaw 6] [--depth LEFT.pfm]
+  measure_posts.py SNAPSHOT.png --ipd 0.064 [--ipd-near 0.2 --near 0.5 --far 5] [--anchor center] [--head-x 0.05] [--head-yaw 5] [--hud-depth 1.5] [--hud-yaw 6] [--no-hud] [--depth LEFT.pfm]
 
 --anchor also checks where the LEFT eye sees each post: the original camera
 sees post k at x = (1 + (-0.5 + 0.25k)) * eye_width / 2; the left eye adds
@@ -75,6 +75,7 @@ def main():
     ap.add_argument("--head-x", type=float, default=0.0)
     ap.add_argument("--head-yaw", type=float, default=0.0)
     ap.add_argument("--hud-depth", type=float, default=0.0)
+    ap.add_argument("--no-hud", action="store_true")  # hud hidden: the bar must be gone
     ap.add_argument("--hud-yaw", type=float)  # HUD turned: the bar's ends (x = +-0.8) through the turn's homography (P00 = 1)
     ap.add_argument("--depth")
     ap.add_argument("--tol-rel", type=float, default=0.04)
@@ -161,8 +162,11 @@ def main():
         if wl > ew * 0.6 and wr > ew * 0.6:
             break
     else:
-        print("HUD bar not found", file=sys.stderr)
-        return 2
+        print("HUD bar not found" + ("  ok" if a.no_hud else ""), file=sys.stderr)
+        return (0 if ok else 1) if a.no_hud else 2
+    if a.no_hud:
+        print(f"HUD bar row {hy} still drawn  FAIL")
+        return 1
     want = a.ipd / a.hud_depth * ew / 2 if a.hud_depth > 0 else 0.0
     got = hl - hr
     good = abs(got - want) <= max(a.tol_px, a.tol_rel * want)

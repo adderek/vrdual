@@ -32,9 +32,10 @@
 //
 // Shader rules (docs/tasks/shader-rules.md): `hud` gives every vertex the
 // w == 1 treatment, `hide` stores (0,0,0,0) (nothing drawn). Live mode also
-// reads a uvec4 (lo, hi, mode, 0) at addr+32 and, if lo <= key <= hi (key =
-// high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift | 3 hud
-// at runtime: the hunt for a shader's key. A uint at addr+96 (auto_noshift)
+// reads a uvec4 (lo, hi, mode, hud_mode) at addr+32 and, if lo <= key <= hi
+// (key = high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift |
+// 3 hud at runtime: the hunt for a shader's key. hud_mode 1 hides what
+// hud_depth moves (screenshots), except in passes flagged 1 or 2 (below). A uint at addr+96 (auto_noshift)
 // is set by the layer before each render pass: 1 = an off-screen pass
 // (shadow map, baked texture), drawn unshifted; 2 = the swapchain pass of a
 // game whose 3D view is drawn apart (it scales that view onto the swapchain):
@@ -61,7 +62,7 @@ enum : uint32_t {
     OpFunction = 54, OpFunctionEnd = 56, OpVariable = 59, OpLoad = 61, OpStore = 62,
     OpAccessChain = 65, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeExtract = 81,
     OpCompositeInsert = 82, OpBitcast = 124, OpFAdd = 129, OpFSub = 131, OpFMul = 133, OpFDiv = 136,
-    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalOr = 166, OpLogicalAnd = 167, OpIEqual = 170, OpINotEqual = 171,
+    OpCompositeConstruct = 80, OpConstantTrue = 41, OpLogicalOr = 166, OpLogicalAnd = 167, OpLogicalNot = 168, OpIEqual = 170, OpINotEqual = 171,
     OpUGreaterThanEqual = 174, OpULessThanEqual = 178,
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253, OpEmitVertex = 218, OpEmitStreamVertex = 220,
     OpSpecConstantTrue = 48, OpDecorateId = 332, OpDecorateString = 5632, OpMemberDecorateString = 5633,
@@ -507,7 +508,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                     emit(out, OpLoad, {t_uvec4, fv, fq, MemAccessAligned, 16});
                     emit(out, OpCompositeExtract, {t_uint, fx, fv, 0});
                     // unturned: x + eye shift, or for the HUD x + h.w * w (y, z, w as given)
-                    uint32_t xu = fresh();
+                    uint32_t xu = fresh(), hud1 = 0;
                     emit(out, OpFAdd, {t_float, xu, x, off});
                     if (hudpath) {
                         uint32_t is1 = c_true, xn = fresh();
@@ -521,6 +522,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                         }
                         emit(out, OpSelect, {t_float, xn, is1, xw, xu});
                         xu = xn;
+                        if (o.w1_hud || o.hud) hud1 = is1;
                     }
                     uint32_t vu = fresh();
                     emit(out, OpCompositeInsert, {t_vec4, vu, xu, v, 0});
@@ -529,6 +531,16 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                     uint32_t one = fresh();
                     emit(out, OpIEqual, {t_bool, one, fx, c_m[1]});
                     res = sel4(one, v, res);
+                    if (hud1) {  // hud_mode 1 (addr+44): the HUD draws nothing, except off-screen and in the scaling pass
+                        uint32_t hm = fresh(), hid = fresh(), pass = fresh(), np = fresh(), c1 = fresh(), c2 = fresh();
+                        emit(out, OpCompositeExtract, {t_uint, hm, hv, 3});
+                        emit(out, OpIEqual, {t_bool, hid, hm, c_m[1]});
+                        emit(out, OpLogicalOr, {t_bool, pass, untu, one});
+                        emit(out, OpLogicalNot, {t_bool, np, pass});
+                        emit(out, OpLogicalAnd, {t_bool, c1, hid, np});
+                        emit(out, OpLogicalAnd, {t_bool, c2, c1, hud1});
+                        res = sel4(c2, c_zero4, res);
+                    }
                 }
                 const uint32_t alt[4] = {0, c_zero4, v, vh};
                 for (uint32_t k = 3; k >= 1; --k) {

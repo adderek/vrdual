@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
         bool known = false;
         for (auto lk : kLiveKeys) known |= k == lk;
         for (auto lk : kHeadKeys) known |= k == lk;
-        if (!known) { fprintf(stderr, "not a live key: %s (live keys: ipd ipd_near near_dist far_dist anchor hfov world_scale hud_depth head_x head_y head_z head_yaw head_pitch head_roll hud_yaw hud_pitch hud_roll)\n", k.c_str()); return 2; }
+        if (!known) { fprintf(stderr, "not a live key: %s (live keys: ipd ipd_near near_dist far_dist anchor hfov world_scale hud_depth head_x head_y head_z head_yaw head_pitch head_roll hud_yaw hud_pitch hud_roll hud)\n", k.c_str()); return 2; }
         ctl_write(c, [&](vrdual_ctl& x) {
             if (k == "ipd") x.ipd = parse_len(v);
             else if (k == "ipd_near") x.ipd_near = parse_len(v);
@@ -187,6 +187,7 @@ int main(int argc, char** argv) {
             else if (k == "hud_yaw") x.hud_yaw = strtof(v.c_str(), nullptr);
             else if (k == "hud_pitch") x.hud_pitch = strtof(v.c_str(), nullptr);
             else if (k == "hud_roll") x.hud_roll = strtof(v.c_str(), nullptr);
+            else if (k == "hud") x.hud_mode = v == "hide" || v == "1" || v == "off";
         });
         vrdual_ctl now = ctl_read(c);
         if (!now.live) fprintf(stderr, "note: session runs in baked mode, change applies after app restart\n");

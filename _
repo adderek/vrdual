@@ -783,6 +783,67 @@ vrdual_snapshot() {
     vrdual_run --snapshot "$out" --at "${2:-150}" -- "$B/vrdual-cube" --frames 100000
 }
 
+# Stereo screenshot of the running game: SBS png, default
+# screenshots/<app>_<time>.png; stdout = the file (and the GIF with --gif).
+# --hud hide: the HUD (what hud_depth moves) not drawn; --hud still: the HUD at
+# the depth of the picture's centre, so it stands still in a wiggle GIF (the
+# centre's disparity measured with the HUD hidden and hud_depth 0, then
+# hud_depth set to match; in games that scale their view onto the screen
+# with a quad, as Civ V, the quad adds the HUD shift to the view too, the
+# same hud_depth matches there). hud and hud_depth are restored afterwards.
+vrdual_shot() {
+    local out="" hud=show gif=0 args=() live app hd0 hm0 f dx d ew rc=0
+    while (($#)); do
+        case $1 in
+            --hud) hud=$2; shift ;;
+            --gif) gif=1 ;;
+            --session) args+=("$1" "$2"); shift ;;
+            -*) say "shot: unknown option $1"; return 2 ;;
+            *) out=$1 ;;
+        esac
+        shift
+    done
+    case $hud in show|hide|still) ;; *) say "shot: --hud show|hide|still"; return 2 ;; esac
+    pick_shm "${args[@]}"
+    live=$("$B/vrdual-ctl" live "${args[@]}") || return 1
+    app=$(awk '$1 == "app" {print $2}' <<<"$live"); app=${app%.exe}
+    [[ -n $out ]] || out="$VRDUAL_ROOT/screenshots/${app:-game}_$(date +%Y-%m-%d_%H%M%S).png"
+    hd0=$(awk '$1 == "hud_depth" {print $2}' <<<"$live"); hm0=$(awk '$1 == "hud" {print $2}' <<<"$live")
+    _shot_set() { local kv; for kv in "$@"; do "$B/vrdual-ctl" "${args[@]}" set ${kv/=/ } >/dev/null || return 1; done; }
+    _shot_snap() {  # a paired frame 15 frames after now (the live change applied)
+        f=$("$B/vrdual-compositor" "${args[@]}" --snapshot "$1" --at 0 --timeout 30 2>&1 | grep -oE 'frame [0-9]+' | head -1 | cut -d' ' -f2)
+        [[ -n $f ]] && "$B/vrdual-compositor" "${args[@]}" --snapshot "$1" --at $((f + 15)) --timeout 30 >/dev/null 2>&1
+    }
+    trap '_shot_set hud_depth='"$hd0"' hud='"$hm0"'; trap - INT TERM; return 130' INT TERM
+    if [[ $hud == still ]]; then
+        local tmpf="${TMPDIR:-/tmp}/vrdual-shot-$$.png"
+        _shot_set hud=hide hud_depth=0 && _shot_snap "$tmpf" && dx=$(python3 -I "$VRDUAL_ROOT/tools/wiggle.py" "$tmpf" -) &&
+            ew=$(python3 -I -c 'import sys; from PIL import Image; print(Image.open(sys.argv[1]).width // 2)' "$tmpf") || rc=1
+        rm -f "$tmpf"
+        if ((rc == 0)); then
+            # HUD disparity (right - left) = -P00 * ipd / hud_depth * ew / 2 px = dx
+            d=$(awk -v l="$live" -v dx="$dx" -v ew="$ew" 'BEGIN { n = split(l, a, "\n"); for (i = 1; i <= n; i++) { split(a[i], p, " "); v[p[1]] = p[2] }
+                p00 = 1 / sin(v["hfov"] * 3.14159265 / 360) * cos(v["hfov"] * 3.14159265 / 360)
+                if (dx >= 0) print 0; else printf "%.4f\n", p00 * v["ipd"] * ew / (2 * -dx) }')
+            [[ $d == 0 ]] && say "shot: centre at or past infinity (disparity $dx px): HUD at infinity" ||
+                say "shot: centre disparity $dx px (eye width $ew): hud_depth $d m"
+            _shot_set hud=show hud_depth="$d" || rc=1
+        fi
+    elif [[ $hud == hide ]]; then
+        _shot_set hud=hide || rc=1
+    else
+        _shot_set hud=show || rc=1
+    fi
+    ((rc == 0)) && { mkdir -p "${out%/*}"; _shot_snap "$out" || rc=1; }
+    _shot_set hud_depth="$hd0" hud="$hm0"
+    trap - INT TERM
+    ((rc == 0)) || { say "shot: no frame (is a game running in session ${VRDUAL_SESSION:-default}?)"; return 1; }
+    say "wrote $out (hud $hud)"
+    echo "$out"
+    ((gif)) && vrdual_wiggle "$out"
+    return 0
+}
+
 # SBS screenshots -> wiggle GIFs (left/right eye alternating) next to them,
 # for the README. Args: PNG files or dirs (default screenshots/). A PNG that
 # already has a .gif is skipped. stdout: the GIFs written.
@@ -1391,6 +1452,19 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
             set_live hud_depth=1.5
             label="hud_depth 1.5m: HUD disparity, posts unchanged"
             check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hud.png' && $M '$tmp/hud.png' --ipd 0.064 --anchor center --hud-depth 1.5"
+            set_live hud=hide
+            label="hud hide (screenshots): HUD bar gone in both eyes, posts unchanged"
+            check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/nohud.png' && $M '$tmp/nohud.png' --ipd 0.064 --anchor center --no-hud"
+            set_live hud=show
+            # vrdual shot --hud still: HUD at the centre's depth, so a wiggle
+            # (aligned at the centre) leaves it in place; hud_depth restored
+            label="shot --hud still: HUD bar disparity = the centre's (wiggle dx), hud and hud_depth restored"
+            check bash -c "d=\$('$VRDUAL_ROOT/vrdual' shot '$tmp/still.png' --hud still --session $sess 2>'$tmp/still.log' >/dev/null; grep -oE 'hud_depth [0-9.]+ m' '$tmp/still.log' | cut -d' ' -f2) &&
+                [[ -n \$d ]] && $M '$tmp/still.png' --ipd 0.064 --anchor center --hud-depth \$d >/dev/null && dx=\$(python3 -I '$VRDUAL_ROOT/tools/wiggle.py' '$tmp/still.png' -) &&
+                w=\$(python3 -I -c 'import sys; from PIL import Image; print(Image.open(sys.argv[1]).width // 2)' '$tmp/still.png') &&
+                python3 -c 'import sys; d, dx, w = map(float, sys.argv[1:]); h = -0.064 / d * w / 2; sys.exit(abs(h - dx) > 2)' \$d \$dx \$w &&
+                l=\$('$B/vrdual-ctl' --session $sess live) && grep -q '^hud_depth 1.5\$' <<<\"\$l\" && grep -q '^hud show\$' <<<\"\$l\" || { echo \"hud_depth \$d dx \$dx\"; cat '$tmp/still.log'; false; }"
+            set_live hud_depth=0
         fi
         kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
     done
@@ -1516,6 +1590,14 @@ im = Image.open(sys.argv[1]).convert(\"RGB\")
 b = im.tobytes()
 print(sum(1 for i in range(0, len(b), 3) if b[i] > 200 and b[i + 1] < 60 and b[i + 2] > 200))
 ' '$tmp/gq.png') && (( e == 0 )) || { echo \"magenta px: \$e\"; grep 'auto_noshift\|head turn' '$tmp/glv.log'; false; }"
+    # hud hidden: the scaling quad (w == 1 too) still draws the view
+    label="hud hide with the view drawn apart: the scaling quad still drawn"
+    check bash -c "$(declare -f snap set_live); B='$B' sess=$sess; set_live hud=hide && snap '$tmp/gh.png' && set_live hud=show && e=\$(python3 -c '
+import sys
+from PIL import Image
+b = Image.open(sys.argv[1]).convert(\"RGB\").tobytes()
+print(sum(1 for i in range(0, len(b), 3) if b[i] > 200 and b[i + 1] < 60 and b[i + 2] > 200))
+' '$tmp/gh.png') && (( e == 0 )) || { echo \"magenta px: \$e\"; false; }"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     # 4. Under gamescope the 64-bit WSI layer sits above ours and hands down a
     # Wayland surface: the cursor comes from the root of gamescope's X screen.
@@ -1835,6 +1917,11 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
                                   hunt rule KEY MODE saves a rule for the running game;
                                   found keys go into shader_rules (docs/tasks/shader-rules.md)
   snapshot [out.png] [frame]    same, but save one paired SBS frame and exit
+  shot [out.png] [--hud show|hide|still] [--gif] [--session S]
+                                stereo screenshot of the running game: side-by-side png
+                                  (default screenshots/<app>_<time>.png); --hud hide: no HUD,
+                                  still: HUD at the centre's depth (stands still in a wiggle
+                                  GIF); --gif: also the wiggle GIF next to it
   record [out.mp4|DIR] [--seconds N] [--fps N] [--half] [--no-audio] [--session S]
                                 stereo video of the running game: side-by-side mp4 (default
                                   5 s, 60 fps, screenshots/<app>_<time>_LR.mp4, game audio)
@@ -1872,7 +1959,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|map|record|profiles|shaders|perf|intro) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|shot|map|record|profiles|shaders|perf|intro) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;
@@ -1884,7 +1971,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ $# -gt 0 ]]; then vrdual_dispatch "$@"; exit; fi
     vrdual_help
     PS3=$'\nchoose: '
-    select c in build gpus demo calib config snapshot record install view wivrn xr map request report clean quit; do
+    select c in build gpus demo calib config snapshot shot record install view wivrn xr map request report clean quit; do
         [[ $c == quit || -z $c ]] && exit 0
         case $c in request|report) vrdual_dispatch "$c" --open ;; *) vrdual_dispatch "$c" ;; esac
         break
