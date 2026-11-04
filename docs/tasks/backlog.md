@@ -27,7 +27,7 @@
   emitting from a function other than the entry point are patched too (any
   emit in the module).
 - Shadow-map passes: detect depth-only passes with non-swapchain extent and skip.
-  Seen 2026-11-01 in Civilization V (README screenshot `CivV_1.gif`): shadows
+  Seen 2026-11-01 in Civilization V: shadows
   look cast from the camera side. Likely cause: the shadow-map pass (light
   space) is shifted per eye like the camera view, so each eye looks up a
   shadow map offset from its own geometry. Check: `_ hunt find` the shadow
