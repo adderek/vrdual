@@ -3,7 +3,7 @@
 Status per game, dual GPU (2x RX 7900 XTX, host "fractal", see AGENTS.md "Reference test machine") unless noted.
 Launch option for all: `/home/<user>/vrdual/run %command%` (from
 `vrdual install`); `vrdual xr` runs once for all games. Last update
-2026-11-04. Most games here are Steam; Epic/GOG ones go through Heroic
+2026-11-05. Most games here are Steam; Epic/GOG ones go through Heroic
 (setup below), Assassin's Creed Origins through Heroic + Ubisoft Connect.
 
 Status: **works** = stereo in the HMD confirmed; **runs** = renders, stereo
@@ -53,7 +53,7 @@ data of the web page, `site/`).
 | Hospital Tycoon (11590) | Steam: positive | Proton | works | 2026-10-20 | gamescope 1920x1080 (below) | • Works; the system cursor is drawn by `vrdual xr` at the scene's depth (`cursor_depth = auto`).<br>• Crashes on a portrait desktop (NULL read in the game). |
 | LEGO Batman 3 (313690) | Steam: positive | Proton, D3D9 (DXVK) | works | 2026-10-23 | `world_scale` ~0.1 | • Works under gamescope 1920x1080.<br>• The launcher starts `LEGOBatman3.exe` (D3D9) or `LEGOBatman3_DX11.EXE`: a profile saved for one does not apply to the other. |
 | LEGO Builder's Journey | Epic (Heroic): positive | Proton (umu, Proton-CachyOS), Unity, D3D12 (vkd3d-proton) + D3D11 (DXVK), 64-bit | works | 2026-10-29 | gamescope 1920x1080 (Heroic); `world_scale` ≤ 2.4 | • Runs since the layer keeps `VK_KHR_external_memory_fd` visible (B gets plain memory for the shared resource).<br>• 3D effect weak; problems above `world_scale` 2.4. |
-| LEGO Harry Potter 1-4 (21130) | Steam: positive | Proton | works |  | turn off video effects | • A "ghost" with effects on (likely depth of field). |
+| LEGO Harry Potter 1-4 (21130) | Steam: positive | Proton | works | 2026-11-05 | turn off video effects | • A "ghost" with effects on (likely depth of field).<br>• 3D models in the HUD (character heads, the spinning button next to hints) jump in a wiggle GIF; in the headset they look right.<br>• `vrdual shot` with `--hud hide` or `--hud still` gives a black picture: the game's final full-screen pass is `w == 1` and is hidden with the HUD. |
 | LEGO Marvel Super Heroes (249130) | Steam: positive | Proton, D3D9 (DXVK) | works | 2026-10-23 | `world_scale` ~0.1, `hud_depth` ~75 (user config, `[app:LEGOMARVEL.exe]`) | • Works under gamescope 1920x1080. |
 | LIMBO | Epic (Heroic): positive | Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `Limbo.exe`) | works | 2026-10-29 | gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile | • Little to gain: a flat game (2D layers), weak depth. |
 | Little Nightmares (424840) | Steam: positive | Proton, D3D11 (UE4, DXVK) | runs | 2026-10-22 | gamescope 1920x1080 (below); `world_scale = 1` | • Dark, no wow effect.<br>• At `world_scale` 1 the eye shift is almost mono (UE units are cm); higher values make the eyes render differently (screen-space effects?).<br>• Micro stutter in the HMD, smooth on the monitor (gamescope nested refresh 60 Hz).<br>• Segfault at exit in `vkDestroySwapchainKHR` (call into an unloaded library). |

@@ -488,9 +488,11 @@
   "status": "works",
   "settings": "turn off video effects",
   "notes": [
-   "A \"ghost\" with effects on (likely depth of field)."
+   "A \"ghost\" with effects on (likely depth of field).",
+   "3D models in the HUD (character heads, the spinning button next to hints) jump in a wiggle GIF; in the headset they look right.",
+   "`vrdual shot` with `--hud hide` or `--hud still` gives a black picture: the game's final full-screen pass is `w == 1` and is hidden with the HUD."
   ],
-  "tested": "",
+  "tested": "2026-11-05",
   "single": "",
   "alt": "",
   "media": [
