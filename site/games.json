@@ -820,16 +820,20 @@
  {
   "game": "Shadow Warrior (233130)",
   "store": "Steam: not finished",
-  "path": "native GL → Zink",
-  "status": "retest",
-  "settings": "",
+  "path": "native Linux, OpenGL → Zink, 32-bit (`ShadowWarrior.bin.x86`)",
+  "status": "works",
+  "settings": "`world_scale` ~0.02",
   "notes": [
-   "SIGBUS in an old frame export (reverted); window scaling issues. Needs a retest."
+   "Runs; stereo confirmed in the headset."
   ],
-  "tested": "2026-10-19",
+  "tested": "2026-11-05",
   "single": "",
   "alt": "",
-  "media": [],
+  "media": [
+   "ShadowWarriorNew-1.gif",
+   "ShadowWarriorNew-2.gif",
+   "ShadowWarriorNew-3.gif"
+  ],
   "writeup_pending": false
  },
  {
