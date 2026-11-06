@@ -19,5 +19,5 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0  # git describe for the build identity
-      - run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends glslc spirv-tools libxcb1-dev libxcb-xfixes0-dev  # xcb: headers only, the layer dlopens it
+      - run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends glslc spirv-tools libxcb1-dev libxcb-xfixes0-dev libxcb-xtest0-dev  # xcb: headers only, the layer dlopens it
       - run: ./vrdual ci
