@@ -276,3 +276,9 @@
   untested in a real game / the headset. Next: Civ V in gamescope with
   `input_route = auto`, alt-tab, look past the screen edge: the map scrolls,
   the terminal gets nothing; feel the latency against uinput.
+- Flaky: once (2026-11-06, a full selftest right after a game session with
+  `vrdual xr` and WiVRn running) three OpenXR checks on Monado failed (log
+  rotation, session-lost reconnect, watchdog reconnect; Monado logged
+  `u_graphics_sync_unref close failed: Bad file descriptor`); the next run
+  passed unchanged. Watch for a repeat; then look at the Monado start / exit
+  handling in those checks.

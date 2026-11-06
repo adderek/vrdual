@@ -25,7 +25,9 @@ for the OpenXR check, a Monado build in `build/monado/`, else SKIP).
 window on the desktop, two desktop-only checks skip. When you add behaviour, add a
 check to `vrdual_selftest` in `_`. "Done" means selftest passes plus a new
 check for the new behaviour, or a stated reason why it cannot be checked
-automatically.
+automatically. A new check counts only once it was seen failing without the
+change (revert or stash it, run, restore): a check that passes either way
+proves nothing (2026-11-06: a Wine profile check first passed without the fix).
 
 ## File map
 
@@ -63,6 +65,8 @@ automatically.
 | `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), UI translated on all three pages (English in the HTML `data-i18n` or in the scripts `t("key", "English")`, `site/i18n.json` for the rest, `site/i18n.js` language list + browser detection; `vrdual ci` checks every language has every key of the pages and scripts; game data stays English), deployed by `.github/workflows/pages.yml`; public material only, never unpublished notes |
 | `autotest/recipes/*.toml` | per-game test recipes (data only: launch, ini edits, menu steps, checks); runner planned, [docs/tasks/game-autotest.md](docs/tasks/game-autotest.md) |
 | `docs/TESTING.md` | what is tested how (ci, selftest, `--background`, game recipes, headset); why an own game-test runner, not SikuliX |
+| `docs/MY_GAMES.md` | the owner's library per store (VR alternatives, vrdual status by hand): which games can be tested at all |
+| `tools/steam_library.py` | owned Steam games from the local client cache (licences, names, installed, Deck rating), marked tested from games.json; `--untested` |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
 ## Game list and public site
@@ -231,6 +235,36 @@ machine unless a row says otherwise. Read them with its topology in mind:
 - The test app picks MAILBOX so occluded windows don't stall FIFO (Wayland).
 - Measuring parallax: use `--scene calib` (static, known distances). The
   rotating cubes scene is only good for eyeballing.
+- Proton 32-bit games run as `wine-preloader`, 64-bit as `wine64-preloader`:
+  the game's name is the `.exe` in argv[0]. Profiles and `tune` saves go by
+  that `.exe` (`[app:GAME.exe]`); some exes are generic (`Game.exe`: Mafia).
+- `auto_noshift` decisions depend on the game's resolution: at the window's
+  size the swapchain images and the game's own view target must be told
+  apart (Civ V at 1920x1080 had per-eye shadows until 2026-11-06). When a
+  game "worked before", ask which settings changed (resolution, quality).
+
+## Working in sessions
+
+The owner ends sessions on purpose so that each one leaves the project
+easier for the next agent. Do the same:
+
+- **Start**: selftest (or `--background`), read `AGENTS.local.md` (local
+  queues and state live in `*.local.md`), then TODO.md.
+- **Before building a tool or a list, look for the data**: games.json,
+  MY_GAMES.md, profiles/, autotest/recipes/, `tools/`. Reuse, then extend.
+- **Game problem reports: logs first, theories second.** The answer is
+  usually there: `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`
+  (Proton games, layer lines `[vrdual:...]`: app / exe / profile, main view,
+  passes), `~/.var/app/com.valvesoftware.Steam/vrdual/game.log` (native
+  games), `~/.local/state/vrdual/xr.log` (which app vrdual-xr saw, `tune`
+  saves with values and the section they went to). Then reproduce it in a
+  test app (`vrdual-cube` / `vrdual-gltest` options) as a failing check.
+- **Live game tests with the owner**: one next step per message; they run
+  the game, you read the logs.
+- **Ending**: update games.json + GAMES.md, the game's recipe, TODO / task
+  files (what holds now, not a diary), and the local queue; put lessons that
+  will recur into this file (Gotchas: short, general, with the date);
+  `vrdual ci` + selftest; commit only when asked.
 
 ## Conventions
 
