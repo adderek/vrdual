@@ -1,0 +1,24 @@
+# Islands of Insight (Steam 2071500), Proton Experimental, D3D11 (UE5, DXVK,
+# 64-bit). Online shared world: needs the network, a bad regression test.
+# Format: docs/tasks/game-autotest.md. Not yet executable.
+
+[game]
+slug = "islands-of-insight"
+steam = 2071500
+profile = "IslandsofInsight-Win64-Shipping.exe"
+regression = false
+
+# Tested 2026-11-06 in the headset: game at 1600x900 in a 1920x1080 gamescope,
+# default graphics; world_scale ~4.6, screen_fov ~58.
+# Known defect: the crosshair is doubled (needs a noshift / hud shader rule).
+# TODO settings file: UE GameUserSettings.ini in the prefix (path not found yet)
+
+[[step]]
+wait_frames = 1800          # TODO template: in the world, crosshair visible
+[[step]]
+check = "eyes_differ"
+[[step]]
+check = "region_agrees"     # crosshair: must be the same in both eyes once fixed
+region = [0.48, 0.47, 0.04, 0.06]
+[[step]]
+snapshot = "islands-of-insight"

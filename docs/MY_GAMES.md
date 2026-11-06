@@ -42,7 +42,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Deus Ex: Human Revolution |  |  |  |
 | Mafia II (Classic) |  |  |  |
 | Mass Effect (2007) |  |  |  |
-| Sid Meier's Civilization V |  |  |  |
+| Sid Meier's Civilization V |  |  | works |
 | Dying Light |  |  |  |
 | Youtubers Life |  |  |  |
 | Portal 2 | Portal 2 VR mod (Flat2VR, Gistix, GitHub; early) | Win | works |
@@ -73,7 +73,7 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Brothers - A Tale of Two Sons |  |  |  |
 | LEGO® Batman™ 3: Beyond Gotham |  |  |  |
 | Dishonored RHCP |  |  |  |
-| Alan Wake's American Nightmare |  |  |  |
+| Alan Wake's American Nightmare |  |  | works |
 | Shadow of the Tomb Raider |  |  |  |
 | Sniper Elite V2 |  |  |  |
 | The LEGO® Movie - Videogame |  |  |  |
@@ -188,12 +188,12 @@ runtime (WiVRn, Monado; untested here). vrdual itself is Linux.
 | Sid Meier's Civilization III: Complete |  |  |  |
 | Half-Life | Half-Life: VR (community mod) | Win |  |
 | Doc Clock: The Toasted Sandwich of Time |  |  |  |
-| Mafia |  |  |  |
+| Mafia |  |  | works |
 | Alpha Protocol |  |  |  |
 | Angry Birds VR: Isle of Pigs | VR-only game | Win, Quest |  |
 | The Elder Scrolls V: Skyrim VR | VR edition of Skyrim | Win |  |
 | GTR Evolution |  |  |  |
-| Islands of Insight | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win |  |
+| Islands of Insight | UE4/UE5: UEVR injector (generic; per-game profiles on the Flat2VR Discord / uevr-profiles.com) | Win | works |
 | Moss II VR | VR-only game | Win, Quest |  |
 | ProjectM : Dream |  |  |  |
 | The Ship |  |  |  |

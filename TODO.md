@@ -105,7 +105,17 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     - depth export done 2026-11-02 (`depth_export = 1`, not in mirror mode
       yet); next: DIBR of the missing eye in `vrdual-xr`.
     - off-screen passes (shadow maps, baked textures): `auto_noshift = 1`
-      done 2026-11-02 (backlog "Shadow-map passes"); to confirm in Civ V.
+      done 2026-11-02 (backlog "Shadow-map passes"); confirmed in Civ V
+      2026-11-06, also at the swapchain's size (1920x1080).
+23. [Automated game tests](docs/tasks/game-autotest.md) (owner's request
+    2026-11-06): per-game recipes as data (`autotest/recipes/`), own runner
+    on frame export + the layer's input ring inside headless gamescope (not
+    SikuliX: recipes would be code); recipes from contributors must not be
+    able to reach the machine. First: validator with hostile-recipe tests.
+24. [docs/ as a knowledge base](docs/tasks/docs-knowledge-base.md) (owner's
+    observation 2026-11-06): analysis brief for another agent: find by
+    question, one fact one place, current vs history, decision records,
+    ci checks on links / index. Proposal first, ask before moving files.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

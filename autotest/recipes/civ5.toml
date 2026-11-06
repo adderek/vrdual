@@ -1,0 +1,44 @@
+# Civilization V (Steam 8930, native Linux port by Aspyr, GL -> Zink).
+# Recipe format and security rules: docs/tasks/game-autotest.md. Not yet
+# executable (no runner); until then the written test instruction.
+
+[game]
+slug = "civ5"
+steam = 8930
+profile = "civ5"
+regression = true
+
+# Two configurations tested 2026-11-06, both confirmed in the headset.
+# Run A: game resolution 1366x768 in a 1920x1080 gamescope, default graphics.
+# Run B: 1920x1080 in a 1920x1080 gamescope, most graphics settings high
+#        (view and unit shadow map at the swapchain's size).
+[[config]]
+root = "aspyr:Sid Meier's Civilization 5"
+file = "GraphicsSettingsDX9.ini"
+variant = "B"
+set = { WindowResX = "1920", WindowResY = "1080", ShadowLevel = "3", TerrainShadowQuality = "3", TerrainDetailLevel = "3", OverlayLevel = "2" }
+# TODO run A: WindowResX/Y = 1366/768 and the defaults of the other keys (record them on a fresh install)
+
+[[config]]
+root = "aspyr:Sid Meier's Civilization 5"
+file = "config.ini"
+set = { MaxSimultaneousThreads = "8" }
+
+# Start: vrdual intro off civ5 (once, by the user; the runner never renames files).
+# TODO templates: main menu, "Load game", a saved game near units (local save, never from a PR)
+[[step]]
+wait_image = "civ5/main-menu.png"
+timeout = 180
+
+[[step]]
+wait_frames = 600
+
+[[step]]
+check = "eyes_differ"
+
+[[step]]
+check = "region_agrees"     # unit shadows: same in both eyes (auto_noshift)
+# TODO region of a unit's shadow in the chosen save
+
+[[step]]
+snapshot = "civ5"

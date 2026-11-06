@@ -1,0 +1,19 @@
+# Alan Wake's American Nightmare (Steam 202750), Proton Experimental, D3D9
+# (DXVK, 32-bit). Format: docs/tasks/game-autotest.md. Not yet executable.
+
+[game]
+slug = "alan-wakes-american-nightmare"
+steam = 202750
+profile = "alan_wakes_american_nightmare.exe"   # [app:...] in the user's config
+regression = false
+
+# Tested 2026-11-06 in the headset: 1920x1080 in a 1920x1080 gamescope,
+# default graphics settings; world_scale ~0.23 (tuned with input = tune).
+# TODO where the game keeps its settings (prefix AppData?), record the keys
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu instead
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "alan-wakes-american-nightmare"

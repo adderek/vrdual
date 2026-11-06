@@ -10,6 +10,15 @@ Vulkan-Headers submodule; GitHub's "Source code" archives lack it).
 First public pre-release. Linux only; tested on one machine (2x RX 7900 XTX,
 Mesa RADV, Flatpak Steam, Meta Quest 3S via WiVRn).
 
+- `auto_noshift` also at the swapchain's size: a game drawing its view into
+  its own target (Civ V at 1920x1080) gets its same-size shadow map
+  unshifted; pass targets are images (several framebuffers of one image
+  count once).
+- `vrdual selftest --background`: inside a headless gamescope, no test
+  window on the desktop.
+- Wine / Proton games get their profile by the game's `.exe`; an
+  `[app:wine-preloader]` section no longer catches every 32-bit game
+  (move its values to `[app:GAME.exe]`).
 - App-unaware stereo: a Vulkan layer patches vertex shaders to shift each
   eye; no game changes. Vulkan games, OpenGL through Zink, Proton/DXVK/vkd3d.
 - Two identical GPUs: mirror mode, the second GPU renders the other eye in

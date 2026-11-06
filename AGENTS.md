@@ -20,7 +20,9 @@ Zen Bound 2, per-eye parallax confirmed by the user).
 
 `./vrdual selftest` must pass before you start and after every change (exit
 0). It takes ~1 min and opens a few small windows (needs `make lib32` deps and,
-for the OpenXR check, a Monado build in `build/monado/`, else SKIP). When you add behaviour, add a
+for the OpenXR check, a Monado build in `build/monado/`, else SKIP).
+`./vrdual selftest --background` runs it all inside a headless gamescope: no
+window on the desktop, two desktop-only checks skip. When you add behaviour, add a
 check to `vrdual_selftest` in `_`. "Done" means selftest passes plus a new
 check for the new behaviour, or a stated reason why it cannot be checked
 automatically.
@@ -59,6 +61,8 @@ automatically.
 | `tools/build_info.sh`, `common/vrdual_version.h` | build identity (version from `git describe`, ISO build time, machine) compiled into every binary; `vrdual version` |
 | `site/games.json` | per-game status and settings (update after testing a game); `tools/gen_games.py` writes the table in `docs/GAMES.md` from it (`vrdual ci` checks) |
 | `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), UI translated on all three pages (English in the HTML `data-i18n` or in the scripts `t("key", "English")`, `site/i18n.json` for the rest, `site/i18n.js` language list + browser detection; `vrdual ci` checks every language has every key of the pages and scripts; game data stays English), deployed by `.github/workflows/pages.yml`; public material only, never unpublished notes |
+| `autotest/recipes/*.toml` | per-game test recipes (data only: launch, ini edits, menu steps, checks); runner planned, [docs/tasks/game-autotest.md](docs/tasks/game-autotest.md) |
+| `docs/TESTING.md` | what is tested how (ci, selftest, `--background`, game recipes, headset); why an own game-test runner, not SikuliX |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
 ## Game list and public site
@@ -74,6 +78,9 @@ After testing a game (or learning something about it), in the same commit:
    the last test; `gen_games.py --check` refuses dates inside notes).
    Public material only: no unpublished notes, local paths or GPU addresses.
    Media go to `screenshots/` (tracked) and are listed in `media`.
+   Also write or update `autotest/recipes/<slug>.toml`: how the game starts,
+   the settings used (ini keys or menu path), the scene, what to check
+   (format and security rules: [docs/tasks/game-autotest.md](docs/tasks/game-autotest.md)).
 2. `tools/gen_games.py` rewrites the table in `docs/GAMES.md`; update its
    "Last update" date by hand.
 3. `./vrdual ci` (validates games.json, the table and site translations; new

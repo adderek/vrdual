@@ -1,0 +1,20 @@
+# Mafia (2002) (Steam 40990), Proton Experimental, D3D8 via wined3d -> GL -> Zink
+# (32-bit Game.exe). Format: docs/tasks/game-autotest.md. Not yet executable.
+
+[game]
+slug = "mafia"
+steam = 40990
+profile = "Game.exe"        # generic exe name: [app:Game.exe] also matches other games
+regression = false
+
+# Tested 2026-11-06 in the headset: 1920x1080 in a 1920x1080 gamescope,
+# default graphics settings; world_scale ~0.23, depth looked right.
+# Settings: the game's own setup.exe (Mafia/setup.exe) writes them.
+# TODO find the file setup.exe writes (registry in the prefix?) and record the keys
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu, then "New game"
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "mafia"

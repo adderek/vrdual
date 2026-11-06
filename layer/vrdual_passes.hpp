@@ -25,8 +25,14 @@
 // When the main view is not the swapchain's size, its target is known too:
 // the one (framebuffer, or first attachment view) of that size with the most
 // shader keys. A pass of the same size into another target is off-screen as
-// well (Civ V draws its unit shadow map at 1368x768). Not when the main view
-// is the swapchain's size: there its targets rotate with the swapchain images.
+// well (Civ V draws its unit shadow map at 1368x768). A target is an image
+// (a pass's first colour attachment; framebuffers and views resolved, so
+// several framebuffers of one image count as one). At the swapchain's size
+// the swapchain images count as one target: if another target of that size
+// has more shader keys, the game draws its view apart there (Civ V at
+// 1920x1080 in a 1920x1080 window) and the rule above applies, the swapchain
+// passes being the view's composite; otherwise (the view drawn straight into
+// the swapchain) no target is told apart.
 // Before each render pass the layer writes the decision into the param
 // buffer (addr+96, vkCmdUpdateBuffer between two barriers, on both mirror
 // devices); patched shaders read it and skip the shift. The pass decides,
@@ -83,7 +89,12 @@ struct Track {
     std::unordered_map<uint32_t, std::vector<uint64_t>> key_use;  // key -> (extent << 1 | depth only) seen
     struct Tgt { uint64_t ext; std::vector<uint32_t> keys; };
     std::unordered_map<uint64_t, Tgt> tgt;  // pass target -> its extent, shader keys drawn there
-    std::atomic<uint64_t> main_tgt{0};      // the main view's target (0 = none: main view is the swapchain's size)
+    std::atomic<uint64_t> main_tgt{0};      // the main view's target (0 = none: not drawn apart from the swapchain)
+    // auto_noshift targets: views / framebuffers -> image; the swapchains' images
+    std::unordered_map<VkImageView, VkImage> aview;
+    std::unordered_map<VkFramebuffer, VkImage> afb;
+    std::unordered_map<VkSwapchainKHR, std::vector<VkImage>> scs;
+    std::unordered_set<uint64_t> sc_img;
     std::set<uint64_t> off_tgt;             // off-screen targets of the main view's size seen (log new ones)
     // The game has a main view apart from the swapchain (Civ V: 3D into its
     // own target): frames without a pass into it (menu, video) get no head
@@ -168,6 +179,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateImageView(VkDevice dev, const Vk
     if (r == VK_SUCCESS) {
         std::lock_guard<std::mutex> l(t->m);
         if (t->img.count(ci->image)) t->view[*out] = ci->image;
+        if (t->autons && t->aview.size() < 65536) t->aview[*out] = ci->image;
     }
     return r;
 }
@@ -176,6 +188,7 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroyImageView(VkDevice dev, VkImageView
     {
         std::lock_guard<std::mutex> l(t->m);
         t->view.erase(v);
+        t->aview.erase(v);
     }
     t->next.DestroyImageView(dev, v, a);
 }
@@ -221,8 +234,15 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateFramebuffer(VkDevice dev, const 
     if (r != VK_SUCCESS) return r;
     std::lock_guard<std::mutex> l(t->m);
     auto rp = t->rp.find(ci->renderPass);
-    if (rp == t->rp.end() || rp->second.att == UINT32_MAX) return r;
     bool imageless = ci->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
+    if (t->autons && !imageless && t->afb.size() < 65536)  // auto_noshift target: the first attachment that is not the depth one
+        for (uint32_t i = 0; i < ci->attachmentCount; ++i)
+            if (rp == t->rp.end() || i != rp->second.att) {
+                auto v = t->aview.find(ci->pAttachments[i]);
+                if (v != t->aview.end()) t->afb[*out] = v->second;
+                break;
+            }
+    if (rp == t->rp.end() || rp->second.att == UINT32_MAX) return r;
     VkImage img = VK_NULL_HANDLE;
     if (!imageless && rp->second.att < ci->attachmentCount) {
         auto v = t->view.find(ci->pAttachments[rp->second.att]);
@@ -236,6 +256,7 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroyFramebuffer(VkDevice dev, VkFramebu
     {
         std::lock_guard<std::mutex> l(t->m);
         t->fb.erase(fb);
+        t->afb.erase(fb);
     }
     t->next.DestroyFramebuffer(dev, fb, a);
 }
@@ -314,9 +335,11 @@ static int begin_pass(Track* t, VkCommandBuffer cb, bool depth_only, VkExtent2D 
     note_draw(t, c);
     uint64_t main = t->main.load(), sc = t->sc.load(), mt = t->main_tgt.load();
     bool off = main && c.ext != main && c.ext != sc;
-    bool off_t = mt && c.ext == main && target && target != mt;  // same size as the main view, another target
-    bool comp = main && main != sc && c.ext == sc;
-    if (main && main != sc && c.ext == main && !off_t) t->main_passes++;
+    bool to_sc = t->sc_img.count(target) > 0;
+    bool off_t = mt && c.ext == main && target && target != mt && !to_sc;  // same size as the main view, another target
+    bool apart = main && (main != sc || mt);  // the view drawn apart from the swapchain
+    bool comp = apart && c.ext == sc && (main != sc || to_sc);
+    if (apart && c.ext == main && !off_t && !comp) t->main_passes++;
     if (comp) t->comp_passes++;
     if (comp && !t->comp_logged) {
         t->comp_logged = true;
@@ -358,7 +381,9 @@ static void use(Track& t, VkImage img, VkImageLayout layout) {
 static int begin_rp(Track* t, VkCommandBuffer cb, const VkRenderPassBeginInfo* bi) {
     std::lock_guard<std::mutex> l(t->m);
     auto rp = t->rp.find(bi->renderPass);
-    int flag = begin_pass(t, cb, rp != t->rp.end() && rp->second.depth_only, bi->renderArea.extent, (uint64_t)bi->framebuffer);
+    auto fi = t->afb.find(bi->framebuffer);
+    uint64_t tg = fi != t->afb.end() ? (uint64_t)fi->second : (uint64_t)bi->framebuffer;
+    int flag = begin_pass(t, cb, rp != t->rp.end() && rp->second.depth_only, bi->renderArea.extent, tg);
     if (rp == t->rp.end() || !t->depth) return flag;
     auto fb = t->fb.find(bi->framebuffer);
     if (fb == t->fb.end()) return flag;
@@ -414,6 +439,8 @@ static VKAPI_ATTR void VKAPI_CALL vrd_CmdBeginRendering(VkCommandBuffer cb, cons
             uint64_t tg = 0;
             for (uint32_t i = 0; i < ri->colorAttachmentCount && !tg; ++i) tg = (uint64_t)ri->pColorAttachments[i].imageView;
             if (!tg && depth) tg = (uint64_t)ri->pDepthAttachment->imageView;
+            auto vi = t->aview.find((VkImageView)tg);
+            if (vi != t->aview.end()) tg = (uint64_t)vi->second;
             flag = begin_pass(t, cb, !colour, ri->renderArea.extent, tg);
         }
         if (ri->flags & VK_RENDERING_RESUMING_BIT) flag = -1;  // nothing may sit between a suspended pass and its resume
@@ -480,10 +507,8 @@ static PFN_vkVoidFunction intercept(const char* name, const Track* t) {
     I(CmdBeginRenderPass); I(CmdBeginRenderPass2); I(CmdEndRenderPass); I(CmdEndRenderPass2);
     I(CmdBeginRendering); I(CmdEndRendering);
     if (t->autons) { I(CmdBindPipeline); }
-    if (t->depth) {
-        I(CreateImage); I(DestroyImage); I(CreateImageView); I(DestroyImageView); I(CreateFramebuffer); I(DestroyFramebuffer);
-        I(CmdPipelineBarrier); I(CmdPipelineBarrier2);
-    }
+    if (t->depth || t->autons) { I(CreateImageView); I(DestroyImageView); I(CreateFramebuffer); I(DestroyFramebuffer); }
+    if (t->depth) { I(CreateImage); I(DestroyImage); I(CmdPipelineBarrier); I(CmdPipelineBarrier2); }
 #undef I
     return nullptr;
 }
@@ -528,6 +553,22 @@ static void log_passes(Track& t) {
          t.pipe_key.size(), t.mod_key.size());
 }
 
+// The swapchains' images: passes into them are the swapchain's, whatever the view.
+static void note_swapchain(Track* t, VkSwapchainKHR sc, const std::vector<VkImage>& imgs) {
+    if (!t || !t->autons) return;
+    std::lock_guard<std::mutex> l(t->m);
+    t->scs[sc] = imgs;
+    for (VkImage i : imgs) t->sc_img.insert((uint64_t)i);
+}
+static void forget_swapchain(Track* t, VkSwapchainKHR sc) {
+    if (!t || !t->autons) return;
+    std::lock_guard<std::mutex> l(t->m);
+    auto it = t->scs.find(sc);
+    if (it == t->scs.end()) return;
+    for (VkImage i : it->second) t->sc_img.erase((uint64_t)i), t->tgt.erase((uint64_t)i);
+    t->scs.erase(it);
+}
+
 // auto_noshift, at present: the main view = the colour extent with the most
 // shader keys bound (the swapchain's on a tie); begin_pass flags the rest.
 static void refresh_auto(Track& t, VkExtent2D sc) {
@@ -536,7 +577,7 @@ static void refresh_auto(Track& t, VkExtent2D sc) {
     ++t.presents;
     {
         uint64_t m = t.main.load();
-        bool apart = m && m != ext_key(sc);
+        bool apart = m && (m != ext_key(sc) || t.main_tgt.load());
         t.comp_on = t.comp_passes.exchange(0) > 0;
         bool on = apart ? t.main_passes.exchange(0) > 0 : !t.need_view;
         if (!apart) t.main_passes = 0;
@@ -570,12 +611,18 @@ static void refresh_auto(Track& t, VkExtent2D sc) {
     }
     uint64_t mt = 0;
     size_t keys = 0;
-    if (main != sce)
+    if (main == sce) {  // the swapchain images as one target: the one to beat
+        std::set<uint32_t> u;
         for (auto& kv : t.tgt)
-            if (kv.second.ext == main && kv.second.keys.size() > keys) keys = kv.second.keys.size(), mt = kv.first;
+            if (kv.second.ext == main && t.sc_img.count(kv.first)) u.insert(kv.second.keys.begin(), kv.second.keys.end());
+        keys = u.size();
+    }
+    for (auto& kv : t.tgt)
+        if (kv.second.ext == main && !t.sc_img.count(kv.first) && kv.second.keys.size() > keys) keys = kv.second.keys.size(), mt = kv.first;
     if (mt != t.main_tgt.exchange(mt)) {
         if (mt) logf("auto_noshift: main view target %llx (%zu shader keys); other targets of its size not shifted", (unsigned long long)mt, keys);
         t.off_tgt.clear();
+        if (t.trace_at && t.presents > t.trace_at + 1) t.trace_at = t.presents + 1;  // pass_trace: the frame after each change too
     }
 }
 

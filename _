@@ -984,6 +984,15 @@ vrdual_ci() {
 # Automated verification; exit 0 = everything passed. Opens two small windows
 # for ~20 s (one per GPU). Uses an empty temporary config, session "selftest".
 vrdual_selftest() {
+    # --background: everything inside a headless gamescope (own X server): no
+    # test window on the desktop. Two checks need the desktop and skip there.
+    if [[ ${1:-} == --background && -z ${VRDUAL_SELFTEST_BG:-} ]]; then
+        command -v gamescope >/dev/null || { say "selftest --background needs gamescope"; return 1; }
+        local rc; rc=$(mktemp)
+        gamescope --backend headless -w 1280 -h 800 -- env -u WAYLAND_DISPLAY VRDUAL_SELFTEST_BG=1 bash -c '"$0" selftest; echo $? >"$1"' "$VRDUAL_ROOT/vrdual" "$rc"
+        local e; e=$(cat "$rc" 2>/dev/null); rm -f "$rc"
+        return "${e:-1}"
+    fi
     local tmp fails=0 sess=selftest
     tmp=$(mktemp -d)
     _VRDUAL_SELFTEST_TMP=$tmp
@@ -1205,6 +1214,16 @@ sys.exit('gap %d after the stall, still %d frames apart' % (gap0, l - r))"
     check bash -c "env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=both \
         bash -c 'exec -a \"C:\\\\Ubisoft\\\\upc.exe\" \"\$0\" \"\$@\"' '$tmp/wine64-preloader' --frames 30 --size 320x240 --title 'selftest stereo off' >'$tmp/off.log' 2>&1 &&
         grep -q \"exe='wine64-preloader upc.exe': stereo = 0, layer passive\" '$tmp/off.log' && ! grep -q 'twin device' '$tmp/off.log' && ! ls /dev/shm/vrdual-$sess-0 2>/dev/null"
+
+    # An [app:wine-preloader] section must not catch every 32-bit Wine game (tuning saved there hit all of them)
+    label="Wine: profile by the game's .exe, never by the shared preloader name"
+    rm -f /dev/shm/vrdual-$sess-*
+    cp "$B/vrdual-cube" "$tmp/wine-preloader"
+    printf '[app:wine-preloader]\nworld_scale = 7\n' >"$tmp/wine.conf"
+    check bash -c "env VRDUAL_CONFIG='$tmp/wine.conf' VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess VRDUAL_EYE=left \
+        bash -c 'exec -a \"C:\\\\Games\\\\Game.exe\" \"\$0\" \"\$@\"' '$tmp/wine-preloader' --frames 5 --size 320x240 --title 'selftest wine profile' >'$tmp/wine.log' 2>&1;
+        grep -q \"exe='wine-preloader Game.exe' profile=''\" '$tmp/wine.log' && grep -q 'world_scale=1 ' '$tmp/wine.log'"
+    rm -f /dev/shm/vrdual-$sess-*
 
     # 3. Mirror mode: ONE process, the app sees one GPU, the layer replays on the other.
     rm -f /dev/shm/vrdual-$sess-*
@@ -1568,7 +1587,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     # by target, the shadow FBO is not shifted, the 3D view still is.
     rm -f /dev/shm/vrdual-$sess-*
     env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
-        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 VRDUAL_INPUT_FOCUS=auto "$B/vrdual-gltest" --shadow --view 800 600 --view-quad --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 VRDUAL_HEAD_LOOK_MENUS=0 VRDUAL_INPUT_FOCUS=auto VRDUAL_PASS_TRACE=1 "$B/vrdual-gltest" --shadow --view 800 600 --view-quad --title "selftest zink view" >"$tmp/glv.log" 2>&1 &
     local glv=$!
     label="auto_noshift by target: shadow FBO of the 3D view's size (800x600) not shifted, the view itself shifted"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/glv.log' && break; sleep 0.1; done
@@ -1580,6 +1599,9 @@ im = Image.open(sys.argv[1]).convert(\"RGB\"); W = im.width // 2
 print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -1) for x0 in (0, W)),
       int(im.crop((0, 300, W, im.height)).tobytes() != im.crop((W, 300, 2 * W, im.height)).tobytes()))
 ' '$tmp/gv.png') && read l r d <<<\"\$e\" && (( l == r && l >= 55 && l <= 67 && d == 1 )) || { echo \"FBO edge L R, view differs: \$e\"; grep auto_noshift '$tmp/glv.log'; false; }"
+    label="pass_trace: one frame traced again after the main view's target is picked (pass_trace = 1, pick at present 30)"
+    check bash -c "grep -q 'pass_trace: present 1 (tracing from here)' '$tmp/glv.log' &&
+        grep -qE 'pass_trace: present [0-9]+ \(tracing from here\)' <(sed -n '/auto_noshift: main view target/,\$p' '$tmp/glv.log') || { grep -E 'pass_trace: present|main view target' '$tmp/glv.log'; false; }"
     # a "menu" (no pass into the main view): no head turn there, back with the view
     label="head_look_menus = 0: head turn off before the 3D view exists and in a menu frame (frames flagged unturned for vrdual-xr), on while the main view is drawn"
     check bash -c "kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn off: no pass into a main view apart' '$tmp/glv.log' && break; sleep 0.1; done
@@ -1589,7 +1611,8 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
         kill -USR1 $glv; for i in \$(seq 100); do grep -q 'head turn on: the main view 800x600 is drawn' '$tmp/glv.log' && break; sleep 0.1; done
         (( \$(grep -c 'head turn off' '$tmp/glv.log') >= 2 && \$(grep -c 'head turn on' '$tmp/glv.log') >= 2 )) || { grep 'head turn\|main view' '$tmp/glv.log'; false; }"
     label="input_focus = auto: the layer reads the X focus of the game window (logged)"
-    check grep 'focus: the game window' "$tmp/glv.log"
+    if [[ -n ${VRDUAL_SELFTEST_BG:-} ]]; then say "SKIP  $label (--background: no window manager gives focus)"
+    else check grep 'focus: the game window' "$tmp/glv.log"; fi
     # the view scaled onto the window by a w == 1 quad (Civ V): turned once, in
     # the view; the quad itself not, so the window's magenta never shows
     label="head turn with the view drawn apart: the swapchain pass (view scaled by a quad) shifted but not turned again; frames flagged HUD twice"
@@ -1611,10 +1634,27 @@ b = Image.open(sys.argv[1]).convert(\"RGB\").tobytes()
 print(sum(1 for i in range(0, len(b), 3) if b[i] > 200 and b[i + 1] < 60 and b[i + 2] > 200))
 ' '$tmp/gh.png') && (( e == 0 )) || { echo \"magenta px: \$e\"; false; }"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
+    # The same at the swapchain's size (Civ V at 1920x1080 in a 1920x1080
+    # window): the view's own target, the shadow FBO another one of the same
+    # size, the window's images rotate. Told apart by target all the same.
+    rm -f /dev/shm/vrdual-$sess-*
+    env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
+        VRDUAL_SESSION=$sess VRDUAL_EYE=both VRDUAL_AUTO_NOSHIFT=1 "$B/vrdual-gltest" --shadow --view 960 720 --view-quad --title "selftest zink view sc" >"$tmp/gls.log" 2>&1 &
+    label="auto_noshift by target, view at the swapchain's size: shadow FBO of that size not shifted, the view itself shifted"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; for i in \$(seq 100); do grep -q 'not the main view' '$tmp/gls.log' && break; sleep 0.1; done
+        grep -q 'auto_noshift: main view target' '$tmp/gls.log' && grep -q 'auto_noshift: pass 960x720 into target .*not the main view' '$tmp/gls.log' && snap '$tmp/gs2.png' && e=\$(python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert(\"RGB\"); W = im.width // 2
+print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -1) for x0 in (0, W)),
+      int(im.crop((0, 300, W, im.height)).tobytes() != im.crop((W, 300, 2 * W, im.height)).tobytes()))
+' '$tmp/gs2.png') && read l r d <<<\"\$e\" && (( l == r && l >= 55 && l <= 67 && d == 1 )) || { echo \"FBO edge L R, view differs: \$e\"; grep auto_noshift '$tmp/gls.log'; false; }"
+    kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
     # 4. Under gamescope the 64-bit WSI layer sits above ours and hands down a
     # Wayland surface: the cursor comes from the root of gamescope's X screen.
     # Here: a Wayland window, gamescope's env var without its layer, XWayland's root.
     rm -f /dev/shm/vrdual-$sess-*
+    if [[ -n ${VRDUAL_SELFTEST_BG:-} ]]; then say "SKIP  cursor under gamescope (--background: no Wayland display)"; else
     env SDL_VIDEO_DRIVER=wayland GAMESCOPE_WAYLAND_DISPLAY=vrdual-selftest VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
         VRDUAL_SESSION=$sess VRDUAL_EYE=both "$B/vrdual-cube" --title "selftest gamescope cursor" >"$tmp/gsc.log" 2>&1 &
     label="cursor under gamescope (no X window for the surface): root window, image in the frame header"
@@ -1622,6 +1662,7 @@ print(sum(1 for i in range(0, len(b), 3) if b[i] > 200 and b[i + 1] < 60 and b[i
         c=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' --cursor /dev/shm/vrdual-$sess-0) &&
         set -- \$c && [[ \$3 -gt 0 && \$4 -gt 0 ]] || { echo \"cursor: \$c\"; grep -i 'cursor\\|surface' '$tmp/gsc.log'; false; }"
     kill $(jobs -p) 2>/dev/null; wait 2>/dev/null
+    fi
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like
     # Alice): the game must keep rendering fresh data (its shadowed uploads
     # still reach A), only the right eye freezes. gltest animates its texture.
@@ -2019,7 +2060,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   request [GAME] [--open]       ask for a game: GitHub Discussions URLs (search, prefilled new)
   report [GAME] [--open]        how a game runs: prefilled GitHub issue form URL; you submit it
                                   GAME defaults to the last one played; nothing is sent by vrdual
-  selftest                      automated verification (~20 s, two small windows); exit 0 = pass
+  selftest [--background]       automated verification (~1 min, small windows); exit 0 = pass
+                                  --background: inside a headless gamescope, no window on the desktop (2 checks skip)
   ci                            selftest's GPU-free checks only (seconds, no windows; GitHub CI runs it)
 
 Settings: config file, overridable per run by VRDUAL_<KEY> env (VRDUAL_IPD=0.066 ...).

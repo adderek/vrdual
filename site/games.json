@@ -30,6 +30,22 @@
   "writeup_pending": false
  },
  {
+  "game": "Alan Wake's American Nightmare (202750)",
+  "store": "Steam: positive",
+  "path": "Proton Experimental, D3D9 (DXVK, 32-bit `alan_wakes_american_nightmare.exe`)",
+  "status": "works",
+  "settings": "`[app:alan_wakes_american_nightmare.exe]` `world_scale` ~0.23 (tuned in the headset), `hfov` 90.4; gamescope 1920x1080",
+  "notes": [
+   "Works in the headset.",
+   "Depth is weak at `world_scale` ~0.016; ~0.23 looks right."
+  ],
+  "tested": "2026-11-06",
+  "single": "",
+  "alt": "",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
   "game": "Alice: Madness Returns (19680)",
   "store": "Steam: positive",
   "path": "Proton, D3D9 (UE3, DXVK, 32-bit)",
@@ -51,7 +67,7 @@
   "store": "Epic (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), D3D11 (DXVK, 32-bit `AI.exe`)",
   "status": "works",
-  "settings": "gamescope 1920x1080 (Heroic); `world_scale` 0.1 or lower (`[app:wine-preloader]` profile)",
+  "settings": "gamescope 1920x1080 (Heroic); `world_scale` 0.1 or lower (`[app:AI.exe]` profile)",
   "notes": [
    "Works correctly.",
    "`world_scale` 0.2 gives a strong effect but can cause heavy nausea.",
@@ -153,7 +169,7 @@
   "store": "GOG (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), old D3D via wined3d → GL → Zink (32-bit `TDR2000.exe`)",
   "status": "works",
-  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:TDR2000.exe]` profile",
   "notes": [
    "Works; old game, looks poor."
   ],
@@ -200,9 +216,10 @@
    "With `cull_widen` 1.8 the fog of war's per-frame constant buffer overflowed (the game's own bounds check, SIGILL); the game fix builds the render streams' buffers ceil(cull_widen²) times larger. No crash in a short headset session since; a long stability test is still to do.",
    "The game draws its 3D view, HUD and menus at its own resolution and scales that onto the screen with one quad; with a head turn vrdual turns the view only, never the scaling quad (turned twice, the picture's edge pixels were smeared); menus clean in the headset.",
    "The VR cursor matches the clicked spot over the map and over the HUD, at the HUD's depth (the scaling quad doubles the HUD's shift); confirmed in the headset.",
-   "Menus, loading screens and videos get no head turn and no scroll keys (`head_look_menus = 0`): the game fix counts the game's own 3D view setups, since the game draws its menus into the 3D view's target too; picture and cursor confirmed in the headset."
+   "Menus, loading screens and videos get no head turn and no scroll keys (`head_look_menus = 0`): the game fix counts the game's own 3D view setups, since the game draws its menus into the 3D view's target too; picture and cursor confirmed in the headset.",
+   "Tested at two configurations, both confirmed in the headset (shadows the same in both eyes): game resolution 1366x768 in a 1920x1080 gamescope with the default graphics settings; and 1920x1080 in a 1920x1080 gamescope with most graphics settings on high (the view and its unit shadow map then have the swapchain's size; fixed in vrdual for this case). Resolution: `WindowResX` / `WindowResY` in `GraphicsSettingsDX9.ini` (Aspyr config dir)."
   ],
-  "tested": "2026-11-04",
+  "tested": "2026-11-06",
   "single": "",
   "alt": "",
   "media": [
@@ -251,8 +268,7 @@
   "status": "works",
   "settings": "",
   "notes": [
-   "Works (a first attempt showed nothing in the HMD, cause unknown).",
-   "The layer sees `exe='wine-preloader'` and uses the `[app:wine-preloader]` profile."
+   "Works (a first attempt showed nothing in the HMD, cause unknown)."
   ],
   "tested": "2026-10-23",
   "single": "",
@@ -265,7 +281,7 @@
   "store": "Amazon (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `WALL-E.exe`)",
   "status": "works",
-  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:WALL-E.exe]` profile",
   "notes": [
    "No problems."
   ],
@@ -283,7 +299,6 @@
   "settings": "none: ran at `world_scale = 1` (Unreal-derived engine, try ~50)",
   "notes": [
    "Medium effect; some levels are shader-heavy, problems expected there.",
-   "The layer sees `app=''` (wine-preloader), so `vrdual save` writes `[app:wine-preloader]`, which then matches every 32-bit Proton game without its own profile.",
    "1680x1050 under gamescope."
   ],
   "tested": "2026-10-23",
@@ -299,7 +314,7 @@
   "store": "GOG (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), D3D8 (DXVK, 32-bit `Morrowind.exe`, 1440x1080)",
   "status": "works",
-  "settings": "gamescope (Heroic); `[app:wine-preloader]` profile",
+  "settings": "gamescope (Heroic); `[app:Morrowind.exe]` profile",
   "notes": [
    "Playable in VR even without mods, though very old and looks poor.",
    "Parallax textures would help (see MODDING.md)."
@@ -317,8 +332,7 @@
   "status": "works",
   "settings": "`world_scale` ~10–13 (tuned live), `hfov` ~91",
   "notes": [
-   "Works.",
-   "`vrdual save` writes into `[app:wine-preloader]` (the profile it matched by exe), not `[app:Fable Anniversary.exe]`."
+   "Works."
   ],
   "tested": "2026-10-23",
   "single": "",
@@ -398,7 +412,7 @@
   "store": "GOG (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), OpenGL → Zink (32-bit `GrimFandango.exe`)",
   "status": "works",
-  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile (`world_scale` ~0.1)",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:GrimFandango.exe]` profile (`world_scale` ~0.1)",
   "notes": [
    "Works."
   ],
@@ -447,6 +461,22 @@
    "HospitalTycoon-1.gif",
    "HospitalTycoon-2.gif"
   ],
+  "writeup_pending": false
+ },
+ {
+  "game": "Islands of Insight (2071500)",
+  "store": "Steam: positive",
+  "path": "Proton Experimental, D3D11 (UE5, DXVK, 64-bit `IslandsofInsight-Win64-Shipping.exe`)",
+  "status": "works",
+  "settings": "`[app:IslandsofInsight-Win64-Shipping.exe]` `world_scale` ~4.6, `screen_fov` ~58; gamescope 1920x1080",
+  "notes": [
+   "Works in the headset.",
+   "The crosshair is doubled (drawn in the 3D view, shifted per eye); fix: a `noshift` or `hud` [shader rule](tasks/shader-rules.md) for its shader, not found yet."
+  ],
+  "tested": "2026-11-06",
+  "single": "",
+  "alt": "",
+  "media": [],
   "writeup_pending": false
  },
  {
@@ -525,7 +555,7 @@
   "store": "Epic (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `Limbo.exe`)",
   "status": "works",
-  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:Limbo.exe]` profile",
   "notes": [
    "Little to gain: a flat game (2D layers), weak depth."
   ],
@@ -550,6 +580,22 @@
   "tested": "2026-10-22",
   "single": "",
   "alt": "UEVR (generic, Windows); Little Nightmares VR: Altered Echoes (separate game)",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
+  "game": "Mafia (2002, 40990)",
+  "store": "Steam: positive",
+  "path": "Proton Experimental, D3D8 via wined3d → GL → Zink (32-bit `Game.exe`)",
+  "status": "works",
+  "settings": "`[app:Game.exe]` `world_scale` ~0.23, `hfov` 90.4; gamescope 1920x1080",
+  "notes": [
+   "Works in the headset; depth looks right at `world_scale` ~0.23.",
+   "The exe is the generic `Game.exe`: its `[app:Game.exe]` section also matches other games with that name."
+  ],
+  "tested": "2026-11-06",
+  "single": "",
+  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -592,7 +638,7 @@
   "store": "Steam: positive",
   "path": "Proton, DXVK (32-bit `moh.exe`)",
   "status": "works",
-  "settings": "`[app:wine-preloader]` profile",
+  "settings": "`[app:moh.exe]` profile",
   "notes": [
    "Works; the log shows an 800x600 swapchain (launcher or game resolution, not checked)."
   ],
@@ -738,22 +784,6 @@
   "writeup_pending": false
  },
  {
-  "game": "Portal: Revolution (601360)",
-  "store": "Steam: positive",
-  "path": "Proton Experimental, Windows-only Source mod build (`bin/win64/revolution.exe`)",
-  "status": "works",
-  "settings": "Properties → Compatibility → force Proton (Experimental); gamescope 1920x1080 (below); pad: tuned configuration, write-up pending (until then tune it yourself)",
-  "notes": [
-   "Runs with Proton Experimental.",
-   "Without forced Proton, Steam starts the `.exe` natively in the Steam Linux Runtime and it exits after ~2 s."
-  ],
-  "tested": "2026-10-30",
-  "single": "",
-  "alt": "",
-  "media": [],
-  "writeup_pending": true
- },
- {
   "game": "Portal with RTX (2012840)",
   "store": "Steam: negative",
   "path": "Proton, RTX Remix (DXVK-Remix, path tracing)",
@@ -769,6 +799,22 @@
   "alt": "",
   "media": [],
   "writeup_pending": false
+ },
+ {
+  "game": "Portal: Revolution (601360)",
+  "store": "Steam: positive",
+  "path": "Proton Experimental, Windows-only Source mod build (`bin/win64/revolution.exe`)",
+  "status": "works",
+  "settings": "Properties → Compatibility → force Proton (Experimental); gamescope 1920x1080 (below); pad: tuned configuration, write-up pending (until then tune it yourself)",
+  "notes": [
+   "Runs with Proton Experimental.",
+   "Without forced Proton, Steam starts the `.exe` natively in the Steam Linux Runtime and it exits after ~2 s."
+  ],
+  "tested": "2026-10-30",
+  "single": "",
+  "alt": "",
+  "media": [],
+  "writeup_pending": true
  },
  {
   "game": "Psychonauts (3830)",
@@ -791,7 +837,7 @@
   "store": "Steam: positive",
   "path": "Proton, D3D9 (UE3, DXVK, 32-bit `TryGame-Win32-Shipping.exe`)",
   "status": "works",
-  "settings": "`[app:wine-preloader]` profile",
+  "settings": "`[app:TryGame-Win32-Shipping.exe]` profile",
   "notes": [
    "Looks nice, nothing special."
   ],
@@ -806,7 +852,7 @@
   "store": "Epic (Heroic): negative",
   "path": "Proton (umu, Proton-CachyOS), D3D9 (DXVK, 32-bit `RCT3.exe`)",
   "status": "broken",
-  "settings": "gamescope 1920x1080 (Heroic); `[app:wine-preloader]` profile",
+  "settings": "gamescope 1920x1080 (Heroic); `[app:RCT3.exe]` profile",
   "notes": [
    "Hangs loading a park at \"Clear data (0%)\": ~100 % CPU, no more presents, no error in the log.",
    "Not yet checked with `VRDUAL_STEREO=0`."
@@ -860,8 +906,7 @@
   "notes": [
    "Stereo correct, looks better in the HMD than in screenshots, but no wow effect.",
    "At larger scales objects shift too far into the depth.",
-   "The native Linux build (Feral) does not start (`libicui18n.so.51` missing): force Proton.",
-   "Uses the `[app:wine-preloader]` profile."
+   "The native Linux build (Feral) does not start (`libicui18n.so.51` missing): force Proton."
   ],
   "tested": "2026-10-29",
   "single": "",
@@ -973,7 +1018,7 @@
   "store": "Steam: positive",
   "path": "Proton, old D3D via wined3d → GL → Zink (32-bit)",
   "status": "works",
-  "settings": "`[app:wine-preloader]` profile (shared by 32-bit Proton games)",
+  "settings": "`[app:X.exe]` profile",
   "notes": [
    "Very old, poor textures, but the depth is a wow effect: in VR the game becomes likeable."
   ],

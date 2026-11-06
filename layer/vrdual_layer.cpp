@@ -231,7 +231,8 @@ static void load_config(const VkApplicationInfo* app) {
     std::string app_name = app && app->pApplicationName ? app->pApplicationName : "";
     std::string wexe = wine_exe_name();
     std::string exe_label = exe_name() + (wexe.empty() ? "" : " " + wexe);
-    vrdual::Settings st = vrdual::load_settings({app_name, wexe, exe_name()});
+    // Under Wine the preloader name is shared by every game: never a profile name
+    vrdual::Settings st = vrdual::load_settings({app_name, wexe, wexe.empty() ? exe_name() : ""});
     c.app = st.profile.empty() ? (!app_name.empty() ? app_name : !wexe.empty() ? wexe : exe_name()) : st.profile;
     bool stereo_off = c.eye >= 0 && st.i("stereo") == 0;  // launchers: as if VRDUAL_EYE were unset
     if (stereo_off) c.mirror = false, c.eye = -1;
@@ -1577,6 +1578,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateSwapchainKHR(VkDevice dev, const
     dd->d.GetSwapchainImagesKHR(dev, *out, &n, nullptr);
     s.images.resize(n);
     dd->d.GetSwapchainImagesKHR(dev, *out, &n, s.images.data());
+    passes::note_swapchain(dd->pt, *out, s.images);
     if (exp && !s.pixfmt) logf("swapchain format %d not exportable (8-bit RGBA/BGRA, 10-bit UNORM and FP16 are)", ci->imageFormat);
     VkFormat conv = conv_format_of(ci->imageFormat);
     if (s.pixfmt && conv != VK_FORMAT_UNDEFINED)
@@ -1617,6 +1619,7 @@ static VKAPI_ATTR void VKAPI_CALL vrd_DestroySwapchainKHR(VkDevice dev, VkSwapch
         }
         if (g_owner.sc == sc_id(sc)) g_owner.sc = 0;
     }
+    passes::forget_swapchain(dd->pt, sc);
     dd->d.DestroySwapchainKHR(dev, sc, alloc);
 }
 
