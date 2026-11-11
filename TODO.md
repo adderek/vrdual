@@ -4,9 +4,8 @@ Ordered by what to do next. Each item links to a self-contained task file.
 Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 
 0. Depth measurement (`vrdual measure`, tune y; ARCHITECTURE "Depth
-   measurement"), written 2026-11-09: GPU-free checks pass; the selftest
-   check `measure:` has not passed on a GPU yet (the headless GPU hung before
-   it could run). Then in games: does median w / 3 m land near the
+   measurement"), written 2026-11-09; selftest `measure:` checks pass on
+   the GPUs (2026-11-11). Next, in games: does median w / 3 m land near the
    `world_scale` the owner picks by hand (many games 0.015-0.02, Detroit
    ~0.03)? If not, tune `measure_dist` or weight by screen area (depth_export
    plane + the w <-> z fit) instead of vertices.

@@ -285,7 +285,9 @@ int main(int argc, char** argv) {
             for (int eye = 0; eye < 2 && !got; ++eye) {
                 int fd = open((shm_dir() + "/vrdual-" + session + "-" + std::to_string(eye)).c_str(), O_RDONLY | O_CLOEXEC);
                 if (fd < 0) continue;
-                void* p = mmap(nullptr, VRDUAL_HDR_BYTES, PROT_READ, MAP_SHARED, fd, 0);
+                struct stat st;  // a file the layer has not sized yet (O_CREAT, then ftruncate): SIGBUS on access
+                bool big = fstat(fd, &st) == 0 && st.st_size >= (off_t)VRDUAL_HDR_BYTES;
+                void* p = big ? mmap(nullptr, VRDUAL_HDR_BYTES, PROT_READ, MAP_SHARED, fd, 0) : MAP_FAILED;
                 close(fd);
                 if (p == MAP_FAILED) continue;
                 auto* h = (const vrdual_shm_header*)p;

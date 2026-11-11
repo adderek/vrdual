@@ -1125,6 +1125,10 @@ EOF
         ok = v[\"samples\"] > 0 && v[\"w_p10\"] >= 0.4 && v[\"w_p90\"] <= 25 && v[\"w_p50\"] >= 0.5 && v[\"w_p50\"] <= 20 &&
              v[\"world_scale_measured\"] > 0 && (v[\"world_scale_measured\"] * v[\"measure_dist\"] / v[\"w_p50\"] - 1)^2 < 1e-6
         exit !ok }' <<<\"\$o\" || { echo \"\$o\"; grep -E 'measure|histogram' '$tmp/left.log' '$tmp/right.log'; false; }"
+    # A frame file the layer has created but not sized yet: waiting, no SIGBUS.
+    label="measure: an unsized frame file is skipped (no SIGBUS)"
+    cp /dev/shm/vrdual-$sess-ctl /dev/shm/vrdual-$sess-e-ctl && : >/dev/shm/vrdual-$sess-e-0
+    check bash -c "timeout 2 '$B/vrdual-ctl' --session $sess-e measure 2>/dev/null; r=\$?; rm -f /dev/shm/vrdual-$sess-e-*; ((r == 124)) || { echo exit=\$r; false; }"
     # A game joining that block (same Steam run) finds the answered
     # measure_seq: it must not measure again at its first presents.
     label="measure: a layer joining a block with an old measure_seq starts no measurement"
