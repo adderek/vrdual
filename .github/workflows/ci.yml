@@ -19,5 +19,14 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0  # git describe for the build identity
-      - run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends glslc spirv-tools libxcb1-dev libxcb-xfixes0-dev libxcb-xtest0-dev  # xcb: headers only, the layer dlopens it
+      # xcb: headers only, the layer dlopens it. The image's package index is
+      # usually fresh enough: update only when the install fails. Short apt
+      # timeouts: a runner without DNS (2026-11-11) retried until the job's
+      # 10 min limit instead of failing.
+      - name: install build deps
+        timeout-minutes: 4
+        run: |
+          apt="sudo apt-get -q -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
+          pkgs="glslc spirv-tools libxcb1-dev libxcb-xfixes0-dev libxcb-xtest0-dev"
+          $apt install -y --no-install-recommends $pkgs || { $apt update && $apt install -y --no-install-recommends $pkgs; }
       - run: ./vrdual ci
