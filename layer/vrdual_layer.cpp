@@ -404,6 +404,15 @@ struct EyeBuf {
     float last[2][4] = {};  // per eye: last pushed v[0..3] (log only real changes)
     int patched = 0, skipped = 0, ruled = 0, frag = 0;  // frag: fragment shaders (hunt_fragment, hide rules)
     uint32_t hunt[4] = {};  // last pushed hunt range (log changes)
+    // depth histogram (vrdual-ctl measure): uint at addr + 100 = sampling on,
+    // uint[64] at addr + 256 (spirv_patch.hpp); needs VRAM params and
+    // vertexPipelineStoresAndAtomics
+    bool whist = false;
+    bool meas_init = false; // meas_seq latched at the first present: a stale request in a joined block is not ours
+    uint32_t meas_seq = 0;  // last measure_seq started
+    uint32_t meas_left = 0; // frames left to sample, 0 = idle
+    uint32_t meas_drain = 0; // presents to wait after sampling stopped (draws in flight) before reading
+    uint32_t meas_frames = 0;
 };
 
 struct SwapchainData {
@@ -487,6 +496,9 @@ struct Shm {
     ino_t ino = 0;  // peer: of the mapped file (vrdual clean + a new peer = new inode)
 };
 static Shm g_out[2], g_peer;
+// Last depth histogram answer: written again into a re-initialised frame header
+// (a client may still be waiting for it).
+static struct { uint32_t seq, frames, c[VRDUAL_WHIST_N]; } g_meas;
 
 static std::string shm_path(int eye) { return vrdual::shm_dir() + "/vrdual-" + g_cfg.session + "-" + std::to_string(eye); }
 
@@ -528,6 +540,9 @@ static bool shm_open_out(int eye, uint32_t w, uint32_t h, uint32_t pixfmt, const
     hd->depth_fmt = depth ? VRDUAL_DEPTH_F32 : 0;
     hd->depth_src = 0;
     for (auto& f : hd->depth_frame) f = 0;
+    memcpy((void*)hd->whist, g_meas.c, sizeof g_meas.c);
+    hd->whist_frames = g_meas.frames;
+    hd->whist_seq = g_meas.seq;
     __sync_synchronize();
     hd->magic = VRDUAL_MAGIC;
     logf("exporting %ux%u fmt=%u%s to %s", w, h, pixfmt, depth ? " + depth" : "", shm_path(eye).c_str());
@@ -1065,7 +1080,7 @@ static int pick_memtype(const VkPhysicalDeviceMemoryProperties& mp, uint32_t bit
 
 static void create_param_buffer(const Dispatch& d, VkDevice dev, const VkPhysicalDeviceMemoryProperties& mp, EyeBuf& ep) {
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bci.size = 256;
+    bci.size = 512;  // params, then the depth histogram at +256
     bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     if (d.CreateBuffer(dev, &bci, nullptr, &ep.buf) != VK_SUCCESS) return;
     VkMemoryRequirements mr;
@@ -1085,7 +1100,9 @@ static void create_param_buffer(const Dispatch& d, VkDevice dev, const VkPhysica
     VkBufferDeviceAddressInfo bai{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, ep.buf};
     ep.addr = d.GetBufferDeviceAddress(dev, &bai);
     ep.params = (float*)map;
-    memset(map, 0, 256);  // the auto_noshift flag at +96 starts 0 (not shifted only when set)
+    memset(map, 0, 512);  // the auto_noshift flag at +96 starts 0 (not shifted only when set)
+    // shader atomics into system memory would cross PCIe (needs PCIe atomics): VRAM only
+    ep.whist = (mp.memoryTypes[best].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
     push_params(ep);
     write_params_cpu(ep);
     logf("live params at device address 0x%llx (%s eye, memory type %d)", (unsigned long long)ep.addr, ep.eye ? "right" : "left", best);
@@ -1200,6 +1217,7 @@ static bool spv_patch_for(EyeBuf& ep, const VkShaderModuleCreateInfo* ci, std::v
     }
     if (ep.params) {
         o.addr = ep.addr;  // live: shader reads params every draw
+        o.whist = ep.whist;
     } else {
         vrdual::EyeParams e = vrdual::eye_params(vrdual::ctl_read(g_cfg.ctl), ep.eye);
         memcpy(o.params, e.v, sizeof o.params);  // baked: no head offset
@@ -1260,6 +1278,24 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
     std::vector<const char*> exts(ci->ppEnabledExtensionNames, ci->ppEnabledExtensionNames + ci->enabledExtensionCount);
     VkPhysicalDeviceBufferDeviceAddressFeatures ours{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES};
     VkBool32 saved = VK_FALSE, saved_replay = VK_FALSE;
+    // vertexPipelineStoresAndAtomics: the depth histogram's atomics in vertex
+    // shaders (live only). The app's own struct is flipped and restored.
+    VkPhysicalDeviceFeatures feat{}, *feat_app = nullptr;
+    VkBool32 saved_vpsa = VK_FALSE;
+    bool vpsa = false;
+    if (bda.ok) {
+        VkPhysicalDeviceFeatures sup{};
+        id->GetPhysicalDeviceFeatures(pd, &sup);
+        vpsa = sup.vertexPipelineStoresAndAtomics;
+        for (auto* st = (VkBaseOutStructure*)ci->pNext; st && vpsa; st = st->pNext)
+            if (st->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2) feat_app = &((VkPhysicalDeviceFeatures2*)st)->features;
+        if (vpsa && feat_app) { saved_vpsa = feat_app->vertexPipelineStoresAndAtomics; feat_app->vertexPipelineStoresAndAtomics = VK_TRUE; }
+        else if (vpsa) {
+            if (ci->pEnabledFeatures) feat = *ci->pEnabledFeatures;
+            feat.vertexPipelineStoresAndAtomics = VK_TRUE;
+            ci2.pEnabledFeatures = &feat;
+        }
+    }
     if (bda.ok) {
         if (bda.add_ext) { exts.push_back("VK_KHR_buffer_device_address"); ci2.enabledExtensionCount = uint32_t(exts.size()); ci2.ppEnabledExtensionNames = exts.data(); }
         if (bda.flag) { saved = *bda.flag; *bda.flag = VK_TRUE; }
@@ -1269,9 +1305,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
     VkResult r = create(pd, &ci2, alloc, out);
     if (bda.flag) *bda.flag = saved;
     if (bda.replay_flag) *bda.replay_flag = saved_replay;
+    if (feat_app) feat_app->vertexPipelineStoresAndAtomics = saved_vpsa;
     if (r != VK_SUCCESS && bda.ok) {
         logf("vkCreateDevice with bufferDeviceAddress failed (%d), retrying without live params", r);
-        bda.ok = bda.replay = false;
+        bda.ok = bda.replay = vpsa = false;
         r = create(pd, ci, alloc, out);
     }
     if (r != VK_SUCCESS) return r;
@@ -1290,8 +1327,11 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_CreateDevice(VkPhysicalDevice pd, cons
     if (getenv("VRDUAL_TRACE_EXTS")) for (uint32_t i = 0; i < ci->enabledExtensionCount; ++i) logf("  ext %s", ci->ppEnabledExtensionNames[i]);
     VkPhysicalDeviceMemoryProperties mp;
     id->GetPhysicalDeviceMemoryProperties(pd, &mp);
-    if (bda.ok && dd->d.GetBufferDeviceAddress) create_param_buffer(dd->d, dd->device, mp, dd->ep);
-    else if (g_cfg.eye >= 0) {
+    if (bda.ok && dd->d.GetBufferDeviceAddress) {
+        create_param_buffer(dd->d, dd->device, mp, dd->ep);
+        if (dd->ep.whist && !vpsa) dd->ep.whist = false;
+        if (dd->ep.params && !dd->ep.whist) logf("depth histogram off (%s)", vpsa ? "params not in VRAM" : "no vertexPipelineStoresAndAtomics");
+    } else if (g_cfg.eye >= 0) {
         logf("baked mode: IPD changes need an app restart");
         if (g_cfg.ctl) vrdual::ctl_write(g_cfg.ctl, [](vrdual_ctl& c) { c.live = 0; });
     }
@@ -1777,10 +1817,56 @@ static uint32_t slot_flags(const DeviceData* dd) {
     return f;
 }
 
+// Depth histogram (vrdual-ctl measure): a new measure_seq clears the counts
+// and turns sampling on (CPU writes into the mapping: draws in flight may
+// count too); measure_frames presents later it is turned off, kMeasDrain
+// presents after that (the frames still on the GPU finish their atomics) the
+// counts go into every frame header this process writes.
+static constexpr uint32_t kMeasDrain = 4;
+static void measure_step(EyeBuf& ep) {
+    if (!ep.whist || !g_cfg.ctl) return;
+    volatile uint32_t* on = (volatile uint32_t*)((char*)ep.params + 100);
+    volatile uint32_t* h = (volatile uint32_t*)((char*)ep.params + 256);
+    uint32_t want = g_cfg.ctl->measure_seq;
+    if (!ep.meas_init) { ep.meas_init = true; ep.meas_seq = want; return; }
+    if (!ep.meas_left && !ep.meas_drain && want != ep.meas_seq) {
+        vrdual_ctl k = vrdual::ctl_read(g_cfg.ctl);  // measure_seq and measure_frames of one request
+        if (!k.measure_seq) { ep.meas_seq = 0; return; }
+        for (uint32_t b = 0; b < VRDUAL_WHIST_N; ++b) h[b] = 0;
+        ep.meas_frames = ep.meas_left = k.measure_frames ? std::min<uint32_t>(k.measure_frames, 10000) : 30;
+        ep.meas_seq = k.measure_seq;
+        __sync_synchronize();
+        *on = 1;
+        return;
+    }
+    if (ep.meas_left) {
+        if (!--ep.meas_left) { *on = 0; ep.meas_drain = kMeasDrain; }
+        return;
+    }
+    if (!ep.meas_drain || --ep.meas_drain) return;
+    std::lock_guard<std::mutex> sl(g_shm_lock);  // shm_open_out re-maps g_out (and reads g_meas) under it
+    uint64_t n = 0;
+    for (uint32_t b = 0; b < VRDUAL_WHIST_N; ++b) n += g_meas.c[b] = h[b];
+    g_meas.frames = ep.meas_frames;
+    __sync_synchronize();
+    g_meas.seq = ep.meas_seq;
+    for (auto& o : g_out) {
+        if (!o.hdr) continue;
+        memcpy((void*)o.hdr->whist, g_meas.c, sizeof g_meas.c);
+        o.hdr->whist_frames = g_meas.frames;
+        __sync_synchronize();
+        o.hdr->whist_seq = g_meas.seq;
+    }
+    vrdual::WhistStats st = vrdual::whist_stats(g_meas.c);
+    logf("measure %u: %llu vertices sampled in %u frames, w p10 %.4g p50 %.4g p90 %.4g%s", ep.meas_seq, (unsigned long long)n, ep.meas_frames,
+         st.p[0], st.p[2], st.p[4], g_cfg.auto_noshift ? "" : " (auto_noshift off: off-screen passes counted too)");
+}
+
 static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     DeviceData* dd = dev_of(key(queue));
     dd->ep.scene_off = dd->pt && !dd->pt->scene_on.load();
     push_params(dd->ep);  // live IPD: staged for the next frame's draws
+    measure_step(dd->ep);
     SwapchainData* s = nullptr;
     uint32_t family;
     {

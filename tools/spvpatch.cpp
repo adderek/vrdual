@@ -44,7 +44,7 @@ static int fuzz(long n, int nfiles, char** files) {
             spv::PatchOptions o;
             switch (it % 4) {
             case 0: o.params[0] = o.params[1] = 0.03f; break;
-            case 1: o.addr = 0x123456789a0ull; break;
+            case 1: o.addr = 0x123456789a0ull; o.whist = (it / 4) & 1; break;
             case 2: o.addr = 0x123456789a0ull; o.hud = true; break;
             case 3: o.hide = true; break;
             }
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
         printf("%016llx\n", (unsigned long long)spv::shader_hash(w.data(), w.size()));
         return 0;
     }
-    if (argc < 5) { fprintf(stderr, "usage: %s in.spv out.spv baked A [B WF INV] | live 0xADDR\n", argv[0]); return 2; }
+    if (argc < 5) { fprintf(stderr, "usage: %s in.spv out.spv baked A [B WF INV] | live 0xADDR [hud|hide|whist]\n", argv[0]); return 2; }
     FILE* f = fopen(argv[1], "rb");
     if (!f) { perror(argv[1]); return 1; }
     std::vector<uint32_t> w;
@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
     o.key = uint32_t(spv::shader_hash(w.data(), w.size()) >> 32);
     if (!strcmp(argv[argc - 1], "hud")) { o.hud = true; --argc; }
     else if (!strcmp(argv[argc - 1], "hide")) { o.hide = true; --argc; }
+    else if (!strcmp(argv[argc - 1], "whist")) { o.whist = true; --argc; }
     if (!strcmp(argv[3], "live")) o.addr = strtoull(argv[4], nullptr, 0);
     else {
         o.params[0] = o.params[1] = strtof(argv[4], nullptr);

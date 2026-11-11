@@ -2107,6 +2107,7 @@ static MDev* create_twin(DeviceData* dd, const VkDeviceCreateInfo* ci, bool bda,
     md->bep.eye = 1;
     md->replay = replay;
     if (bda && md->b.GetBufferDeviceAddress) create_param_buffer(md->b, md->bdev, md->bmp, md->bep);
+    md->bep.whist = false;  // B is created without vertexPipelineStoresAndAtomics; only A measures
     logf("mirror: twin device on %s (pci %s) via %s — hidden from the app%s; instance as app '%s' engine '%s'", md->bname.c_str(),
          md->bpci.c_str(), icd.c_str(), replay ? ", device addresses replayed" : "", id->app_name.c_str(), id->engine_name.c_str());
     return md.release();

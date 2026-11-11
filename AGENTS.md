@@ -238,6 +238,13 @@ machine unless a row says otherwise. Read them with its topology in mind:
 - Proton 32-bit games run as `wine-preloader`, 64-bit as `wine64-preloader`:
   the game's name is the `.exe` in argv[0]. Profiles and `tune` saves go by
   that `.exe` (`[app:GAME.exe]`); some exes are generic (`Game.exe`: Mafia).
+- Runtime-PM wake-ups of an idle GPU can fail for good (`PSP resume failed`,
+  `amdgpu_device_ip_resume failed (-22)` in the kernel log; 2026-11-09, the
+  headless GPU on a bifurcated x8x8 slot, 39th wake-up in a day): Vulkan then
+  lists one GPU, `gpu = auto` puts both eyes on the display GPU and the
+  two-GPU / mirror checks fail. Only a reboot recovers; `power/control = on`
+  for that card (udev rule) avoids the wake-ups. Check `journalctl -k` before
+  debugging such failures. Data and ideas: [docs/tasks/amdgpu-runpm-resume.md](docs/tasks/amdgpu-runpm-resume.md).
 - `auto_noshift` decisions depend on the game's resolution: at the window's
   size the swapchain images and the game's own view target must be told
   apart (Civ V at 1920x1080 had per-eye shadows until 2026-11-06). When a

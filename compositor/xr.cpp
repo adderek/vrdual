@@ -499,7 +499,7 @@ struct GameLog {
 };
 
 static void tune_help(int mode) {
-    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = %s, a = save, b = undo (saved, start, defaults); "
+    fprintf(stderr, "[xr] tune: left stick y = world_scale, right stick y = hud_depth, x = %s, a = save, b = undo (saved, start, defaults), y = measure depth -> world_scale; "
                     "both grips = move / scale the screen, + left trigger = turn it; head_look = scroll on a screen fixed in the room: "
                     "left stick x = scroll_angle (x held: scroll_hold_angle), degrees past the edge\n", mode == SCREEN_FULL ? "hfov" : "screen_fov");
 }
@@ -871,6 +871,8 @@ static int run(int argc, char** argv) {
     vrdual::ScreenGrab grab;  // both grips: drag / turn / scale the picture
     int grab_recentres = 0;
     vrdual::Tuner tune;  // input = tune: sticks change world_scale / hud_depth / hfov
+    uint32_t meas_seq = 0;  // tune y: depth measurement asked for, 0 = none
+    double meas_t0 = 0;
     bool tune_on = false, tune_seeded = false;
     vrdual::MapEditor med;  // input = map: button maps edited in the headset
     bool map_on = false;
@@ -1216,6 +1218,39 @@ static int run(int argc, char** argv) {
                 if (r & vrdual::TUNE_SAVE) {
                     tune_save(k.app, tune);
                     notify(std::string("tune: saved into [app:") + k.app + "]", false);
+                }
+                if ((r & vrdual::TUNE_MEASURE) && !meas_seq) {
+                    if (!k.live) notify("tune: measuring needs live mode", false);
+                    else {
+                        meas_seq = vrdual::measure_request(ctl, 30);
+                        meas_t0 = t_now;
+                        fprintf(stderr, "[xr] measure %u: requested\n", meas_seq);
+                        notify("tune: measuring the game's depth", false);
+                    }
+                }
+                const vrdual_shm_header* mh = L.hdr && L.hdr->whist_seq == meas_seq ? L.hdr : R.hdr && R.hdr->whist_seq == meas_seq ? R.hdr : nullptr;
+                if (meas_seq && mh) {
+                    __sync_synchronize();
+                    uint32_t hist[VRDUAL_WHIST_N];
+                    memcpy(hist, (const void*)mh->whist, sizeof hist);
+                    vrdual::WhistStats st = vrdual::whist_stats(hist);
+                    float dist = vrdual::load_settings({k.app}).f("measure_dist");
+                    double ws = vrdual::whist_scale(st, dist);
+                    char m[200];
+                    if (ws > 0) {
+                        float& v = tune.v[vrdual::Tuner::WORLD_SCALE];
+                        v = vrdual::Tuner::clamp_ws(ws);
+                        vrdual::ctl_write(ctl, [&](vrdual_ctl& w) { w.world_scale = v; });
+                        snprintf(m, sizeof m, "tune: median depth %.3g units -> world_scale %.3g (median at %g m)", st.p[2], v, dist);
+                    } else snprintf(m, sizeof m, "tune: measured nothing (no 3D view drawn?)");
+                    fprintf(stderr, "[xr] measure %u: %llu vertices, w p10 %.4g p25 %.4g p50 %.4g p75 %.4g p90 %.4g; %s\n", meas_seq,
+                            (unsigned long long)st.n, st.p[0], st.p[1], st.p[2], st.p[3], st.p[4], m);
+                    notify(m, false);
+                    meas_seq = 0;
+                } else if (meas_seq && t_now - meas_t0 > 60) {
+                    fprintf(stderr, "[xr] measure %u: no answer from the layers\n", meas_seq);
+                    notify("tune: no depth answer (old layer copy? vrdual install)", false);
+                    meas_seq = 0;
                 }
             }
             if (map_on && mapper) {

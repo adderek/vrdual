@@ -290,16 +290,19 @@ struct ScreenGrab {
 //   a              save them into [app:NAME]
 //   b              undo: back to the last saved values; pressed again, to the
 //                  values the game started with, then to the built-in defaults
+//   y              measure the game's depth and set world_scale from it
+//                  (TUNE_MEASURE; the caller asks the layers, vrdual-ctl measure)
 // step() returns TUNE_* bits (undone_to says where b went); the caller seeds
 // v[] and start[] from the control block (screen_fov: from the screen).
-enum { TUNE_CHANGED = 1, TUNE_SETTLED = 2, TUNE_SAVE = 4, TUNE_RESET = 8 };
+enum { TUNE_CHANGED = 1, TUNE_SETTLED = 2, TUNE_SAVE = 4, TUNE_RESET = 8, TUNE_MEASURE = 16 };
 struct Tuner {
     enum { WORLD_SCALE, HUD_DEPTH, HFOV, SCREEN_FOV, SCROLL, SCROLL_HOLD, N };
     float v[N] = {1, 0, 90, 60, 0, 10};
     float start[N] = {1, 0, 90, 60, 0, 10};
     float saved[N] = {NAN, NAN, NAN, NAN, NAN, NAN};  // NAN = not saved in this session
+    static float clamp_ws(double v) { return float(std::fmin(10000.0, std::fmax(0.001, v))); }
     enum { UNDO_SAVED, UNDO_START, UNDO_DEFAULTS } undone_to = UNDO_SAVED;
-    bool moving = false, a = false, b = false, undid = false;
+    bool moving = false, a = false, b = false, y = false, undid = false;
     bool screen = false;  // right stick x = screen_fov
     bool scroll = false;  // left stick x = scroll_angle (x held: scroll_hold_angle), degrees past the screen edge
     float dz = 0.15f;
@@ -314,7 +317,7 @@ struct Tuner {
         float ws = rate(c.ly), hd = rate(c.ry), fv = rate(c.rx), sc = scroll ? rate(c.lx) : 0;
         float old[N];
         memcpy(old, v, sizeof v);
-        if (ws != 0) v[WORLD_SCALE] = std::fmin(10000.0f, std::fmax(0.01f, v[WORLD_SCALE] * std::exp2(ws * float(dt))));
+        if (ws != 0) v[WORLD_SCALE] = clamp_ws(v[WORLD_SCALE] * std::exp2(ws * float(dt)));
         if (hd < 0 && v[HUD_DEPTH] <= 0) v[HUD_DEPTH] = 100;  // in from infinity
         if (hd != 0 && v[HUD_DEPTH] > 0) {
             v[HUD_DEPTH] = std::fmax(0.1f, v[HUD_DEPTH] * std::exp2(hd * float(dt)));
@@ -347,8 +350,10 @@ struct Tuner {
             undid = true;
             r |= TUNE_RESET | TUNE_CHANGED;
         }
+        if (idle && c.y && !y) r |= TUNE_MEASURE;
         a = c.a;
         b = c.b;
+        y = c.y;
         return r;
     }
 };

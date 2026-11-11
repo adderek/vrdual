@@ -3,6 +3,14 @@
 Ordered by what to do next. Each item links to a self-contained task file.
 Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
 
+0. Depth measurement (`vrdual measure`, tune y; ARCHITECTURE "Depth
+   measurement"), written 2026-11-09: GPU-free checks pass; the selftest
+   check `measure:` has not passed on a GPU yet (the headless GPU hung before
+   it could run). Then in games: does median w / 3 m land near the
+   `world_scale` the owner picks by hand (many games 0.015-0.02, Detroit
+   ~0.03)? If not, tune `measure_dist` or weight by screen area (depth_export
+   plane + the w <-> z fit) instead of vertices.
+
 1. Quest 3S works (2026-10-18). Input + head motion implemented 2026-10-18 ([input](docs/tasks/input-emulation.md), [M4](docs/tasks/M4-head-pose.md) steps 1–3, rotation via clip transform `head_look = clip` 2026-11-02): test in the Quest after a reboot (uinput module), then auto aim/motion switch, the rest of [M3](docs/tasks/M3-openxr-output.md) (overlay in the HMD)
 2. [M1](docs/tasks/M1-single-process-mirroring.md) follow-ups: dirty tracking for shadows done 2026-10-21 (userfaultfd + PAGEMAP_SCAN; measure in a game: CoJ Gunslinger had 26 ms/submit over 336 MB); cached mappings: shadowed by default since 2026-10-21 (item 3), the older `cached_wp = 1` (mprotect + SIGSEGV, EFAULT on kernel writes) is superseded; async B waits, Alice Madness Returns: CTD at the intro video fixed (32-bit address space + stop handling), recheck in game, Wayland-native GL via Zink
 3. [Cached memory: shadow + GPU write-back](docs/tasks/cached-shadow.md): implemented 2026-10-21 (default; selftest: pread into the mapping, GPU fill read back); left: measure and check in games (Alice: no flicker and fast? Gunslinger), then drop `cached_wp`
@@ -116,6 +124,7 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     observation 2026-11-06): analysis brief for another agent: find by
     question, one fact one place, current vs history, decision records,
     ci checks on links / index. Proposal first, ask before moving files.
+25. [amdgpu runtime-PM resume failure](docs/tasks/amdgpu-runpm-resume.md): seen once 2026-11-09 on the bifurcated slot (0 in ~1040 wake-ups on the x16 slot); known AMD problem, bug bounty on RX 9070 (owner): reproduce, report upstream, maybe a vrdual-side "reboot needed" check
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,

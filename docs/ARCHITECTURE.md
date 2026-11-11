@@ -516,6 +516,42 @@ cannot see the app's projection, so `hfov` and `world_scale` (app units per
 meter) are per-app guesses — that is what `[app:NAME]` profiles are for. A wrong
 guess only scales the perceived IPD; geometry stays correct.
 
+### Depth measurement (world_scale estimate)
+
+`clip.w` is view depth in the game's units (for a standard perspective
+projection), so the distribution of w says what units a game uses, without its
+matrices. `vrdual measure [FRAMES]` (or tune y in the headset) bumps
+`measure_seq` in the control block; each layer zeroes a 64-bucket histogram at
+param addr+256, sets the uint at addr+100 and, `measure_frames` presents later,
+clears it; 4 presents after that (the frames still on the GPU finish their
+atomics) it copies the counts into its frame header (`whist`, `whist_seq`),
+and again into a header re-initialised later (resize). A layer ignores the
+`measure_seq` it finds at its first present (a request left in a joined
+block). While the flag is set, every patched VS / TES invocation of the main view
+(gate on, pass flag 0: not off-screen, w != 1, w ≥ 2^-12) does one
+`atomicAdd` into bucket `(bits(w) >> 22) − 230` (exponent + top mantissa bit:
+half-octave buckets, no ext-inst). The proposal is `world_scale = median w /
+measure_dist`.
+
+- Atomics stay inside the GPU: the param buffer must be VRAM (ReBAR); in
+  system memory they would cross PCIe and need PCIe atomics, so the histogram
+  is off there. It also needs `vertexPipelineStoresAndAtomics`, which the
+  layer enables at `vkCreateDevice` (flipped in the app's own struct and
+  restored, like `bufferDeviceAddress`). The log says `depth histogram off
+  (why)` when it cannot.
+- Every vertex counts: sampling by position bits was biased (the calib
+  scene's posts have 2 distinct clip x each and a 1/16 sample often caught
+  none). The cost is one atomic per vertex for the measured frames only.
+- Not in geometry shaders (their entry is not an `in_entry` function) and
+  not on the mirror twin (only device A measures).
+- "Not off-screen" comes from the `auto_noshift` pass flag: with
+  `auto_noshift = 0` shadow and other off-screen passes count too (the log
+  line says so).
+- Vertex-weighted: dense meshes (characters) count more than large flat
+  surfaces. A game whose w is not view depth (a scaled or unusual
+  projection) still gets a consistent estimate: the same w drives the
+  shift.
+
 ### Live IPD
 
 The patched shader does not bake the offset in. It reads a `vec4` of eye

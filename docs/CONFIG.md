@@ -83,7 +83,8 @@ map_x = KEY_E
 | `near_dist` | `0.5` | meters | where `ipd_near` applies fully; **live** |
 | `far_dist` | `5` | meters | where `ipd` applies fully; **live** |
 | `anchor` | `center` | `center` `left` `right` | which eye the game's own camera is; **live** |
-| `world_scale` | `1` | game units per meter: Unreal 100 (some UE3 games 50), Gamebryo/Creation (Skyrim, Fallout 3/NV) ~70, Source ~39. Too small = flat image; tune live | **live** |
+| `world_scale` | `1` | game units per meter: Unreal 100 (some UE3 games 50), Gamebryo/Creation (Skyrim, Fallout 3/NV) ~70, Source ~39. Too small = flat image; tune live (from 0.001); `vrdual measure` / tune y estimate it from the game's depth | **live** |
+| `measure_dist` | `3` | meters | depth measurement (`vrdual measure`, tune y): `world_scale` = median clip w of the main view's vertices / this distance. The median vertex is often a character or object near the camera; vertex counts weight dense meshes, not screen area |
 | `hfov` | `90` | degrees | the game's horizontal FOV (sets the eye shift and the HMD picture size); **live** |
 | `stereo` | `1` | `0` `1` | `0` = the layer stays passive in this app (no mirror, shader patch, export), as without `VRDUAL_EYE`; for launchers started by the same wrapper as the game. Built in for Ubisoft Connect (`upc.exe`, `UplayWebCore.exe`) and the EA app (`EADesktop.exe`), Wine's `explorer.exe` and Proton's `xalia.exe`. Wine processes also match `[app:NAME]` by the .exe in their command line (`upc.exe`), not only by `pApplicationName` |
 | `skip_w1` | `1` | `0` `1` | leave `w == 1` draws (HUD, post-process, 2D) unshifted |
@@ -187,12 +188,13 @@ both grips: the screen grab above):
 
 | control | changes |
 |---|---|
-| left stick up / down | `world_scale` ×2 / ÷2 per second at full deflection |
+| left stick up / down | `world_scale` ×2 / ÷2 per second at full deflection (0.001 .. 10000) |
 | right stick up / down | `hud_depth` farther / nearer, ×2 per second (from infinity: down starts at 100 m; past 100 m back to infinity) |
 | right stick left / right | `screen = full`: `hfov` ±20°/s; flat / curved: `screen_fov` ±20°/s (screen width; there `hfov` only scales the depth like `world_scale`, set it with `vrdual set` if needed) |
 | left stick left / right | `head_look = scroll` on a screen fixed in the room: `scroll_angle` ±10°/s (degrees past the screen edge); with x held `scroll_hold_angle` (kept ≥ 1° past `scroll_angle`). Scrolling stays live meanwhile, the overlay shows both |
 | a | save them into `[app:NAME]` (and the Steam copy of the config); flat / curved also `screen_fov`; scroll on a fixed screen also `scroll_angle` / `scroll_hold_angle` |
 | b | undo: back to the last saved values; again: to the values the game started with; again: to the defaults (`world_scale` 1, `hud_depth` 0, `hfov` 90, `screen_fov` 60) |
+| y | measure: the layers count the clip w of every main-view vertex for 30 frames (fps dips meanwhile), `world_scale` becomes median / `measure_dist`; log line `measure N: … w p10 … p90 …`. A starting point: fine-tune with the left stick, b goes back. Live mode only |
 
 `input = map` (edit button maps in the headset; the game gets nothing, `map` is
 not remembered as the game's start mode): a panel lists the 11 buttons with

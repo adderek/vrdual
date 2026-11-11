@@ -9,8 +9,9 @@
 #include <stdint.h>
 
 #define VRDUAL_MAGIC 0x56524455u /* "VRDU" */
-#define VRDUAL_VERSION 6u
+#define VRDUAL_VERSION 7u
 #define VRDUAL_SLOTS 4u
+#define VRDUAL_WHIST_N 64u  /* depth histogram buckets, half an octave each */
 
 enum { VRDUAL_DEPTH_F32 = 1 };
 
@@ -55,6 +56,14 @@ struct vrdual_shm_header {
     volatile uint64_t depth_frame[VRDUAL_SLOTS]; // frame + 1 whose depth the slot holds, 0 = none (inside the slot's seqlock)
     // v6: per slot (inside its seqlock), VRDUAL_SLOT_* bits
     volatile uint32_t slot_flags[VRDUAL_SLOTS];
+    // v7: depth histogram (vrdual-ctl measure, tune y): the answer to the
+    // control block's measure_seq. Patched vertex shaders count the main
+    // view's vertices (w != 1, not in off-screen passes) per bucket
+    // of clip w (view depth in game units, vrdual::whist_lo). Written whole,
+    // then whist_seq.
+    volatile uint32_t whist_seq;     // measure_seq answered, 0 = none yet
+    uint32_t whist_frames;           // frames sampled
+    uint32_t whist[VRDUAL_WHIST_N];
 };
 // drawn without head turn / lean (head_look_menus = 0: a menu, loading screen,
 // video): the cursor is not moved by the turn, scroll keys stay up
@@ -130,6 +139,11 @@ struct vrdual_ctl {
     volatile uint32_t xin_head;
     uint32_t xin_pad;
     struct { int32_t dev, type, code, value; } xin[VRDUAL_XIN_N];  // vrdual::InEvent: dev = vrdual::InDev, Linux event type / code
+    // version 9: depth measurement request: a new measure_seq makes each
+    // layer sample the w histogram for measure_frames frames (0 = 30) and
+    // answer in its frame header (whist_seq). Live mode only.
+    volatile uint32_t measure_seq;
+    uint32_t measure_frames;
 };
 
 static inline const char* vrdual_anchor_name(int a) {

@@ -25,7 +25,7 @@ inline std::string ctl_path(const std::string& session) { return shm_dir() + "/v
 
 // Live values from config (creation, and a new game joining an old block).
 inline void ctl_seed(vrdual_ctl& c, const Settings& s) {
-    c.version = 8;
+    c.version = 9;
     c.hunt_mode = 0;  // a hunt belongs to the game it ran on
     c.hud_mode = 0;   // so does a hidden HUD (a screenshot)
     c.ipd = s.f("ipd");
@@ -186,6 +186,47 @@ inline EyeParams eye_params(const vrdual_ctl& c, int eye, float aspect = 16.0f /
     head_rot(h, p00, p11, e.v + 20);
     return e;
 }
+
+// Depth histogram (vrdual_shm_header.whist): bucket b holds clip w with float
+// bits >> 22 == b + kWhistBase (exponent + top mantissa bit: buckets of x1.5
+// and x1.33 alternately), so w from 2^-12 up; the last bucket takes everything
+// above 1.5 * 2^19. The shader computes the index exactly so (spirv_patch.hpp).
+constexpr uint32_t kWhistBase = 230;
+inline double whist_lo(uint32_t b) {
+    uint32_t k = b + kWhistBase;
+    return std::ldexp(1.0 + 0.5 * (k & 1), int(k >> 1) - 127);
+}
+struct WhistStats {
+    uint64_t n = 0;
+    double p[5] = {};  // w at 10 / 25 / 50 / 75 / 90 %, game units
+};
+// Percentiles, geometric interpolation inside a bucket.
+inline WhistStats whist_stats(const uint32_t* h) {
+    WhistStats s;
+    for (uint32_t b = 0; b < VRDUAL_WHIST_N; ++b) s.n += h[b];
+    if (!s.n) return s;
+    static const double q[5] = {0.10, 0.25, 0.50, 0.75, 0.90};
+    for (int i = 0; i < 5; ++i) {
+        double want = q[i] * double(s.n), acc = 0;
+        for (uint32_t b = 0; b < VRDUAL_WHIST_N; ++b) {
+            if (!h[b] || acc + h[b] < want) { acc += h[b]; continue; }
+            double f = (want - acc) / h[b], lo = whist_lo(b), hi = b + 1 < VRDUAL_WHIST_N ? whist_lo(b + 1) : lo * 1.5;
+            s.p[i] = lo * std::pow(hi / lo, f);
+            break;
+        }
+    }
+    return s;
+}
+// Asks the layers for a depth histogram over `frames` frames (0 = 30); the
+// answer is the frame headers' whist_seq == the returned value.
+inline uint32_t measure_request(vrdual_ctl* c, uint32_t frames) {
+    uint32_t seq = c->measure_seq + 1;
+    if (!seq) seq = 1;
+    ctl_write(c, [&](vrdual_ctl& w) { w.measure_frames = frames; w.measure_seq = seq; });
+    return seq;
+}
+// world_scale that shows the median sampled vertex at `dist` meters.
+inline double whist_scale(const WhistStats& s, double dist) { return s.n && dist > 0 ? s.p[2] / dist : 0; }
 
 // Where a point the game shows at pixel (x, y) of a w x h eye image appears
 // after the head turn: (sx, sy) for the scene (homography M of eye_params),

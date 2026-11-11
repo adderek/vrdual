@@ -26,8 +26,8 @@ with open(sys.argv[-1], "rb") as f:
     slot_bytes, last = struct.unpack_from("<QQ", hdr, 32)
     if magic != 0x56524455 or not last:
         sys.exit("no frame")
-    if version != 6:
-        sys.exit("frame file version %d, expected 6" % version)
+    if version != 7:
+        sys.exit("frame file version %d, expected 7" % version)
     if cursor:
         seq, serial, cx, cy, cw, ch = struct.unpack_from("<IIiiII", hdr, CURSOR)
         print(cx, cy, cw, ch, serial)

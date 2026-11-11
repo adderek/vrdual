@@ -386,6 +386,14 @@ int main(int argc, char** argv) {
         c.rx = 1;
         s.step(c, 0.5);
         expect(s.v[Tuner::HFOV] == 90 && std::fabs(s.v[Tuner::SCREEN_FOV] - 70) < 0.01f, "tune, flat/curved screen: right stick x -> screen_fov 20 deg/s, hfov kept");
+        Tuner m;  // y: one measurement request per press; world_scale floor 0.001 (games with w far from meters)
+        m.v[Tuner::WORLD_SCALE] = 0.004f;
+        c = Controls{};
+        c.y = true;
+        int r1 = m.step(c, 0.1), r2 = m.step(c, 0.1);
+        c.y = false; c.ly = -1;
+        for (int i = 0; i < 100; ++i) m.step(c, 0.1);
+        expect((r1 & TUNE_MEASURE) && !(r2 & TUNE_MEASURE) && std::fabs(m.v[Tuner::WORLD_SCALE] - 0.001f) < 1e-6f, "tune: y -> one measure request; world_scale down to 0.001");
     }
     {  // scroll thresholds in tune: left stick x, only with head_look = scroll on a screen fixed in the room
         Tuner t;

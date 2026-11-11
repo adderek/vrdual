@@ -9,6 +9,8 @@
 //   vrdual-ctl live [--session S]         current live values of a running session
 //   vrdual-ctl set KEY VALUE [--session S]   change a live value (ipd accepts "64.5mm")
 //   vrdual-ctl save [--global] [--session S] write live values into the APP profile (or [global])
+//   vrdual-ctl measure [FRAMES] [--session S] depth histogram of the game's vertices: w percentiles,
+//                                         the world_scale that puts the median at measure_dist
 #include <sys/stat.h>
 
 #include <cstdio>
@@ -34,7 +36,7 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 
 static int usage() {
     fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | profiles [DIR] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
-                    "                  | live | set KEY VALUE | save [--global]   [--session S]\n"
+                    "                  | live | set KEY VALUE | save [--global] | measure [FRAMES]   [--session S]\n"
                     "                  | shaders | hunt [off | hide|noshift|hud LO HI | find [MODE]]   (LO, HI: 8 hex digits, inclusive)\n"
                     "                  | rule KEY noshift|hud|hide   (adds to shader_rules in the session's [app:NAME])\n");
     return 2;
@@ -269,6 +271,44 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[%s] shader_rules = %s (applies at the next game start)\n", sec.c_str(), val.c_str());
         printf("%s\n", val.c_str());
         return 0;
+    }
+
+    if (cmd == "measure") {  // depth histogram of the running game (live mode)
+        char* e = nullptr;
+        unsigned long frames = args.size() > 1 ? strtoul(args[1].c_str(), &e, 10) : 30;
+        if (args.size() > 2 || (e && *e) || !frames || frames > 10000) return usage();
+        vrdual_ctl v = ctl_read(c);
+        if (!v.live) { fprintf(stderr, "session runs in baked mode, measuring needs live mode\n"); return 1; }
+        uint32_t seq = measure_request(c, uint32_t(frames));
+        const vrdual_shm_header* got = nullptr;  // mapped, unmapped before return
+        for (int t = 0; t < 1200 && !got; ++t) {  // 60 s: a hidden window can get ~1 frame/s
+            for (int eye = 0; eye < 2 && !got; ++eye) {
+                int fd = open((shm_dir() + "/vrdual-" + session + "-" + std::to_string(eye)).c_str(), O_RDONLY | O_CLOEXEC);
+                if (fd < 0) continue;
+                void* p = mmap(nullptr, VRDUAL_HDR_BYTES, PROT_READ, MAP_SHARED, fd, 0);
+                close(fd);
+                if (p == MAP_FAILED) continue;
+                auto* h = (const vrdual_shm_header*)p;
+                if (h->magic == VRDUAL_MAGIC && h->version == VRDUAL_VERSION && h->whist_seq == seq) got = h;
+                else munmap(p, VRDUAL_HDR_BYTES);
+            }
+            if (!got) usleep(50000);
+        }
+        if (!got) { fprintf(stderr, "no answer from the layers (game not running, old layer copy or no depth histogram, see the game's log)\n"); return 1; }
+        __sync_synchronize();
+        uint32_t hist[VRDUAL_WHIST_N];
+        memcpy(hist, (const void*)got->whist, sizeof hist);
+        WhistStats st = whist_stats(hist);
+        float dist = load_settings({v.app}).f("measure_dist");
+        printf("app %s\nframes %u\nsamples %llu\n", v.app, got->whist_frames, (unsigned long long)st.n);
+        if (st.n) {
+            static const char* const q[5] = {"p10", "p25", "p50", "p75", "p90"};
+            for (int i = 0; i < 5; ++i) printf("w_%s %.6g\n", q[i], st.p[i]);
+            printf("world_scale %.6g\ndist_p50 %.6g\nmeasure_dist %g\nworld_scale_measured %.6g\n", v.world_scale,
+                   v.world_scale > 0 ? st.p[2] / v.world_scale : 0.0, dist, whist_scale(st, dist));
+        }
+        munmap((void*)got, VRDUAL_HDR_BYTES);
+        return st.n ? 0 : 1;
     }
 
     if (cmd == "save") {

@@ -103,6 +103,7 @@ vrdual_config() { "$B/vrdual-ctl" "${1:-show}" "${@:2}"; }
 vrdual_live() { pick_shm "$@"; "$B/vrdual-ctl" live "$@"; }
 vrdual_set() { pick_shm "$@"; "$B/vrdual-ctl" set "$@"; }
 vrdual_save() { pick_shm "$@"; "$B/vrdual-ctl" save "$@" && config_sync; }
+vrdual_measure() { pick_shm "$@"; "$B/vrdual-ctl" measure "$@"; }
 
 # cp + mv: a game starting meanwhile reads the old or the new file, never half of it.
 copy_atomic() { cp "$1" "$2.tmp.$$" && mv -f "$2.tmp.$$" "$2"; }
@@ -880,7 +881,7 @@ _selftest_nogpu() {
     glslc "$VRDUAL_ROOT/testapp/cube.frag" -o "$tmp/frag.spv"
     local sh m
     for sh in glsl hlsl; do
-        for m in "baked 0.03 0.02 5 0.25" "live 0x123456789a0" "baked 0.03 hud" "live 0x123456789a0 hud" "live 0x123456789a0 hide"; do
+        for m in "baked 0.03 0.02 5 0.25" "live 0x123456789a0" "baked 0.03 hud" "live 0x123456789a0 hud" "live 0x123456789a0 hide" "live 0x123456789a0 whist"; do
             label="spirv $sh ${m%% *}${m##*[0-9]}"
             # shellcheck disable=SC2086
             check bash -c "'$B/spvpatch' '$tmp/$sh.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv'"
@@ -901,7 +902,7 @@ _selftest_nogpu() {
     # tessellation evaluation / geometry: the last pre-raster stage when present
     for sh in tese geom; do
         glslc "$VRDUAL_ROOT/testapp/cube.$sh" -o "$tmp/$sh.spv"
-        for m in "baked 0.03" "live 0x123456789a0" "live 0x123456789a0 hide"; do
+        for m in "baked 0.03" "live 0x123456789a0" "live 0x123456789a0 hide" "live 0x123456789a0 whist"; do
             label="spirv $sh ${m%% *}${m##*[0-9]}"
             # shellcheck disable=SC2086
             check bash -c "'$B/spvpatch' '$tmp/$sh.spv' '$tmp/p.spv' $m && spirv-val --target-env vulkan1.1 '$tmp/p.spv'"
@@ -912,6 +913,9 @@ _selftest_nogpu() {
         grep -q 'SpecId 1987208241' <<<\"\$d\" && grep -q 'OpSpecConstantTrue' <<<\"\$d\""
     # uvec2 -> PhysicalStorageBuffer pointer bitcast: core only since SPIR-V 1.5,
     # legal earlier through SPV_KHR_physical_storage_buffer (which the patch adds)
+    label="spirv depth histogram: atomic add in a selection before the return, validates as SPIR-V 1.0"
+    check bash -c "'$B/spvpatch' '$tmp/glsl.spv' '$tmp/p.spv' live 0x123456789a0 whist && spirv-val --target-env spv1.0 '$tmp/p.spv' &&
+        d=\$(spirv-dis '$tmp/p.spv') && grep -q OpAtomicIAdd <<<\"\$d\" && grep -q 'ArrayStride 4' <<<\"\$d\""
     label="spirv live output validates as SPIR-V 1.0 (glslc's default)"
     check bash -c "'$B/spvpatch' '$tmp/glsl.spv' '$tmp/p.spv' live 0x123456789a0 && spirv-val --target-env spv1.0 '$tmp/p.spv'"
     label="spirv fuzz: 4x50000 mutated modules through every patch mode under ASan"
@@ -1114,6 +1118,23 @@ EOF
     label="hud_yaw 6 deg: HUD bar turned like the scene (homography), posts unchanged"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/hudyaw.png' && $M '$tmp/hudyaw.png' --ipd 0.064 --anchor center --hud-yaw 6"
     set_live hud_yaw=0
+    # Depth measurement: posts at 0.5..20 m, world_scale 1 (meters): the
+    # sampled w lie between the posts, the HUD bar (w == 1) is left out.
+    label="measure: w histogram of the vertex sample within the posts' 0.5..20 m, world_scale for measure_dist"
+    check bash -c "o=\$('$B/vrdual-ctl' --session $sess measure 10) && awk '{v[\$1]=\$2} END {
+        ok = v[\"samples\"] > 0 && v[\"w_p10\"] >= 0.4 && v[\"w_p90\"] <= 25 && v[\"w_p50\"] >= 0.5 && v[\"w_p50\"] <= 20 &&
+             v[\"world_scale_measured\"] > 0 && (v[\"world_scale_measured\"] * v[\"measure_dist\"] / v[\"w_p50\"] - 1)^2 < 1e-6
+        exit !ok }' <<<\"\$o\" || { echo \"\$o\"; grep -E 'measure|histogram' '$tmp/left.log' '$tmp/right.log'; false; }"
+    # A game joining that block (same Steam run) finds the answered
+    # measure_seq: it must not measure again at its first presents.
+    label="measure: a layer joining a block with an old measure_seq starts no measurement"
+    cp /dev/shm/vrdual-$sess-ctl /dev/shm/vrdual-$sess-j-ctl
+    check bash -c "env VK_ADD_LAYER_PATH='$B' VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess-j VRDUAL_EYE=right VRDUAL_LOCKSTEP=0 \
+        '$B/vrdual-cube' --scene calib --title 'selftest join' >'$tmp/join.log' 2>&1 & p=\$!; f=/dev/shm/vrdual-$sess-j-1; n=0
+        for i in \$(seq 600); do [[ -f \$f ]] && n=\$(od -An -tu8 -j40 -N8 \$f) && (( n >= 40 )) && break; sleep 0.1; done
+        kill \$p; wait \$p 2>/dev/null; rm -f /dev/shm/vrdual-$sess-j-*
+        (( n >= 40 )) && grep -q 'live params at device address' '$tmp/join.log' && ! grep -q 'measure [0-9]' '$tmp/join.log' ||
+        { echo frames=\$n; grep -E 'live params|measure|histogram' '$tmp/join.log'; false; }"
     # Shader hunt: both processes list the test shader's key; hide over the
     # whole key range leaves only the background, off brings the posts back.
     label="shader list: test shader key, once"
@@ -2021,6 +2042,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   shaders new LOG [CATALOG]     shaders a game met that are not in its shader_catalog (from the
                                   layer log) as catalog lines; with CATALOG, appended there
   live | set KEY VALUE | save   running session: show / change (e.g. "set ipd 64.5mm") / persist
+  measure [FRAMES]              running game's depth: w percentiles of a vertex sample and the
+                                  world_scale that shows the median at measure_dist (3 m)
   hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions;
                                   in the headset: controls = hunt, menu + a / b);
                                   hunt MODE LO HI | off sets a key range, hunt shaders lists keys,
@@ -2071,7 +2094,7 @@ EOF
 vrdual_dispatch() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
-        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|shot|map|record|profiles|shaders|perf|intro) "vrdual_$cmd" "$@" ;;
+        build|gpus|clean|demo|calib|snapshot|run|config|live|set|save|measure|hunt|selftest|ci|help|view|xr|wivrn|wivrn-restart|version|games|request|report|wiggle|shot|map|record|profiles|shaders|perf|intro) "vrdual_$cmd" "$@" ;;
         --version) vrdual_version "$@" ;;
         install|steam-install) vrdual_install "$@" ;;
         *) say "unknown command: $cmd"; vrdual_help; return 2 ;;

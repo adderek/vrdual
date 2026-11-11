@@ -42,6 +42,14 @@
 // the eye shift and hud_depth as usual, no head turn or lean (the view is
 // already turned).
 //
+// Depth histogram (o.whist, live, vertex / tessellation evaluation only):
+// while the uint at addr+100 is non-zero, a vertex with the gate on, pass
+// flag 0, w != 1 and w >= 2^-12 does atomicAdd(hist[min((bits(w) >> 22) - 230, 63)], 1), uint[64] at
+// addr+256 (buckets: vrdual::whist_lo). Every vertex counts: sampling by
+// position bits is biased (a box has 2 distinct clip x). The cost (one
+// atomic per vertex) lasts only the measured frames. Needs
+// vertexPipelineStoresAndAtomics.
+//
 // Gate: the result is selected against the original by a specialization
 // constant (SpecId kGateSpecId, default true). A pipeline with TES or GS sets
 // it false for the stages before the last one: their output is not clip space
@@ -67,10 +75,12 @@ enum : uint32_t {
     OpSelect = 169, OpFOrdEqual = 180, OpReturn = 253, OpEmitVertex = 218, OpEmitStreamVertex = 220,
     OpSpecConstantTrue = 48, OpDecorateId = 332, OpDecorateString = 5632, OpMemberDecorateString = 5633,
     OpDecorationGroup = 73, OpGroupDecorate = 74, OpGroupMemberDecorate = 75,
+    OpTypeArray = 28, OpAtomicIAdd = 234, OpISub = 130, OpShiftRightLogical = 194,
+    OpULessThan = 176, OpFOrdNotEqual = 182, OpFOrdGreaterThanEqual = 190, OpBranch = 249,
     OpLabel = 248, OpBranchConditional = 250, OpKill = 252, OpSelectionMerge = 247, OpTerminateInvocation = 4416,
 };
 enum : uint32_t {
-    ExecModelVertex = 0, ExecModelTessEval = 2, ExecModelGeometry = 3, ExecModelFragment = 4, StorageOutput = 3, DecSpecId = 1, StoragePhysicalStorageBuffer = 5349, DecBuiltIn = 11,
+    ExecModelVertex = 0, ExecModelTessEval = 2, ExecModelGeometry = 3, ExecModelFragment = 4, StorageOutput = 3, DecSpecId = 1, DecArrayStride = 6, StoragePhysicalStorageBuffer = 5349, DecBuiltIn = 11,
     BuiltInPosition = 0, AddrLogical = 0, AddrPhysicalStorageBuffer64 = 5348,
     CapPhysicalStorageBufferAddresses = 5347, MemAccessAligned = 2, GLSLFClamp = 43,
 };
@@ -83,6 +93,7 @@ struct PatchOptions {
     bool w1_hud = true; // w == 1 vertices get the hud_depth shift (false: unshifted, hud_depth_scope = rules)
     bool hide = false;  // rule: draw nothing
     uint32_t key = 0;   // live hunt: high 32 bits of the shader hash
+    bool whist = false; // live, VS / TES: count a sample of w into the depth histogram at addr+256 while the uint at addr+100 is set
 };
 
 constexpr uint32_t kGateSpecId = 0x76726431;  // 'vrd1': spec constant gating the patch
@@ -264,6 +275,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
     uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_hrot[3] = {}, c_flag = 0, c_u0 = 0, c_u2 = 0;
+    uint32_t c_whist = 0, t_harr = 0, p_harr = 0, p_hu = 0, c_h22 = 0, c_hbase = 0, c_h63 = 0, c_hmin = 0;
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
         if (!t_uvec2) { t_uvec2 = fresh(); emit(globals, OpTypeVector, {t_uvec2, t_uint, 2}); }
@@ -303,6 +315,21 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             c_flag = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_flag, fl, fh});
             c_u0 = fresh(); emit(globals, OpConstant, {t_uint, c_u0, 0});
             c_u2 = fresh(); emit(globals, OpConstant, {t_uint, c_u2, 2});
+        }
+        if (o.whist) {
+            uint32_t hl = fresh(), hh = fresh();
+            emit(globals, OpConstant, {t_uint, hl, uint32_t(o.addr + 256)});
+            emit(globals, OpConstant, {t_uint, hh, uint32_t((o.addr + 256) >> 32)});
+            c_whist = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_whist, hl, hh});
+            uint32_t c64 = fresh(); emit(globals, OpConstant, {t_uint, c64, 64});
+            t_harr = fresh(); emit(globals, OpTypeArray, {t_harr, t_uint, c64});
+            emit(annot, OpDecorate, {t_harr, DecArrayStride, 4});
+            p_harr = fresh(); emit(globals, OpTypePointer, {p_harr, StoragePhysicalStorageBuffer, t_harr});
+            p_hu = fresh(); emit(globals, OpTypePointer, {p_hu, StoragePhysicalStorageBuffer, t_uint});
+            c_h22 = fresh(); emit(globals, OpConstant, {t_uint, c_h22, 22});
+            c_hbase = fresh(); emit(globals, OpConstant, {t_uint, c_hbase, 230});
+            c_h63 = fresh(); emit(globals, OpConstant, {t_uint, c_h63, 63});
+            c_hmin = fresh(); emit(globals, OpConstant, {t_float, c_hmin, f2u(1.0f / 4096)});
         }
     } else {
         uint32_t c[4];
@@ -357,7 +384,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 out.insert(out.end(), in.begin() + I.off, in.begin() + I.off + I.wc);
                 continue;
             }
-            uint32_t prm = c_params, hp = 0;
+            uint32_t prm = c_params, hp = 0, pass_v = 0, pass_f = 0;  // pass_*: the uvec4 at addr+96 and its x
             if (live) {
                 uint32_t pp = fresh(), pp2 = fresh();
                 prm = fresh();
@@ -507,6 +534,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                     emit(out, OpBitcast, {p_psb4, fq, c_flag});
                     emit(out, OpLoad, {t_uvec4, fv, fq, MemAccessAligned, 16});
                     emit(out, OpCompositeExtract, {t_uint, fx, fv, 0});
+                    pass_v = fv, pass_f = fx;
                     // unturned: x + eye shift, or for the HUD x + h.w * w (y, z, w as given)
                     uint32_t xu = fresh(), hud1 = 0;
                     emit(out, OpFAdd, {t_float, xu, x, off});
@@ -552,6 +580,33 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                 v2 = res;
             }
             emit(out, OpStore, {ptr, sel4(c_gate, v2, v)});
+            if (o.whist && live && !o.hud && I.op == OpReturn) {  // depth histogram: a selection before the return (GS: Position undefined there)
+                uint32_t on = fresh(), m1 = fresh(), m2 = fresh(), wne = fresh(), wge = fresh();
+                uint32_t c1 = fresh(), c2 = fresh(), c3 = fresh(), c5 = fresh(), lt = fresh(), lm = fresh();
+                emit(out, OpCompositeExtract, {t_uint, on, pass_v, 1});
+                emit(out, OpINotEqual, {t_bool, m1, on, c_u0});
+                emit(out, OpIEqual, {t_bool, m2, pass_f, c_u0});
+                emit(out, OpFOrdNotEqual, {t_bool, wne, wv, c_one});
+                emit(out, OpFOrdGreaterThanEqual, {t_bool, wge, wv, c_hmin});
+                emit(out, OpLogicalAnd, {t_bool, c1, c_gate, m1});
+                emit(out, OpLogicalAnd, {t_bool, c2, c1, m2});
+                emit(out, OpLogicalAnd, {t_bool, c3, c2, wne});
+                emit(out, OpLogicalAnd, {t_bool, c5, c3, wge});
+                emit(out, OpSelectionMerge, {lm, 0});
+                emit(out, OpBranchConditional, {c5, lt, lm});
+                emit(out, OpLabel, {lt});
+                uint32_t wb = fresh(), k = fresh(), ix = fresh(), small = fresh(), ix2 = fresh(), hp0 = fresh(), ep = fresh(), old = fresh();
+                emit(out, OpBitcast, {t_uint, wb, wv});
+                emit(out, OpShiftRightLogical, {t_uint, k, wb, c_h22});
+                emit(out, OpISub, {t_uint, ix, k, c_hbase});
+                emit(out, OpULessThan, {t_bool, small, ix, c_h63});
+                emit(out, OpSelect, {t_uint, ix2, small, ix, c_h63});
+                emit(out, OpBitcast, {p_harr, hp0, c_whist});
+                emit(out, OpAccessChain, {p_hu, ep, hp0, ix2});
+                emit(out, OpAtomicIAdd, {t_uint, old, ep, c_m[1], c_u0, c_m[1]});  // scope Device (1), relaxed, + 1
+                emit(out, OpBranch, {lm});
+                emit(out, OpLabel, {lm});
+            }
             ++returns;
         }
         if (I.op == OpFunctionEnd) in_entry = false;

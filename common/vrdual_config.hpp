@@ -50,6 +50,7 @@ static const Key kKeys[] = {
     {"shader_catalog", "", "file of known shader keys (KEY = 16 hex digits first on a line, rest free text): shaders not in it are logged once as new"},
     {"shader_dump", "", "directory: unpatched shaders that have a vertex / tess eval / geometry entry point are written there as KEY.spv (debugging)"},
     {"hud_depth_scope", "all", "which draws hud_depth moves: all (every w == 1 vertex) | rules (only shaders with a hud rule; post-process passes stay put)"},
+    {"measure_dist", "3", "depth measurement (tune y, vrdual measure): world_scale is set so the median sampled vertex appears at this distance, meters"},
     {"hud_depth", "0", "show w == 1 draws (HUD) at this distance, meters (0 = infinity; live mode)"},
     {"live", "1", "IPD changeable at runtime (shader reads a GPU buffer)"},
     {"export", "1", "publish frames to /dev/shm for the compositor"},
