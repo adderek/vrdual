@@ -28,13 +28,18 @@ jobs:
           path: ~/debs
           key: debs-ubuntu-24.04-v1
       - name: install build deps
-        timeout-minutes: 4
+        timeout-minutes: 6
         run: |
           pkgs="glslc spirv-tools libxcb1-dev libxcb-xfixes0-dev libxcb-xtest0-dev"
           if ! ls ~/debs/*.deb >/dev/null 2>&1; then
             mkdir -p ~/debs/partial
-            apt="sudo apt-get -q -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Dir::Cache::archives=$HOME/debs"
-            $apt install -y --download-only --no-install-recommends $pkgs || { $apt update && $apt install -y --download-only --no-install-recommends $pkgs; }
+            apt="sudo timeout 90 apt-get -q -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Dir::Cache::archives=$HOME/debs"
+            fetch() { $apt install -y --download-only --no-install-recommends $pkgs; }
+            # the image's mirror list (Azure first), then kernel.org's mirror
+            fetch || { $apt update && fetch; } || {
+              echo "::warning::Ubuntu mirrors unreachable, trying mirrors.edge.kernel.org"
+              sudo sed -i 's#mirror+file:/etc/apt/apt-mirrors.txt#http://mirrors.edge.kernel.org/ubuntu/#' /etc/apt/sources.list.d/ubuntu.sources
+              $apt update; fetch; }
             sudo chown -R "$USER" ~/debs
           fi
           sudo dpkg -i ~/debs/*.deb
