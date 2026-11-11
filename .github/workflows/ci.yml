@@ -19,14 +19,23 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0  # git describe for the build identity
-      # xcb: headers only, the layer dlopens it. The image's package index is
-      # usually fresh enough: update only when the install fails. Short apt
-      # timeouts: a runner without DNS (2026-11-11) retried until the job's
-      # 10 min limit instead of failing.
+      # Build deps as cached .debs: runners that could not resolve the Ubuntu
+      # mirrors (2026-11-11) hung in apt until the job's limit. With the cache
+      # filled, apt never touches the network. xcb: headers only, the layer
+      # dlopens it. Change the key's suffix when the package list changes.
+      - uses: actions/cache@v4
+        with:
+          path: ~/debs
+          key: debs-ubuntu-24.04-v1
       - name: install build deps
         timeout-minutes: 4
         run: |
-          apt="sudo apt-get -q -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
           pkgs="glslc spirv-tools libxcb1-dev libxcb-xfixes0-dev libxcb-xtest0-dev"
-          $apt install -y --no-install-recommends $pkgs || { $apt update && $apt install -y --no-install-recommends $pkgs; }
+          if ! ls ~/debs/*.deb >/dev/null 2>&1; then
+            mkdir -p ~/debs/partial
+            apt="sudo apt-get -q -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Dir::Cache::archives=$HOME/debs"
+            $apt install -y --download-only --no-install-recommends $pkgs || { $apt update && $apt install -y --download-only --no-install-recommends $pkgs; }
+            sudo chown -R "$USER" ~/debs
+          fi
+          sudo dpkg -i ~/debs/*.deb
       - run: ./vrdual ci
