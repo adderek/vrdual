@@ -1,0 +1,24 @@
+# Unreal Gold (Steam 13250), Proton, D3D7 (D3DDrv) via wined3d -> GL -> Zink
+# (Unreal Engine 1 version 226, 32-bit Unreal.exe). Format:
+# docs/tasks/game-autotest.md. Not yet executable.
+
+[game]
+slug = "unreal-gold"
+steam = 13250
+profile = "Unreal.exe"      # [app:...] in the user's config; none saved yet
+regression = false
+
+# Tested 2026-11-13 in the headset: 1920x1080 gamescope, two-GPU mirror, no
+# profile: world_scale 1, hfov 90. The game opened at 640x480 and switched to
+# 1024x768 (its own default). Depth visible at world_scale 1 (so clip w is not
+# in raw engine units on this path). The owner's verdict: works, but the game
+# looks poor today (low-res textures) and moves fast, so keep the depth low.
+# Settings live in System/Unreal.ini ([WinDrv.WindowsClient]
+# FullscreenViewportX/Y, [Engine.Engine] GameRenderDevice), written on first run.
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu, then "New game"
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "unreal-gold"

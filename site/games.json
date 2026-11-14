@@ -115,6 +115,23 @@
   "writeup_pending": false
  },
  {
+  "game": "Aven Colony",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (UE4, DXVK, 64-bit `AvenColony-Win64-Shipping.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic), mirror mode; no own profile, `world_scale` ~10 (`tune`, saved under `[app:AvenColony-Win64-Shipping.exe]`)",
+  "notes": [
+   "Works: stereo confirmed in the headset (two-GPU mirror, 1920x1080).",
+   "`world_scale` tuned to ~10 in the headset (started at the default 1).",
+   "Quitting the game can log a crash in the gamescope WSI layer (`vkDestroySwapchainKHR`) after gamescope's X server is gone; it happens on exit only."
+  ],
+  "tested": "2026-11-14",
+  "single": "",
+  "alt": "",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
   "game": "Beyond Blue",
   "store": "Epic (Heroic): positive",
   "path": "Proton (umu, Proton-CachyOS), D3D11 (Unity, DXVK, 64-bit `Beyond Blue.exe`)",
@@ -969,6 +986,24 @@
    "The game's swapchain is `R8G8B8A8_UNORM` (most games: BGRA); `vrdual xr` now re-creates its headset swapchain when the frame format changes (before: red and blue swapped after another game)."
   ],
   "tested": "2026-10-30",
+  "single": "",
+  "alt": "",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
+  "game": "Unreal Gold (13250)",
+  "store": "Steam: positive",
+  "path": "Proton, D3D7 (`D3DDrv`) via wined3d → GL → Zink (Unreal Engine 1, 32-bit `Unreal.exe`, version 226)",
+  "status": "works",
+  "settings": "none needed: defaults (`world_scale = 1`, `hfov` 90); the game picks 1024x768",
+  "notes": [
+   "Stereo confirmed in the headset: depth is visible at the default `world_scale = 1`.",
+   "The game itself looks dated on a large virtual screen: low-resolution textures (stock version 226, D3D7 renderer).",
+   "Movement is fast: a stronger depth effect (higher `world_scale`) is likely to cause nausea, so keep it low.",
+   "Two-GPU mirror, 1920x1080 gamescope; the game opens at 640x480 and switches to 1024x768."
+  ],
+  "tested": "2026-11-13",
   "single": "",
   "alt": "",
   "media": [],

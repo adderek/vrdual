@@ -1,0 +1,22 @@
+# Aven Colony (Epic, via Heroic), Proton-CachyOS (umu), D3D11 via DXVK
+# (Unreal Engine 4, 64-bit AvenColony-Win64-Shipping.exe). Format:
+# docs/tasks/game-autotest.md. Not yet executable; the format has no Heroic
+# launch key yet (Epic app name dc07b9ead8214591b8df6d2546d2a0e3).
+
+[game]
+slug = "aven-colony"
+profile = "AvenColony-Win64-Shipping.exe"   # [app:...] in the user's config
+regression = false
+
+# Tested 2026-11-14 in the headset: 1920x1080 gamescope (Heroic), two-GPU
+# mirror, no curated profile. Started at world_scale 1, tuned with `tune` to
+# ~9.8 (saved under [app:AvenColony-Win64-Shipping.exe]), hfov 90. The owner's
+# verdict: works. On quit the gamescope WSI layer can crash in
+# vkDestroySwapchainKHR after gamescope's X server is gone (exit only).
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu, then a colony
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "aven-colony"
