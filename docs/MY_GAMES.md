@@ -1,9 +1,9 @@
 # My games
 
 The maintainer's library (every game vrdual can be tested on) lives in
-[site/library.json](../site/library.json) and is shown, with column choice,
-filters and sorting, on the site:
-<https://adderek.github.io/vrdual/library.html>.
+[site/library.json](../site/library.json) and is the site's game list, with
+column choice, filters and sorting (the vrdual status joined from
+games.json): <https://adderek.github.io/vrdual/games.html>.
 
 One row per game: `stores`, `vr` (dedicated VR routes for that game, by hand
 and from catalogs of VR mods), `platform` (where that route runs),

@@ -29,7 +29,9 @@ const stHtml = s => `<span class="${stCls(s)}">${esc(stLabel(s))}</span>`;
 const detailRows = g => [[tr("d_store", "store: test"), g.store], [tr("d_path", "path"), g.path], [tr("d_tested", "last tested"), g.tested],
   [tr("d_settings", "settings"), g.settings], [tr("d_notes", "notes"), g.notes]]
   .filter(r => r[1] && r[1].length).map(([h, v]) => `<dt>${esc(h)}</dt><dd>${Array.isArray(v) ? `<ul class="notes">${v.map(n => `<li>${md(n)}</li>`).join("")}</ul>` : md(v)}</dd>`).join("");
-const loadGames = () => fetch("games.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+const getJson = f => fetch(f).then(r => { if (!r.ok) throw new Error(f + ": " + r.status); return r.json(); });
+const loadGames = () => getJson("games.json");
+const loadLibrary = () => getJson("library.json");  // owned games, VR routes; "tested" = name in games.json
 
 // One media file: gif = wiggle (left / right eye alternated), mp4 = video.
 function mediaHtml(f) {

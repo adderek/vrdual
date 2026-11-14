@@ -1,98 +1,90 @@
-// Game list: status per GPU mode, other VR routes, details and media on demand.
+// Game list: every owned game (library.json) with its vrdual status (games.json,
+// linked by "tested"), dedicated and generic VR routes; details and media of a
+// tested game on demand.
 "use strict";
-let games = [], mode = "dual", sortK = "dual", sortDir = 1, query = "", hidden = new Set(), open = new Set();
+const GEN_URL = {"UEVR": "https://github.com/praydog/UEVR", "UUVR": "https://github.com/Raicuparta/uuvr",
+  "vorpX": "https://www.vorpx.com/", "Geo-11": "https://www.geo-11.com/"};
+const PCGW = "https://www.pcgamingwiki.com/wiki/";
+const ORDER = ["works", "runs", "broken", "no effect", "retest", "untested"];
+let tbl = null, rows = null;
 
-const modeSt = g => mode === "dual" ? g.status : g.single || "untested";
-const order = ["works", "runs", "broken", "no effect", "retest", "untested"];
-const keyOf = (g, k) => k === "game" ? nameKey(g)
-  : k === "dual" ? order.indexOf(g.status) : k === "single" ? order.indexOf(g.single || "untested") : g.alt ? 0 : 1;
+const pcgwUrl = r => PCGW + encodeURIComponent(r.pcgw.replace(/ /g, "_"));
+const nativeOf = r => r.pcgw_vr.filter(x => x === "native VR" || x === "native 3D")
+  .map(x => x === "native VR" ? t("l_pcgw_vr", "native VR mode") : t("l_pcgw_3d", "native stereo 3D mode"));
+const dedText = r => [r.vr, ...nativeOf(r)].filter(Boolean).join("; ");
+const dedHtml = r => [r.vr ? md(r.vr) : "", ...nativeOf(r).map(x => `${esc(x)} <span class="muted small">(<a href="${pcgwUrl(r)}#VR_support">PCGamingWiki</a>)</span>`)]
+  .filter(Boolean).join("; ");
+const dual = r => r.t ? r.t.status : "untested", single = r => r.t && r.t.single || "untested";
 
-function details(g) {
+function details(r) {
+  const g = r.t;
+  if (!g) return "";
   const s = slug(g);
   const sp = g.writeup_pending ? `<p class="pending">${t("g_pending", 'Tuned configuration, write-up pending (until then tune it yourself, <a href="{url}">CONFIG.md</a>).', {url: REPO + "CONFIG.md"})}</p>` : "";
   const media = g.media.length ? `<div class="media" data-media="${esc(s)}"><button type="button" class="load">${esc(t("g_show_media", "Show wiggle GIFs / videos ({n})", {n: g.media.length}))}</button></div>` : "";
-  return `<tr class="det" id="d-${esc(s)}"><td colspan="5"><dl>${detailRows(g)}</dl>${sp}${media}<p><a href="game.html?g=${encodeURIComponent(s)}">${esc(t("g_all_mat", "All materials for this game →"))}</a></p></td></tr>`;
+  return `<dl>${detailRows(g)}</dl>${sp}${media}<p><a href="game.html?g=${encodeURIComponent(s)}">${esc(t("g_all_mat", "All materials for this game →"))}</a></p>`;
 }
 
-function render() {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const hay = g => [g.game, g.store, g.path, g.settings, ...g.notes, g.alt].join(" ").toLowerCase();
-  const rows = games.filter(g => !hidden.has(modeSt(g)) && words.every(w => hay(g).includes(w)))
-    .sort((a, b) => { const x = keyOf(a, sortK), y = keyOf(b, sortK); return (x < y ? -1 : x > y ? 1 : 0) * sortDir || (nameKey(a) < nameKey(b) ? -1 : 1); });
-  // sorted by a status column: one labelled group per status
-  const grpOf = sortK === "dual" ? g => g.status : sortK === "single" ? g => g.single || "untested" : null;
-  const two = t("g_two", "two GPUs"), one = t("g_one", "one GPU"), alt = t("g_col_alt", "other VR routes");
-  const colName = sortK === "dual" ? two : one;
-  let prev = null;
-  document.querySelector("#t tbody").innerHTML = rows.map(g => {
-    const s = slug(g), o = open.has(s);
-    let head = "";
-    if (grpOf && grpOf(g) !== prev) {
-      prev = grpOf(g);
-      const n = rows.filter(x => grpOf(x) === prev).length;
-      head = `<tr class="grp"><th colspan="5" scope="rowgroup">${stHtml(prev)} <span class="muted">${esc(t("g_grp", "{col} · games: {n}", {col: colName, n}))}</span></th></tr>`;
-    }
-    const marks = (g.media.length ? `<span class="cam" title="${esc(t("g_mark_media", "wiggle GIF / video"))}">◐</span>` : "") +
-      (g.writeup_pending ? `<span class="spb" title="${esc(t("g_mark_pending", "tuned configuration, write-up pending"))}">★</span>` : "");
-    return head + `<tr class="row${o ? " open" : ""}${modeSt(g) === "broken" ? " broken" : ""}" data-s="${esc(s)}" tabindex="0" aria-expanded="${o}">
-      <td data-h="${esc(t("g_col_game", "game"))}"><div class="gcell"><span><span class="tw">▸</span> ${esc(g.game)}</span>${marks ? `<span class="marks">${marks}</span>` : ""}</div></td>
-      <td data-h="${esc(two)}" class="${mode === "dual" ? "hl" : ""}">${stHtml(g.status)}</td>
-      <td data-h="${esc(one)}" class="${mode === "single" ? "hl" : ""}">${stHtml(g.single)}</td>
-      <td data-h="${esc(alt)}">${g.alt ? md(g.alt) : `<span class="muted">${esc(t("g_not_researched", "not researched"))}</span>`}</td>
-      <td class="more"><span class="muted">${esc(o ? t("g_less", "less") : t("g_more", "more"))}</span></td></tr>` + (o ? details(g) : "");
-  }).join("");
-  const works = rows.filter(g => modeSt(g) === "works").length;
-  const cv = {shown: rows.length, total: games.length, works};
-  document.getElementById("count").textContent = mode === "single" ? t("g_count1", "games shown: {shown} of {total} · working on one GPU: {works}", cv)
-    : t("g_count2", "games shown: {shown} of {total} · working on two GPUs: {works}", cv);
-  document.querySelectorAll("th[data-k]").forEach(th => th.setAttribute("aria-sort", th.dataset.k === sortK ? (sortDir > 0 ? "ascending" : "descending") : "none"));
-  document.getElementById("single-note").hidden = mode !== "single";
+const COLS = [
+  {k: "game", label: () => t("g_col_game", "game"), text: r => r.game, key: r => nameKey(r),
+    html: r => {
+      const g = r.t;
+      const marks = g ? (g.media.length ? `<span class="cam" title="${esc(t("g_mark_media", "wiggle GIF / video"))}">◐</span>` : "") +
+        (g.writeup_pending ? `<span class="spb" title="${esc(t("g_mark_pending", "tuned configuration, write-up pending"))}">★</span>` : "") : "";
+      return `<div class="gcell"><span>${g ? '<span class="tw">▸</span> ' : ""}${esc(r.game)}</span>${marks ? `<span class="marks">${marks}</span>` : ""}</div>`;
+    }},
+  {k: "dual", label: () => t("g_two", "two GPUs"), text: r => dual(r) + " " + stLabel(dual(r)), key: r => ORDER.indexOf(dual(r)), html: r => stHtml(dual(r))},
+  {k: "single", label: () => t("g_one", "one GPU"), text: r => single(r) + " " + stLabel(single(r)), key: r => ORDER.indexOf(single(r)), html: r => stHtml(single(r))},
+  {k: "vr", label: () => t("l_col_ded", "dedicated VR"), text: dedText, key: r => dedText(r) ? 0 : 1, html: dedHtml},
+  {k: "generic", label: () => t("l_col_gen", "generic VR"), text: r => r.generic.join(" "), key: r => -r.generic.length,
+    html: r => r.generic.map(x => `<a class="tag" href="${GEN_URL[x]}">${esc(x)}</a>`).join(" ")},
+  {k: "platform", label: () => t("l_col_plat", "VR route runs on"), text: r => r.platform, html: r => esc(r.platform), hide: true},
+  {k: "engine", label: () => t("l_col_engine", "engine"), text: r => r.engine.join(", "), html: r => esc(r.engine.join(", "))},
+  {k: "api", label: () => t("l_col_api", "graphics API"), text: r => r.api.join(", "), html: r => esc(r.api.join(", ")), hide: true},
+  {k: "stores", label: () => t("l_col_stores", "stores"), text: r => r.stores.join(" "), html: r => esc(r.stores.join(", ")), hide: true},
+  {k: "pcgw", label: () => "PCGamingWiki", text: r => r.pcgw, hide: true,
+    html: r => r.pcgw ? `<a href="${pcgwUrl(r)}">${esc(r.pcgw)}</a>` : ""},
+];
+
+function onRender() {
+  const f = tbl.filters();
+  document.querySelectorAll("#quick button").forEach(b => b.setAttribute("aria-pressed", String((f[b.dataset.f] || "") === b.dataset.v)));
+  document.getElementById("single-note").hidden = !(f.single || "").trim();
+  // nothing found by name: say why rather than show an empty table
+  const none = document.getElementById("none");
+  none.hidden = !!document.querySelector("#t tbody tr");
+  none.textContent = t("g_not_owned", "No game matches. Only games the maintainer owns are listed (only those can be tested); check the filters above or the spelling.");
 }
 
-function chips() {
-  const box = document.getElementById("status");
-  const list = mode === "single" ? order : STATUS;
-  box.innerHTML = list.map(s => `<button type="button" data-s="${s}" aria-pressed="${!hidden.has(s)}">${esc(stLabel(s))} (${games.filter(g => modeSt(g) === s).length})</button>`).join("");
+function start(want) {
+  tbl = makeTable({table: document.getElementById("t"), cols: COLS, rows, store: "vrdual-games",
+    tools: document.getElementById("tb"), onRender, detail: details,
+    id: r => r.t ? slug(r.t) : "x-" + slug(r),
+    search: {input: document.getElementById("q"), text: r => [r.game, dedText(r), r.engine.join(" "),
+      ...(r.t ? [r.t.game, r.t.store, r.t.path, r.t.settings, ...r.t.notes] : [])].join(" ")},
+    defaults: {filters: {dual: "!untested"}, sort: [["dual", 1], ["game", 1]]},
+    count: (shown, all) => {
+      document.getElementById("count").textContent = t("g_count", "games shown: {shown} of {total} · working on two GPUs: {works} · with a dedicated VR route: {ded}",
+        {shown: shown.length, total: all.length, works: shown.filter(r => dual(r) === "works").length, ded: shown.filter(r => dedText(r)).length});
+    }});
+  tbl.render();
+  const r = want && rows.find(x => x.t && slug(x.t) === want);
+  if (r) tbl.show(r);
 }
 
-document.getElementById("status").addEventListener("click", e => {
-  const b = e.target.closest("button"); if (!b) return;
-  const s = b.dataset.s;
-  hidden.has(s) ? hidden.delete(s) : hidden.add(s);
-  b.setAttribute("aria-pressed", String(!hidden.has(s)));
-  render();
+document.getElementById("quick").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || !tbl) return;
+  tbl.filter(b.dataset.f, b.getAttribute("aria-pressed") === "true" ? "" : b.dataset.v);
 });
-document.getElementById("mode").addEventListener("change", e => {
-  mode = e.target.value; hidden.clear(); sortK = mode; sortDir = 1;
-  try { localStorage.setItem("vrdual-mode", mode); } catch (_) {}
-  chips(); render();
-});
-document.getElementById("q").addEventListener("input", e => { query = e.target.value; render(); });
-document.querySelectorAll("th[data-k]").forEach(th => th.addEventListener("click", () => {
-  sortDir = sortK === th.dataset.k ? -sortDir : 1; sortK = th.dataset.k; render();
-}));
-const tbody = document.querySelector("#t tbody");
-function toggle(tr) { const s = tr.dataset.s; open.has(s) ? open.delete(s) : open.add(s); render(); }
-tbody.addEventListener("click", e => {
+document.querySelector("#t tbody").addEventListener("click", e => {
   const load = e.target.closest("button.load");
-  if (load) {  // media only now: GIFs are 0.2-0.8 MB each
-    const box = load.parentElement, g = games.find(x => slug(x) === box.dataset.media);
-    box.innerHTML = g.media.map(mediaHtml).join("");
-    return;
-  }
-  const tr = e.target.closest("tr.row");
-  if (tr && !e.target.closest("a")) toggle(tr);
+  if (!load) return;  // media only now: GIFs are 0.2-0.8 MB each
+  const box = load.parentElement, r = rows.find(x => x.t && slug(x.t) === box.dataset.media);
+  box.innerHTML = r.t.media.map(mediaHtml).join("");
 });
-tbody.addEventListener("keydown", e => { const tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(tr); } });
-
-try { mode = localStorage.getItem("vrdual-mode") === "single" ? "single" : "dual"; } catch (_) {}
-sortK = mode;
-document.querySelector(`#mode input[value="${mode}"]`).checked = true;
-const want = new URLSearchParams(location.search).get("g");
-onLang(() => { if (games.length) { chips(); render(); } });
-loadGames().then(d => {
-  games = d;
-  if (want) open.add(want);
-  chips(); render();
-  if (want) document.getElementById("d-" + want)?.scrollIntoView({block: "center"});
-}).catch(e => { document.getElementById("count").textContent = "games.json: " + e; });
+onLang(() => { if (tbl) tbl.render(); });
+Promise.all([loadLibrary(), loadGames()]).then(([lib, gs]) => {
+  const by = new Map(gs.map(g => [g.game, g]));
+  rows = lib.map(r => ({...r, t: by.get(r.tested) || null}));
+  start(new URLSearchParams(location.search).get("g"));
+}).catch(e => { document.getElementById("count").textContent = "games.json / library.json: " + e; });

@@ -9,46 +9,55 @@
 <script>try{var t=localStorage.getItem("vrdual-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" aria-current="page" data-i18n="nav_games">Games</a><a href="library.html" data-i18n="nav_library">Library</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" aria-current="page" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
   <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
 <noscript><p class="note noscript">This page needs JavaScript to show the table. Without it, read the same list on GitHub: <a href="https://github.com/adderek/vrdual/blob/master/docs/GAMES.md">GAMES.md</a>.</p></noscript>
 <header class="page">
   <h1 data-i18n="g_h1">Games</h1>
-  <p data-i18n="g_intro">Status per game as tested; anything not listed is untested. Click a game for settings, notes and wiggle GIFs.</p>
+  <p data-i18n="g_intro">Every game the maintainer owns (only these can be tested), with its vrdual status on one and two GPUs and the other VR routes for it: dedicated (a VR edition, a native VR mode, a mod for that game) and generic (by engine or graphics API). The view starts with the tested games; click one for settings, notes and wiggle GIFs.</p>
 </header>
 <main class="page">
   <div class="tools">
-    <fieldset id="mode" class="seg">
-      <legend data-i18n="g_have">I have</legend>
-      <label><input type="radio" name="mode" value="single"> <span data-i18n="g_one">one GPU</span></label>
-      <label><input type="radio" name="mode" value="dual"> <span data-i18n="g_two">two GPUs</span></label>
-    </fieldset>
     <input id="q" type="search" data-i18n="g_search" data-i18n-attr="placeholder" placeholder="Search game, notes…" aria-label="search">
+    <div id="tb" class="tbtools"></div>
   </div>
-  <div id="status" class="chips" role="group" aria-label="status filter"></div>
+  <div class="chips" id="quick" role="group" aria-label="quick filters">
+    <button type="button" data-f="dual" data-v="!untested" data-i18n="l_q_tested">tested with vrdual</button>
+    <button type="button" data-f="dual" data-v="works" data-i18n="g_q_works2">works on two GPUs</button>
+    <button type="button" data-f="single" data-v="works" data-i18n="g_q_works1">works on one GPU</button>
+    <button type="button" data-f="vr" data-v="*" data-i18n="l_q_ded">has a dedicated VR route</button>
+    <button type="button" data-f="generic" data-v="*" data-i18n="l_q_gen">has a generic VR route</button>
+  </div>
   <p id="single-note" class="note" hidden data-i18n="g_single_note">One GPU: few games checked so far, most were tested on two GPUs. The same
     patch runs on one GPU with the eyes on alternate frames (half the frame rate per eye). Turn off temporal AA /
     upscaling (TAA, DLSS, FSR, XeSS), motion blur and frame generation: they mix the eyes.</p>
   <p id="count" class="muted"></p>
+  <p id="none" class="note" hidden></p>
   <div class="wrap">
-    <table id="t">
-      <thead><tr>
-        <th data-k="game" data-i18n="g_col_game">game</th><th data-k="dual" data-i18n="g_two">two GPUs</th><th data-k="single" data-i18n="g_one">one GPU</th>
-        <th data-k="alt" data-i18n="g_col_alt">other VR routes</th><th aria-label="details"></th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+    <table id="t" class="resp"><thead></thead><tbody></tbody></table>
   </div>
-  <p class="muted legend" data-i18n="g_legend"><b>works</b> = stereo in the headset confirmed; <b>runs</b> = renders, stereo not
+  <div class="muted legend">
+  <p data-i18n="g_legend"><b>works</b> = stereo in the headset confirmed; <b>runs</b> = renders, stereo not
     confirmed in the headset or weak; <b>broken</b> = crash or no picture; <b>no effect</b> = runs, nothing to gain (2D);
     <b>retest</b> = result outdated. ◐ = wiggle GIF / video; ★ = tuned configuration, write-up pending;
     until then everything can be configured by hand
-    (<a href="https://github.com/adderek/vrdual/blob/master/docs/CONFIG.md">CONFIG.md</a>). <b>Other VR routes</b>:
+    (<a href="https://github.com/adderek/vrdual/blob/master/docs/CONFIG.md">CONFIG.md</a>). <b>Dedicated VR</b>:
     dedicated mods or tools for that game, as found; a dedicated mod usually does more for its game than vrdual.
     Setup and settings that break stereo: <a href="https://github.com/adderek/vrdual/blob/master/docs/GAMES.md">GAMES.md</a>.</p>
+    <p data-i18n="l_legend_gen"><b>Generic routes</b>, from the game's engine or API (PCGamingWiki data; that a route exists for the
+      engine does not mean it works for this game): <b>UEVR</b> = <a href="https://github.com/praydog/UEVR">UEVR</a> (praydog),
+      injector for Unreal Engine 4/5 games, per-game profiles on uevr-profiles.com; <b>UUVR</b> =
+      <a href="https://github.com/Raicuparta/uuvr">Universal Unity VR</a> (Raicuparta), for Unity games;
+      <b>vorpX</b> = <a href="https://www.vorpx.com/">vorpX</a> (paid), PCGamingWiki lists a profile for the game;
+      <b>Geo-11</b> = <a href="https://www.geo-11.com/">Geo-11</a>, stereo 3D / VR screen for Direct3D 11 games.</p>
+    <p data-i18n="l_legend_ded"><b>Dedicated routes</b>: researched by hand and from catalogs of VR mods (may be outdated, check before
+      relying on it); <i>PCGamingWiki</i> marks a native VR or stereo 3D mode listed there. Nearly all of them are Windows-only
+      (SteamVR / OpenXR); on Linux they may run through Proton with WiVRn or Monado (untested here).</p>
+  </div>
 </main>
 <script src="common.js"></script>
 <script src="i18n.js"></script>
+<script src="table.js"></script>
 <script src="games.js"></script>
 </body>
 </html>

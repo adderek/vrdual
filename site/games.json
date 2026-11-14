@@ -10,7 +10,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -25,7 +24,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -41,7 +39,6 @@
   ],
   "tested": "2026-11-06",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -58,7 +55,6 @@
   ],
   "tested": "2026-10-22",
   "single": "runs",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -75,7 +71,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "MotherVR (Windows only)",
   "media": [],
   "writeup_pending": false
  },
@@ -90,7 +85,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -108,7 +102,6 @@
   ],
   "tested": "2026-10-26",
   "single": "",
-  "alt": "",
   "media": [
    "AssasinsCreedOrigins.gif"
   ],
@@ -127,7 +120,6 @@
   ],
   "tested": "2026-11-14",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -143,7 +135,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -160,7 +151,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -177,7 +167,6 @@
   ],
   "tested": "2026-10-22",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": true
  },
@@ -192,7 +181,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -208,7 +196,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -238,7 +225,6 @@
   ],
   "tested": "2026-11-06",
   "single": "",
-  "alt": "",
   "media": [
    "Civ5.gif",
    "Civ5-2.gif"
@@ -257,7 +243,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": true
  },
@@ -274,7 +259,6 @@
   ],
   "tested": "2026-10-25",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -289,7 +273,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -304,7 +287,6 @@
   ],
   "tested": "2026-10-28",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -320,7 +302,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "",
   "media": [
    "DukeNukem4ever_1.gif"
   ],
@@ -338,7 +319,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -353,7 +333,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "",
   "media": [
    "FableAnniversary_1.gif",
    "FableAnniversary_2.gif"
@@ -371,7 +350,6 @@
   ],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -389,7 +367,6 @@
   ],
   "tested": "2026-10-26",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -404,7 +381,6 @@
   ],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -420,7 +396,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -435,7 +410,6 @@
   ],
   "tested": "2026-10-27",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -452,7 +426,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "UEVR (generic UE4/UE5 mod, Windows)",
   "media": [
    "HogwartsLegacy_1.gif",
    "HogwartsLegacy_2.gif"
@@ -471,7 +444,6 @@
   ],
   "tested": "2026-10-20",
   "single": "",
-  "alt": "",
   "media": [
    "HospitalTycoon-3.gif",
    "HospitalTycoon-4.gif",
@@ -492,7 +464,6 @@
   ],
   "tested": "2026-11-06",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -508,7 +479,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "none found",
   "media": [],
   "writeup_pending": false
  },
@@ -524,7 +494,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "vorpX (classic mode only, reported)",
   "media": [],
   "writeup_pending": false
  },
@@ -541,7 +510,6 @@
   ],
   "tested": "2026-11-05",
   "single": "",
-  "alt": "",
   "media": [
    "LegoHarry.gif"
   ],
@@ -558,7 +526,6 @@
   ],
   "tested": "2026-10-23",
   "single": "",
-  "alt": "none found",
   "media": [
    "LegoMarvel4.gif",
    "LegoMarvel.gif",
@@ -578,7 +545,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -596,7 +562,6 @@
   ],
   "tested": "2026-10-22",
   "single": "",
-  "alt": "UEVR (generic, Windows); Little Nightmares VR: Altered Echoes (separate game)",
   "media": [],
   "writeup_pending": false
  },
@@ -612,7 +577,6 @@
   ],
   "tested": "2026-11-06",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -629,7 +593,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [
    "Magicka_1.gif"
   ],
@@ -646,7 +609,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -661,7 +623,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -678,7 +639,6 @@
   ],
   "tested": "2026-10-31",
   "single": "",
-  "alt": "",
   "media": [
    "MirrorsEdge.gif"
   ],
@@ -698,7 +658,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -714,7 +673,6 @@
   ],
   "tested": "2026-10-28",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -729,7 +687,6 @@
   ],
   "tested": "2026-10-28",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -747,7 +704,6 @@
   ],
   "tested": "2026-10-23",
   "single": "runs",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -764,7 +720,6 @@
   ],
   "tested": "2026-10-22",
   "single": "",
-  "alt": "none found",
   "media": [],
   "writeup_pending": false
  },
@@ -781,7 +736,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -796,7 +750,6 @@
   ],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -813,7 +766,6 @@
   ],
   "tested": "2026-10-25",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -829,7 +781,6 @@
   ],
   "tested": "2026-10-30",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": true
  },
@@ -845,7 +796,6 @@
   ],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -860,7 +810,6 @@
   ],
   "tested": "2026-10-25",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -876,7 +825,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "none found",
   "media": [],
   "writeup_pending": false
  },
@@ -891,7 +839,6 @@
   ],
   "tested": "2026-11-05",
   "single": "",
-  "alt": "",
   "media": [
    "ShadowWarriorNew-1.gif",
    "ShadowWarriorNew-2.gif",
@@ -910,7 +857,6 @@
   ],
   "tested": "2026-10-30",
   "single": "",
-  "alt": "Skyrim VR (separate official release)",
   "media": [],
   "writeup_pending": false
  },
@@ -927,7 +873,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "generic stereo tools only",
   "media": [],
   "writeup_pending": false
  },
@@ -943,7 +888,6 @@
   ],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -958,7 +902,6 @@
   ],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -971,7 +914,6 @@
   "notes": [],
   "tested": "",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -987,7 +929,6 @@
   ],
   "tested": "2026-10-30",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -1005,7 +946,6 @@
   ],
   "tested": "2026-11-13",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -1023,7 +963,6 @@
   ],
   "tested": "2026-10-29",
   "single": "",
-  "alt": "Geo-11 (generic DX11 stereo, Windows), reported to work",
   "media": [],
   "writeup_pending": false
  },
@@ -1041,7 +980,6 @@
   ],
   "tested": "2026-10-30",
   "single": "runs",
-  "alt": "[witcher3-vr](https://github.com/tig3rmast3r/witcher3-vr) (dedicated, Windows) and its fork [joschi127/witcher3-vr](https://github.com/joschi127/witcher3-vr) (Linux under Proton + WiVRn): a better choice for this game",
   "media": [
    "Witcher3.gif",
    "Witcher3.mp4"
@@ -1059,7 +997,6 @@
   ],
   "tested": "2026-10-25",
   "single": "",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  },
@@ -1074,7 +1011,6 @@
   ],
   "tested": "",
   "single": "runs",
-  "alt": "",
   "media": [],
   "writeup_pending": false
  }

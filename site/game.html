@@ -9,7 +9,7 @@
 <script>try{var t=localStorage.getItem("vrdual-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="library.html" data-i18n="nav_library">Library</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
   <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
 <noscript><p class="note noscript">This page needs JavaScript. Without it, read the game list on GitHub: <a href="https://github.com/adderek/vrdual/blob/master/docs/GAMES.md">GAMES.md</a>.</p></noscript>
 <main class="page" id="g"><p class="muted" data-i18n="p_loading">Loading…</p></main>
@@ -18,19 +18,21 @@
 <script>
 "use strict";
 const want = new URLSearchParams(location.search).get("g");
-let games = null;
+let games = null, lib = [];
 function show() {
   const box = document.getElementById("g");
   if (!games) return;
   const g = games.find(x => slug(x) === want);
   if (!g) { box.innerHTML = `<h1>${esc(t("p_notfound", "Not found"))}</h1><p><a href="games.html">${esc(t("p_all_games", "All games"))}</a></p>`; return; }
   document.title = g.game + " · vrdual";
+  const r = lib.find(x => x.tested === g.game);  // library row: VR routes
   box.innerHTML = `<p><a href="games.html?g=${encodeURIComponent(want)}">${esc(t("p_back", "← all games"))}</a></p>
     <h1>${esc(g.game)}</h1>
     <div class="cards">
       <div class="card"><h3>${esc(t("g_two", "two GPUs"))}</h3>${stHtml(g.status)}</div>
       <div class="card"><h3>${esc(t("g_one", "one GPU"))}</h3>${stHtml(g.single)}</div>
-      <div class="card wide"><h3>${esc(t("g_col_alt", "other VR routes"))}</h3>${g.alt ? md(g.alt) : `<span class="muted">${esc(t("g_not_researched", "not researched"))}</span>`}</div>
+      <div class="card wide"><h3>${esc(t("l_col_ded", "dedicated VR"))}</h3>${r && r.vr ? md(r.vr) : '<span class="muted">—</span>'}</div>
+      <div class="card"><h3>${esc(t("l_col_gen", "generic VR"))}</h3>${r && r.generic.length ? esc(r.generic.join(", ")) : '<span class="muted">—</span>'}</div>
     </div>
     <h2>${esc(t("p_materials", "Materials"))}</h2>
     ${g.media.length ? `<div class="media">${g.media.map(mediaHtml).join("")}</div>
@@ -42,8 +44,8 @@ function show() {
     <h2>${esc(t("p_details", "Details"))}</h2><dl>${detailRows(g)}</dl>`;
 }
 onLang(show);
-loadGames().then(d => { games = d; show(); })
-  .catch(e => { document.getElementById("g").textContent = "games.json: " + e; });
+Promise.all([loadGames(), loadLibrary()]).then(([d, l]) => { games = d; lib = l; show(); })
+  .catch(e => { document.getElementById("g").textContent = String(e); });
 </script>
 </body>
 </html>

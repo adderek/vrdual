@@ -65,8 +65,8 @@ proves nothing (2026-11-06: a Wine profile check first passed without the fix).
 | `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), UI translated on all three pages (English in the HTML `data-i18n` or in the scripts `t("key", "English")`, `site/i18n.json` for the rest, `site/i18n.js` language list + browser detection; `vrdual ci` checks every language has every key of the pages and scripts; game data stays English), deployed by `.github/workflows/pages.yml`; public material only, never unpublished notes |
 | `autotest/recipes/*.toml` | per-game test recipes (data only: launch, ini edits, menu steps, checks); runner planned, [docs/tasks/game-autotest.md](docs/tasks/game-autotest.md) |
 | `docs/TESTING.md` | what is tested how (ci, selftest, `--background`, game recipes, headset); why an own game-test runner, not SikuliX |
-| `site/library.json`, `site/library.html` | the owner's library (which games can be tested at all): stores, dedicated and generic VR routes, engine / API from PCGamingWiki, `tested` = link into games.json; `tools/library.py` (`pcgw`, `link`, `--check` in `vrdual ci`); `docs/MY_GAMES.md` only points there |
-| `site/table.js` | sortable / filterable table with a column chooser, choices kept in localStorage (library page) |
+| `site/library.json` | the owner's library (which games can be tested at all; rows of the site's game list `games.html`): stores, dedicated and generic VR routes (the only place for them), engine / API from PCGamingWiki, `tested` = link into games.json; `tools/library.py` (`pcgw`, `link`, `--check` in `vrdual ci`); `docs/MY_GAMES.md` only points there |
+| `site/table.js` | sortable / filterable table with a column chooser, choices kept in localStorage, expandable detail rows (game list) |
 | `tools/steam_library.py` | owned Steam games from the local client cache (licences, names, installed, Deck rating), marked tested from games.json; `--untested` |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 

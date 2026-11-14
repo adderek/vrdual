@@ -1,13 +1,15 @@
 // Sortable, filterable table with a column chooser; the viewer's choices
-// (hidden columns, filters, sort) are kept per browser under one storage key.
+// (hidden columns, filters, sort, search) are kept per browser under one key.
 // cols: [{k, label, text(row) -> string for filter and sort, html(row) -> cell,
 //         key(row) -> sort key (default: text, case-folded), hide: hidden by default}]
 // Filter syntax per column: words must all match (substring, any case);
 // !word = must not match; * = not empty; !* = empty. Hidden columns do not filter.
+// Optional: search = {input, text(row)} (all words must match), detail(row) ->
+// html of an expandable row below it ("" = none), id(row) -> stable id for it.
 "use strict";
 
-function makeTable({table, cols, rows, store, tools, count, onRender}) {
-  const def = {hidden: cols.filter(c => c.hide).map(c => c.k), filters: {}, sort: [[cols[0].k, 1]]};
+function makeTable({table, cols, rows, store, tools, count, onRender, defaults = {}, search, detail, id}) {
+  const def = {hidden: cols.filter(c => c.hide).map(c => c.k), filters: {}, sort: [[cols[0].k, 1]], q: "", ...structuredClone(defaults)};
   let st = structuredClone(def);
   try { Object.assign(st, JSON.parse(localStorage.getItem(store) || "{}")); } catch (_) {}
   const known = new Set(cols.map(c => c.k));
@@ -17,6 +19,9 @@ function makeTable({table, cols, rows, store, tools, count, onRender}) {
   const fold = s => String(s).toLowerCase();
   const txt = new Map(cols.map(c => [c.k, new Map(rows.map(r => [r, fold(c.text(r))]))]));
   const skey = new Map(cols.map(c => [c.k, new Map(rows.map(r => [r, c.key ? c.key(r) : fold(c.text(r))]))]));
+  const hay = search ? new Map(rows.map(r => [r, fold(search.text(r))])) : null;
+  const open = new Set();
+  const rid = r => id ? id(r) : String(rows.indexOf(r));
 
   function match(k, f) {
     const terms = f.trim().split(/\s+/).filter(Boolean).map(w => [w.startsWith("!"), fold(w.replace(/^!/, ""))]);
@@ -38,11 +43,14 @@ function makeTable({table, cols, rows, store, tools, count, onRender}) {
       `<label><input type="checkbox" data-c="${c.k}"${st.hidden.includes(c.k) ? "" : " checked"}> ${esc(c.label())}</label>`).join("")}</div></details>
       <button type="button" class="reset">${esc(t("tb_reset", "Reset view"))}</button>
       <span class="muted small">${t("tb_syntax", "Filters: words must all match; <code>!word</code> excludes, <code>*</code> = not empty, <code>!*</code> = empty. Shift+click a header to sort by several columns.")}</span>`;
+    if (search) search.input.value = st.q;
   }
 
   function body() {
     const vis = cols.filter(c => !st.hidden.includes(c.k));
     const fs = Object.entries(st.filters).filter(([k, f]) => f.trim() && vis.some(c => c.k === k)).map(([k, f]) => match(k, f));
+    const words = fold(st.q).split(/\s+/).filter(Boolean);
+    if (words.length) fs.push(r => words.every(w => hay.get(r).includes(w)));
     const cmp = (a, b) => {
       for (const [k, d] of st.sort) {
         const x = skey.get(k).get(a), y = skey.get(k).get(b);
@@ -51,7 +59,11 @@ function makeTable({table, cols, rows, store, tools, count, onRender}) {
       return 0;
     };
     const shown = rows.filter(r => fs.every(f => f(r))).sort(cmp);
-    table.tBodies[0].innerHTML = shown.map(r => `<tr>${vis.map(c => `<td data-h="${esc(c.label())}">${c.html(r)}</td>`).join("")}</tr>`).join("");
+    table.tBodies[0].innerHTML = shown.map(r => {
+      const d = detail ? detail(r) : "", i = rid(r), o = d && open.has(i);
+      return `<tr class="row${d ? " exp" : ""}${o ? " open" : ""}" data-id="${esc(i)}"${d ? ` tabindex="0" aria-expanded="${o}"` : ""}>${vis.map(c =>
+        `<td data-h="${esc(c.label())}">${c.html(r)}</td>`).join("")}</tr>` + (o ? `<tr class="det" id="d-${esc(i)}"><td colspan="${vis.length}">${d}</td></tr>` : "");
+    }).join("");
     if (count) count(shown, rows);
     if (onRender) onRender(shown);
   }
@@ -65,19 +77,40 @@ function makeTable({table, cols, rows, store, tools, count, onRender}) {
     save(); head(); body();
   });
   let timer = 0;
+  const later = () => { clearTimeout(timer); timer = setTimeout(body, 120); };
   table.tHead.addEventListener("input", e => {
     const k = e.target.dataset.f; if (!k) return;
-    st.filters[k] = e.target.value; save();
-    clearTimeout(timer); timer = setTimeout(body, 120);
+    st.filters[k] = e.target.value; save(); later();
+  });
+  if (search) search.input.addEventListener("input", () => { st.q = search.input.value; save(); later(); });
+  const toggle = tr => { const i = tr.dataset.id; open.has(i) ? open.delete(i) : open.add(i); body(); };
+  table.tBodies[0].addEventListener("click", e => {
+    const tr = e.target.closest("tr.row.exp");
+    if (tr && !e.target.closest("a, button, input")) toggle(tr);
+  });
+  table.tBodies[0].addEventListener("keydown", e => {
+    const tr = e.target.closest("tr.row.exp");
+    if (tr && e.target === tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(tr); }
   });
   tools.addEventListener("change", e => {
     const k = e.target.dataset.c; if (!k) return;
     st.hidden = e.target.checked ? st.hidden.filter(x => x !== k) : [...st.hidden, k];
-    save(); const open = tools.querySelector("details").open; head(); tools.querySelector("details").open = open; body();
+    save(); const o = tools.querySelector("details").open; head(); tools.querySelector("details").open = o; body();
   });
   tools.addEventListener("click", e => {
     if (!e.target.closest("button.reset")) return;
     st = structuredClone(def); save(); head(); body();
   });
-  return {render() { head(); body(); }, filter(k, v) { st.filters[k] = v; save(); head(); body(); }};
+  return {
+    render() { head(); body(); },
+    filter(k, v) { st.filters[k] = v; save(); head(); body(); },
+    filters: () => st.filters,
+    // show one row expanded: filters that hide it are dropped for this view
+    show(r) {
+      open.add(rid(r));
+      body();
+      if (!document.getElementById("d-" + rid(r))) { st.filters = {}; st.q = ""; head(); body(); }
+      document.getElementById("d-" + rid(r))?.scrollIntoView({block: "center"});
+    },
+  };
 }

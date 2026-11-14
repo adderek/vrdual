@@ -22,10 +22,10 @@ FIELDS = ["game", "store", "path", "status", "settings", "notes"]  # strings, ex
 # notes: one current fact per item (what holds now, not a dated diary); the
 # date of the last test goes in "tested" (ISO, "" = unknown).
 COLUMNS = ["game", "store", "path", "status", "tested", "settings", "notes"]  # GAMES.md
-# Site only: one-GPU status ("" = untested), other VR routes, files in
+# Site only: one-GPU status ("" = untested), files in
 # screenshots/ tracked in git (gif = wiggle, mp4 = video), and whether a
 # tuned configuration exists that is not written up yet.
-EXTRA = {"tested": str, "single": str, "alt": str, "media": list, "writeup_pending": bool}
+EXTRA = {"tested": str, "single": str, "media": list, "writeup_pending": bool}  # VR routes: library.json
 SHOTS = ROOT / "screenshots"
 STATUS = {"works", "runs", "broken", "no effect", "retest"}
 BEGIN, END = "<!-- games:begin (generated from site/games.json by tools/gen_games.py) -->", "<!-- games:end -->"
@@ -74,7 +74,7 @@ def i18n_keys():
     t("KEY", "English") / tr(...) in its scripts (the English text's own)."""
     site = ROOT / "site"
     keys = {}
-    for f in ("index.html", "games.html", "game.html", "library.html"):
+    for f in ("index.html", "games.html", "game.html"):
         for k in re.findall(r'data-i18n="(\w+)"', (site / f).read_text()):
             keys[k] = {"n"}
     eng, errs = {}, []
