@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="l_title">vrdual game library</title>
+<meta name="description" data-i18n="l_desc" data-i18n-attr="content" content="The games the maintainer owns (all of them can be tested with vrdual), with the VR routes that exist for each: generic injectors by engine and API, dedicated mods and VR editions.">
+<link rel="stylesheet" href="style.css">
+<script>try{var t=localStorage.getItem("vrdual-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<nav class="top"><a class="brand" href="./">vrdual</a><a href="games.html" data-i18n="nav_games">Games</a><a href="library.html" aria-current="page" data-i18n="nav_library">Library</a><a href="https://github.com/adderek/vrdual/blob/master/INSTALL.md" data-i18n="nav_install">Install</a><a href="https://github.com/adderek/vrdual">GitHub</a><a href="https://github.com/sponsors/adderek" data-i18n="nav_sponsor">Sponsor</a>
+  <select id="lang" data-i18n="lang_label" data-i18n-attr="aria-label" aria-label="Language"></select></nav>
+<noscript><p class="note noscript">This page needs JavaScript to show the table. Without it, read the data on GitHub:
+  <a href="https://github.com/adderek/vrdual/blob/master/site/library.json">library.json</a>.</p></noscript>
+<header class="page">
+  <h1 data-i18n="l_h1">Game library</h1>
+  <p data-i18n="l_intro">Games the maintainer owns: only these can be tested with vrdual. Per game: which other VR routes exist,
+    generic (by engine or graphics API) and dedicated (a VR edition, a native VR mode, a mod for that game).</p>
+</header>
+<main class="page">
+  <div class="tools">
+    <div id="tb" class="tbtools"></div>
+  </div>
+  <div class="chips" id="quick" role="group" aria-label="quick filters">
+    <button type="button" data-f="vr" data-v="*" data-i18n="l_q_ded">has a dedicated VR route</button>
+    <button type="button" data-f="generic" data-v="*" data-i18n="l_q_gen">has a generic VR route</button>
+    <button type="button" data-f="vrdual" data-v="!untested" data-i18n="l_q_tested">tested with vrdual</button>
+    <button type="button" data-f="vr" data-v="!*" data-i18n="l_q_none">no dedicated VR route</button>
+  </div>
+  <p id="count" class="muted"></p>
+  <div class="wrap">
+    <table id="lib" class="resp"><thead></thead><tbody></tbody></table>
+  </div>
+  <div class="muted legend">
+    <p data-i18n="l_legend_gen"><b>Generic routes</b>, from the game's engine or API (PCGamingWiki data; that a route exists for the
+      engine does not mean it works for this game): <b>UEVR</b> = <a href="https://github.com/praydog/UEVR">UEVR</a> (praydog),
+      injector for Unreal Engine 4/5 games, per-game profiles on uevr-profiles.com; <b>UUVR</b> =
+      <a href="https://github.com/Raicuparta/uuvr">Universal Unity VR</a> (Raicuparta), for Unity games;
+      <b>vorpX</b> = <a href="https://www.vorpx.com/">vorpX</a> (paid), PCGamingWiki lists a profile for the game;
+      <b>Geo-11</b> = <a href="https://www.geo-11.com/">Geo-11</a>, stereo 3D / VR screen for Direct3D 11 games.</p>
+    <p data-i18n="l_legend_ded"><b>Dedicated routes</b>: researched by hand and from catalogs of VR mods (may be outdated, check before
+      relying on it); <i>PCGamingWiki</i> marks a native VR or stereo 3D mode listed there. Nearly all of them are Windows-only
+      (SteamVR / OpenXR); on Linux they may run through Proton with WiVRn or Monado (untested here). <b>vrdual</b> = status in the
+      <a href="games.html">tested games</a> list.</p>
+  </div>
+</main>
+<script src="common.js"></script>
+<script src="i18n.js"></script>
+<script src="table.js"></script>
+<script src="library.js"></script>
+</body>
+</html>

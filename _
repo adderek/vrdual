@@ -874,6 +874,8 @@ _selftest_nogpu() {
     # 0. Game table: site/games.json valid, docs/GAMES.md generated from it.
     label="site: games.json valid, GAMES.md table up to date, translations complete"
     check python3 -I "$VRDUAL_ROOT/tools/gen_games.py" --check
+    label="site: library.json valid, every tested game linked from it"
+    check python3 -I "$VRDUAL_ROOT/tools/library.py" --check
 
     # 1. SPIR-V patcher: baked + live variants must validate; non-vertex must be refused.
     glslc "$VRDUAL_ROOT/testapp/cube.vert" -o "$tmp/glsl.spv"

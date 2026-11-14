@@ -65,7 +65,8 @@ proves nothing (2026-11-06: a Wine profile check first passed without the fix).
 | `site/` | public GitHub Pages site: landing `index.html`, game list `games.html`, per-game materials `game.html?g=SLUG` (media from `screenshots/`, copied at deploy), UI translated on all three pages (English in the HTML `data-i18n` or in the scripts `t("key", "English")`, `site/i18n.json` for the rest, `site/i18n.js` language list + browser detection; `vrdual ci` checks every language has every key of the pages and scripts; game data stays English), deployed by `.github/workflows/pages.yml`; public material only, never unpublished notes |
 | `autotest/recipes/*.toml` | per-game test recipes (data only: launch, ini edits, menu steps, checks); runner planned, [docs/tasks/game-autotest.md](docs/tasks/game-autotest.md) |
 | `docs/TESTING.md` | what is tested how (ci, selftest, `--background`, game recipes, headset); why an own game-test runner, not SikuliX |
-| `docs/MY_GAMES.md` | the owner's library per store (VR alternatives, vrdual status by hand): which games can be tested at all |
+| `site/library.json`, `site/library.html` | the owner's library (which games can be tested at all): stores, dedicated and generic VR routes, engine / API from PCGamingWiki, `tested` = link into games.json; `tools/library.py` (`pcgw`, `link`, `--check` in `vrdual ci`); `docs/MY_GAMES.md` only points there |
+| `site/table.js` | sortable / filterable table with a column chooser, choices kept in localStorage (library page) |
 | `tools/steam_library.py` | owned Steam games from the local client cache (licences, names, installed, Deck rating), marked tested from games.json; `--untested` |
 | `docs/MODDING.md` | idea: texture/shader/model upgrades for old games, prior art, candidates |
 
@@ -85,6 +86,9 @@ After testing a game (or learning something about it), in the same commit:
    Also write or update `autotest/recipes/<slug>.toml`: how the game starts,
    the settings used (ini keys or menu path), the scene, what to check
    (format and security rules: [docs/tasks/game-autotest.md](docs/tasks/game-autotest.md)).
+   A newly tested game: `tools/library.py link` points its library row
+   (`site/library.json`, `tested`) at the new entry; set it by hand when the
+   names differ. VR routes learned for a game go into its library row (`vr`).
 2. `tools/gen_games.py` rewrites the table in `docs/GAMES.md`; update its
    "Last update" date by hand.
 3. `./vrdual ci` (validates games.json, the table and site translations; new
@@ -258,7 +262,7 @@ easier for the next agent. Do the same:
 - **Start**: selftest (or `--background`), read `AGENTS.local.md` (local
   queues and state live in `*.local.md`), then TODO.md.
 - **Before building a tool or a list, look for the data**: games.json,
-  MY_GAMES.md, profiles/, autotest/recipes/, `tools/`. Reuse, then extend.
+  site/library.json, profiles/, autotest/recipes/, `tools/`. Reuse, then extend.
 - **Game problem reports: logs first, theories second.** The answer is
   usually there: `~/.var/app/com.valvesoftware.Steam/steam-<appid>.log`
   (Proton games, layer lines `[vrdual:...]`: app / exe / profile, main view,

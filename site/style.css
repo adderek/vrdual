@@ -141,3 +141,34 @@ main.page h2 { margin-top: 28px; }
 .hero-img img, .promo img, .grid img, .media img { border-radius: inherit; }
 button.theme { font: inherit; font-size: 16px; line-height: 1; width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
   color: var(--fg); background: var(--card); border: 1px solid var(--line); }
+
+/* Library table (table.js): filter row, column chooser, tags; no-JS note. */
+.noscript { margin: 8px auto; max-width: 1168px; }
+.tbtools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.tbtools button, details.cols summary { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); }
+details.cols { position: relative; }
+details.cols > div { position: absolute; z-index: 5; margin-top: 4px; padding: 8px 12px; min-width: 220px; display: grid; gap: 4px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px -8px var(--shadow); }
+details.cols label { white-space: nowrap; font-size: 14px; cursor: pointer; }
+tr.filters td { padding: 4px 6px; background: var(--bg); }
+tr.filters input { width: 100%; min-width: 70px; font: inherit; font-size: 13px; padding: 4px 6px; color: var(--fg);
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
+th sup { color: var(--muted); font-weight: 400; }
+a.tag { display: inline-block; font-size: 13px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line);
+  text-decoration: none; white-space: nowrap; }
+table.resp td { font-size: 14px; }
+@media (max-width: 800px) {
+  table.resp, table.resp thead, table.resp tbody, table.resp tr, table.resp td { display: block; }
+  table.resp thead tr:first-child { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 8px 0; }
+  table.resp thead th { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-weight: 400; }
+  table.resp tr.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px 8px; }
+  table.resp tr.filters td { padding: 0; }
+  table.resp tr.filters td::before { content: attr(data-h); color: var(--muted); font-size: 12px; display: block; }
+  table.resp tbody tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  table.resp tbody td { border: 0; padding: 2px 14px; }
+  table.resp tbody td:empty { display: none; }
+  table.resp tbody td:not(:first-child)::before { content: attr(data-h) ": "; color: var(--muted); }
+}
+#quick button { text-decoration: none; }
+#quick button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }

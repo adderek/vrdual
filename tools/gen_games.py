@@ -74,7 +74,7 @@ def i18n_keys():
     t("KEY", "English") / tr(...) in its scripts (the English text's own)."""
     site = ROOT / "site"
     keys = {}
-    for f in ("index.html", "games.html", "game.html"):
+    for f in ("index.html", "games.html", "game.html", "library.html"):
         for k in re.findall(r'data-i18n="(\w+)"', (site / f).read_text()):
             keys[k] = {"n"}
     eng, errs = {}, []

@@ -139,7 +139,7 @@ in (their CEF UI was full of artefacts when mirrored).
 
 ## To test: showcase candidates (2026-10-21)
 
-From [MY_GAMES.md](MY_GAMES.md) (owned): picked for looking good in stereo on a
+From the [library](../site/library.json) (owned): picked for looking good in stereo on a
 fixed screen, a calm camera, Proton D3D9/D3D11 or native Vulkan, and no
 anti-cheat. Third-person "diorama" games look like a model in front of you and
 do not upset the inner ear; `world_scale` can shrink them further.

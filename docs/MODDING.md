@@ -23,7 +23,7 @@ relying on it.
   replacement file. Same pattern.
 - **ReShade / vkBasalt**: post-process only.
 
-## Candidates from MY_GAMES.md
+## Candidates from the library (site/library.json)
 
 Already well modded: test the existing mods with vrdual, don't redo them
 (from memory, verify each):
@@ -47,8 +47,7 @@ already sees it), Legacy of Kain: Blood Omen 2 / Defiance, Giants: Citizen
 Kabuto, MDK, Psychonauts, Star Wars Bounty Hunter, Oddworld: Munch's
 Oddysee, Overlord, Gorky 17, Tomb Raider Legend / Anniversary / Underworld.
 
-Alice 2000 is not in MY_GAMES.md (the Epic and Origin sections are not
-filled in yet); the Steam copy of Madness Returns does not contain it.
+Alice 2000 is not in the library; the Steam copy of Madness Returns does not contain it.
 
 ## In vrdual
 
