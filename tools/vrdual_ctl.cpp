@@ -37,7 +37,7 @@ static float parse_len(const std::string& v) {  // meters, or "64.5mm"
 static int usage() {
     fprintf(stderr, "usage: vrdual-ctl version | path | init | show [APP] | profiles [DIR] | map [APP] | map-set APP|--global gamepad|mouse|both BUTTON CODE|none|default\n"
                     "                  | live | set KEY VALUE | save [--global] | measure [FRAMES]   [--session S]\n"
-                    "                  | shaders | hunt [off | hide|noshift|hud LO HI | find [MODE]]   (LO, HI: 8 hex digits, inclusive)\n"
+                    "                  | shaders | hunt [off | hide|noshift|hud LO HI | find [MODE] | rules [clear]]   (LO, HI: 8 hex digits, inclusive)\n"
                     "                  | rule KEY noshift|hud|hide   (adds to shader_rules in the session's [app:NAME])\n");
     return 2;
 }
@@ -239,7 +239,17 @@ int main(int argc, char** argv) {
         if (ans[0] == 'd') { fprintf(stderr, "not saved; later: vrdual hunt rule %s %s\n", h.found().c_str(), kHuntModes[m]); return 0; }
         std::string val = v.app[0] ? add_shader_rule(v.app, h.found(), kHuntModes[m]) : "";
         if (val.empty()) { fprintf(stderr, "cannot save the rule (%s)\n", v.app[0] ? config_path().c_str() : "session has no app name"); return 1; }
-        fprintf(stderr, "[app:%s] shader_rules = %s (applies at the next game start)\n", v.app, val.c_str());
+        bool live = v.live && ctl_add_live_rule(c, h.found(), uint32_t(m));
+        fprintf(stderr, "[app:%s] shader_rules = %s (%s)\n", v.app, val.c_str(), live ? "applied now and at every start" : "applies at the next game start");
+        return 0;
+    }
+
+    if (cmd == "hunt" && args.size() >= 2 && args[1] == "rules") {  // the live rules (saved this run, not yet baked)
+        if (args.size() > 3 || (args.size() == 3 && args[2] != "clear")) return usage();
+        if (args.size() == 3) ctl_write(c, [](vrdual_ctl& x) { memset(x.live_rule, 0, sizeof x.live_rule); });
+        vrdual_ctl now = ctl_read(c);
+        for (auto& r : now.live_rule)
+            if (r.mode) printf("%08x %s\n", r.key, kHuntModes[r.mode & 3]);
         return 0;
     }
 
@@ -268,7 +278,9 @@ int main(int argc, char** argv) {
         if (!v.app[0]) { fprintf(stderr, "session has no app name\n"); return 1; }
         std::string sec = std::string("app:") + v.app, val = add_shader_rule(v.app, k, args[2]);
         if (val.empty()) { fprintf(stderr, "cannot write %s\n", config_path().c_str()); return 1; }
-        fprintf(stderr, "[%s] shader_rules = %s (applies at the next game start)\n", sec.c_str(), val.c_str());
+        uint32_t m = args[2] == "hide" ? 1 : args[2] == "noshift" ? 2 : 3;
+        bool live = v.live && ctl_add_live_rule(c, k, m);
+        fprintf(stderr, "[%s] shader_rules = %s (%s)\n", sec.c_str(), val.c_str(), live ? "applied now and at every start" : "applies at the next game start");
         printf("%s\n", val.c_str());
         return 0;
     }

@@ -34,7 +34,9 @@
 // w == 1 treatment, `hide` stores (0,0,0,0) (nothing drawn). Live mode also
 // reads a uvec4 (lo, hi, mode, hud_mode) at addr+32 and, if lo <= key <= hi
 // (key = high 32 bits of the shader's hash), applies mode 1 hide | 2 noshift |
-// 3 hud at runtime: the hunt for a shader's key. hud_mode 1 hides what
+// 3 hud at runtime: the hunt for a shader's key. Outside the hunt range (or
+// with hunt mode 0) live rules apply: 8 (key, mode) pairs at addr+160, a
+// hunt's saved result before the game restarts. hud_mode 1 hides what
 // hud_depth moves (screenshots), except in passes flagged 1 or 2 (below). A uint at addr+96 (auto_noshift)
 // is set by the layer before each render pass: 1 = an off-screen pass
 // (shadow map, baked texture), drawn unshifted; 2 = the swapchain pass of a
@@ -275,6 +277,7 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
     uint32_t c_one = fresh(); emit(globals, OpConstant, {t_float, c_one, f2u(1.0f)});
     uint32_t c_zero4 = fresh(); emit(globals, OpConstantComposite, {t_vec4, c_zero4, c_zero, c_zero, c_zero, c_zero});
     uint32_t c_params = 0, c_addr = 0, c_addr2 = 0, p_psb = 0, c_addr3 = 0, p_psb4 = 0, c_key = 0, c_m[4] = {}, c_rot[3] = {}, c_hrot[3] = {}, c_flag = 0, c_u0 = 0, c_u2 = 0;
+    uint32_t c_rules[4] = {};  // live rules: uvec4 (key, mode, key, mode) at addr+160 + 16k
     uint32_t c_whist = 0, t_harr = 0, p_harr = 0, p_hu = 0, c_h22 = 0, c_hbase = 0, c_h63 = 0, c_hmin = 0;
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
@@ -308,6 +311,13 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
             c_hrot[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_hrot[k], hl, hh});
         }
         for (uint32_t k = 1; k < 4; ++k) { c_m[k] = fresh(); emit(globals, OpConstant, {t_uint, c_m[k], k}); }
+        for (int k = 0; k < 4; ++k) {
+            uint64_t ra = o.addr + 160 + 16 * k;
+            uint32_t rl = fresh(), rh = fresh();
+            emit(globals, OpConstant, {t_uint, rl, uint32_t(ra)});
+            emit(globals, OpConstant, {t_uint, rh, uint32_t(ra >> 32)});
+            c_rules[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_rules[k], rl, rh});
+        }
         {  // auto_noshift pass flag
             uint32_t fl = fresh(), fh = fresh();
             emit(globals, OpConstant, {t_uint, fl, uint32_t(o.addr + 96)});
@@ -570,12 +580,31 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
                         res = sel4(c2, c_zero4, res);
                     }
                 }
+                // Live rules (addr+160): rmd = mode of the slot whose key is
+                // ours, else 0. The hunt range wins while it is on.
+                uint32_t rmd = c_u0;
+                for (int k = 0; k < 4; ++k) {
+                    uint32_t rq = fresh(), rv = fresh();
+                    emit(out, OpBitcast, {p_psb4, rq, c_rules[k]});
+                    emit(out, OpLoad, {t_uvec4, rv, rq, MemAccessAligned, 16});
+                    for (uint32_t j = 0; j < 4; j += 2) {
+                        uint32_t rk = fresh(), rm = fresh(), eq = fresh(), nm = fresh();
+                        emit(out, OpCompositeExtract, {t_uint, rk, rv, j});
+                        emit(out, OpCompositeExtract, {t_uint, rm, rv, j + 1});
+                        emit(out, OpIEqual, {t_bool, eq, rk, c_key});
+                        emit(out, OpSelect, {t_uint, nm, eq, rm, rmd});
+                        rmd = nm;
+                    }
+                }
+                uint32_t hon = fresh(), act = fresh(), me = fresh();
+                emit(out, OpINotEqual, {t_bool, hon, md, c_u0});
+                emit(out, OpLogicalAnd, {t_bool, act, inr, hon});
+                emit(out, OpSelect, {t_uint, me, act, md, rmd});
                 const uint32_t alt[4] = {0, c_zero4, v, vh};
                 for (uint32_t k = 3; k >= 1; --k) {
-                    uint32_t is = fresh(), cnd = fresh();
-                    emit(out, OpIEqual, {t_bool, is, md, c_m[k]});
-                    emit(out, OpLogicalAnd, {t_bool, cnd, inr, is});
-                    res = sel4(cnd, alt[k], res);
+                    uint32_t is = fresh();
+                    emit(out, OpIEqual, {t_bool, is, me, c_m[k]});
+                    res = sel4(is, alt[k], res);
                 }
                 v2 = res;
             }
@@ -622,7 +651,8 @@ inline PatchResult patch_vertex(std::vector<uint32_t>& in, const PatchOptions& o
 
 // Fragment shader for the hunt and `hide` rules: before every OpReturn of a
 // Fragment entry point the invocation is discarded when
-//     o.hide (rule), or live: lo <= key <= hi && mode == 1 (uvec4 at addr+32)
+//     o.hide (rule), or live: lo <= key <= hi && mode == 1 (uvec4 at addr+32),
+//     or outside the hunt a live rule (addr+160) for the key with mode 1
 // i.e.  OpSelectionMerge %cont; OpBranchConditional %c %kill %cont;
 //       %kill: OpKill (OpTerminateInvocation from SPIR-V 1.6); %cont: OpReturn.
 // A returning block has no successors, so splitting it touches no OpPhi.
@@ -677,7 +707,7 @@ inline PatchResult patch_fragment(std::vector<uint32_t>& in, const PatchOptions&
         head_ext.insert(head_ext.end(), s.begin(), s.end());
     }
     if (!t_bool) { t_bool = fresh(); emit(globals, OpTypeBool, {t_bool}); }
-    uint32_t c_true = 0, c_addr = 0, p_psb4 = 0, c_key = 0, c_m1 = 0;
+    uint32_t c_true = 0, c_addr = 0, p_psb4 = 0, c_key = 0, c_m1 = 0, c_z = 0, c_rules[4] = {};
     if (o.hide) { c_true = fresh(); emit(globals, OpConstantTrue, {t_bool, c_true}); }
     if (live) {
         if (!t_uint) { t_uint = fresh(); emit(globals, OpTypeInt, {t_uint, 32, 0}); }
@@ -690,6 +720,14 @@ inline PatchResult patch_fragment(std::vector<uint32_t>& in, const PatchOptions&
         p_psb4 = fresh(); emit(globals, OpTypePointer, {p_psb4, StoragePhysicalStorageBuffer, t_uvec4});
         c_key = fresh(); emit(globals, OpConstant, {t_uint, c_key, o.key});
         c_m1 = fresh(); emit(globals, OpConstant, {t_uint, c_m1, 1});
+        c_z = fresh(); emit(globals, OpConstant, {t_uint, c_z, 0});
+        for (int k = 0; k < 4; ++k) {  // live rules at addr+160
+            uint64_t ra = o.addr + 160 + 16 * k;
+            uint32_t rl = fresh(), rh = fresh();
+            emit(globals, OpConstant, {t_uint, rl, uint32_t(ra)});
+            emit(globals, OpConstant, {t_uint, rh, uint32_t(ra >> 32)});
+            c_rules[k] = fresh(); emit(globals, OpConstantComposite, {t_uvec2, c_rules[k], rl, rh});
+        }
     }
     const uint32_t kill = in[1] >= 0x10600u ? OpTerminateInvocation : OpKill;
 
@@ -714,8 +752,7 @@ inline PatchResult patch_fragment(std::vector<uint32_t>& in, const PatchOptions&
         if (in_entry && I.op == OpReturn) {
             uint32_t cnd = c_true;
             if (live) {
-                uint32_t hq = fresh(), hv = fresh(), lo = fresh(), hi = fresh(), md = fresh(), ge = fresh(), le = fresh(), inr = fresh(), is = fresh();
-                cnd = fresh();
+                uint32_t hq = fresh(), hv = fresh(), lo = fresh(), hi = fresh(), md = fresh(), ge = fresh(), le = fresh(), inr = fresh();
                 emit(out, OpBitcast, {p_psb4, hq, c_addr});
                 emit(out, OpLoad, {t_uvec4, hv, hq, MemAccessAligned, 16});
                 emit(out, OpCompositeExtract, {t_uint, lo, hv, 0});
@@ -724,8 +761,26 @@ inline PatchResult patch_fragment(std::vector<uint32_t>& in, const PatchOptions&
                 emit(out, OpUGreaterThanEqual, {t_bool, ge, c_key, lo});
                 emit(out, OpULessThanEqual, {t_bool, le, c_key, hi});
                 emit(out, OpLogicalAnd, {t_bool, inr, ge, le});
-                emit(out, OpIEqual, {t_bool, is, md, c_m1});
-                emit(out, OpLogicalAnd, {t_bool, cnd, inr, is});
+                uint32_t rmd = c_z;  // live rules; the hunt range wins while it is on
+                for (int k = 0; k < 4; ++k) {
+                    uint32_t rq = fresh(), rv = fresh();
+                    emit(out, OpBitcast, {p_psb4, rq, c_rules[k]});
+                    emit(out, OpLoad, {t_uvec4, rv, rq, MemAccessAligned, 16});
+                    for (uint32_t j = 0; j < 4; j += 2) {
+                        uint32_t rk = fresh(), rm = fresh(), eq = fresh(), nm = fresh();
+                        emit(out, OpCompositeExtract, {t_uint, rk, rv, j});
+                        emit(out, OpCompositeExtract, {t_uint, rm, rv, j + 1});
+                        emit(out, OpIEqual, {t_bool, eq, rk, c_key});
+                        emit(out, OpSelect, {t_uint, nm, eq, rm, rmd});
+                        rmd = nm;
+                    }
+                }
+                uint32_t hon = fresh(), act = fresh(), me = fresh();
+                emit(out, OpINotEqual, {t_bool, hon, md, c_z});
+                emit(out, OpLogicalAnd, {t_bool, act, inr, hon});
+                emit(out, OpSelect, {t_uint, me, act, md, rmd});
+                cnd = fresh();
+                emit(out, OpIEqual, {t_bool, cnd, me, c_m1});
             }
             uint32_t l_kill = fresh(), l_cont = fresh();
             emit(out, OpSelectionMerge, {l_cont, 0});

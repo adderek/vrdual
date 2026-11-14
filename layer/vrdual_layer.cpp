@@ -395,6 +395,7 @@ struct EyeBuf {
     float cur[24] = {};       // staged: params (a, b, wf, inv), head (x, y, z, hud), hunt (lo, hi, mode, 0) as uint32, rotation 3 x vec4
                               // (addr + 96: auto_noshift pass flag, written in the app's command buffers, vrdual_passes.hpp)
     float hud[12] = {};       // staged: HUD rotation 3 x vec4 at addr + 112
+    uint32_t rules[2 * VRDUAL_LIVE_RULES] = {};  // staged: live_rule (key, mode) pairs at addr + 160
     bool scene_off = false;   // no main 3D view this frame: no head turn / offset (passes::Track::scene_on)
     bool pushed_off = false;
     uint64_t addr = 0;
@@ -1052,6 +1053,12 @@ static void push_params(EyeBuf& ep) {
     memcpy(ep.cur + 8, hunt, sizeof hunt);
     memcpy(ep.cur + 12, e.v + 8, 12 * sizeof(float));  // rotation rows at addr + 48
     memcpy(ep.hud, e.v + 20, sizeof ep.hud);            // HUD rotation rows at addr + 112
+    static_assert(sizeof ep.rules == sizeof c.live_rule, "live_rule: (key, mode) pairs");
+    if (ep.ctl_seq != ~0ull && memcmp(ep.rules, c.live_rule, sizeof ep.rules))
+        for (uint32_t i = 0; i < VRDUAL_LIVE_RULES; ++i)
+            if (c.live_rule[i].mode != ep.rules[2 * i + 1] || c.live_rule[i].key != ep.rules[2 * i])
+                logf("live rule[%s] %u: %08x mode %u", ep.eye ? "R" : "L", i, c.live_rule[i].key, c.live_rule[i].mode);
+    memcpy(ep.rules, c.live_rule, sizeof ep.rules);     // at addr + 160
     if (ep.ctl_seq != ~0ull && (c.hunt_mode != ep.hunt[2] || c.hunt_lo != ep.hunt[0] || c.hunt_hi != ep.hunt[1]))
         logf("hunt[%s]: mode %u keys %08x..%08x", ep.eye ? "R" : "L", c.hunt_mode, c.hunt_lo, c.hunt_hi);
     if (ep.ctl_seq != ~0ull && c.hud_mode != ep.hunt[3]) logf("hud[%s]: %s", ep.eye ? "R" : "L", c.hud_mode == 1 ? "hidden" : "shown");
@@ -1067,7 +1074,7 @@ static void push_params(EyeBuf& ep) {
 
 // The CPU path: immediate, so draws still in flight may see it (mid-frame change).
 static void write_params_cpu(EyeBuf& ep) {
-    if (ep.params) memcpy(ep.params, ep.cur, sizeof ep.cur), memcpy(ep.params + 28, ep.hud, sizeof ep.hud);
+    if (ep.params) memcpy(ep.params, ep.cur, sizeof ep.cur), memcpy(ep.params + 28, ep.hud, sizeof ep.hud), memcpy(ep.params + 40, ep.rules, sizeof ep.rules);
 }
 
 // First memory type allowed by `bits` having all of `want` (then `fallback`).
@@ -1752,6 +1759,7 @@ static bool copy_to_readback(const Dispatch& d, VkDevice dev, VkQueue queue, Cop
     if (ep && ep->buf) {  // the barrier above orders it after all earlier work (no write under a draw's read)
         d.CmdUpdateBuffer(cb, ep->buf, 0, sizeof ep->cur, ep->cur);
         d.CmdUpdateBuffer(cb, ep->buf, 112, sizeof ep->hud, ep->hud);
+        d.CmdUpdateBuffer(cb, ep->buf, 160, sizeof ep->rules, ep->rules);
         VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_MEMORY_READ_BIT};
         d.CmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
     }

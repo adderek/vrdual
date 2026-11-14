@@ -592,9 +592,11 @@ int main(int argc, char** argv) {
     }
     {  // HuntUi: x picks the mode, a starts, a / b / x answer, y toggles, found: a saves
         HuntUi u;
-        auto press = [&](int btn, bool menu = false) {
+        auto press = [&](int btn, bool menu = false) {  // 0..3 a b x y, 4 right trigger, 5 left trigger
             Controls c; c.menu = menu;
-            (btn == 0 ? c.a : btn == 1 ? c.b : btn == 2 ? c.x : c.y) = true;
+            if (btn == 4) c.rt = 1;
+            else if (btn == 5) c.lt = 1;
+            else (btn == 0 ? c.a : btn == 1 ? c.b : btn == 2 ? c.x : c.y) = true;
             int r = u.step(c);
             u.step(Controls{});
             return r;
@@ -608,9 +610,14 @@ int main(int argc, char** argv) {
         press(1);                                                          // no: [2, 2]
         ok &= u.h.phase == Hunt::Confirm && u.h.lo == 2;
         press(0);
-        ok &= u.h.phase == Hunt::Found && u.lines("game")[1].find("found: 0000000300000000 (noshift)") == 0;
-        ok &= press(0) == (HUNT_CHANGED | HUNT_SAVE) && u.h.phase == Hunt::Start;
-        expect(ok, "hunt ui: mode noshift, toggle, menu chords ignored, no -> confirm -> found -> a saves");
+        ok &= u.h.phase == Hunt::Found && u.alert() && u.lines("game")[1].find("FOUND: 0000000300000000 (noshift)") == 0;
+        ok &= press(0) == 0 && press(1) == 0 && u.h.phase == Hunt::Found;  // the answer buttons neither save nor discard
+        ok &= press(4) == (HUNT_CHANGED | HUNT_SAVE) && u.h.phase == Hunt::Start && !u.alert();
+        expect(ok, "hunt ui: mode noshift, toggle, menu chords ignored, no -> confirm -> found (alert) -> a / b ignored -> right trigger saves");
+        u.h.begin({"0000000100000000"}, 1);
+        press(0);
+        ok = u.h.phase == Hunt::Found && press(5) == HUNT_CHANGED && u.h.phase == Hunt::Start && u.note.find("discarded") == 0;
+        expect(ok, "hunt ui: found -> left trigger discards");
         bool fit = true;
         for (auto& l : u.lines("a game with a rather long name.exe")) fit &= l.size() <= 80;
         expect(fit, "hunt ui: panel lines fit 80 columns");

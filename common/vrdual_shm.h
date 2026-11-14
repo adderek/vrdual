@@ -98,6 +98,7 @@ static inline uint64_t vrdual_file_bytes(uint64_t slot_bytes) {
 enum vrdual_anchor { VRDUAL_ANCHOR_CENTER = 0, VRDUAL_ANCHOR_LEFT = 1, VRDUAL_ANCHOR_RIGHT = 2 };
 
 #define VRDUAL_XIN_N 256u
+#define VRDUAL_LIVE_RULES 8u  /* param buffer +160..+224: 4 uvec4 of (key, mode, key, mode) */
 
 struct vrdual_ctl {
     uint32_t magic;
@@ -144,6 +145,11 @@ struct vrdual_ctl {
     // answer in its frame header (whist_seq). Live mode only.
     volatile uint32_t measure_seq;
     uint32_t measure_frames;
+    // version 10: shader rules applied live (a hunt's saved result, before
+    // the game restarts and bakes it): key = high 32 bits of the hash, mode
+    // 1 hide | 2 noshift | 3 hud, 0 = free slot. Patched shaders check them
+    // after the hunt range. Live mode only; cleared with the hunt (ctl_seed).
+    struct { uint32_t key, mode; } live_rule[VRDUAL_LIVE_RULES];
 };
 
 static inline const char* vrdual_anchor_name(int a) {

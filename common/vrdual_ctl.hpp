@@ -25,8 +25,9 @@ inline std::string ctl_path(const std::string& session) { return shm_dir() + "/v
 
 // Live values from config (creation, and a new game joining an old block).
 inline void ctl_seed(vrdual_ctl& c, const Settings& s) {
-    c.version = 9;
+    c.version = 10;
     c.hunt_mode = 0;  // a hunt belongs to the game it ran on
+    memset(c.live_rule, 0, sizeof c.live_rule);  // and so do its live rules
     c.hud_mode = 0;   // so does a hidden HUD (a screenshot)
     c.ipd = s.f("ipd");
     c.ipd_near = s.f("ipd_near");
@@ -95,6 +96,24 @@ template <typename F> inline void ctl_write(vrdual_ctl* c, F fn) {
     c->seq++;
 }
 
+// A saved shader rule (KEY: 8-16 hex digits, mode 1 hide | 2 noshift | 3
+// hud) applied to the running game at once (live mode): the same key again
+// takes the new mode. false = all VRDUAL_LIVE_RULES slots taken (applies at
+// the next start only).
+inline bool ctl_add_live_rule(vrdual_ctl* c, const std::string& key, uint32_t mode) {
+    uint32_t k = uint32_t(strtoul(key.substr(0, 8).c_str(), nullptr, 16));
+    bool ok = false;
+    ctl_write(c, [&](vrdual_ctl& w) {
+        int at = -1;
+        for (int i = 0; i < int(VRDUAL_LIVE_RULES); ++i) {
+            if (w.live_rule[i].mode && w.live_rule[i].key == k) { at = i; break; }
+            if (!w.live_rule[i].mode && at < 0) at = i;
+        }
+        if (at >= 0) w.live_rule[at].key = k, w.live_rule[at].mode = mode, ok = true;
+    });
+    return ok;
+}
+
 static const char* const kLiveKeys[] = {"ipd", "ipd_near", "near_dist", "far_dist", "anchor", "hfov", "world_scale", "hud_depth"};
 // Live but never saved: the head offset (vrdual-xr writes it every frame) and
 // hud (show / hide, for screenshots).
@@ -138,6 +157,7 @@ inline std::string ctl_save(const vrdual_ctl& v, bool global) {
 //          w = clip_dx added to w == 1 vertices (HUD): the NDC disparity of a
 //          point at hud_depth, -P00 * eye_dx / hud_depth (0 = HUD at infinity).
 // uvec4 at +32: hunt_lo, hunt_hi, hunt_mode, hud_mode (live mode only).
+// uvec4 x 4 at +160: live_rule (key, mode) pairs (live mode only).
 // vec4 #2..#4 (at +48, after the hunt uvec4 at +32; live mode only): rows of
 //          M = D * R^T * D^-1, D = diag(P00, P11, 1), applied to (x, y, w)
 //          after the head offset and before the eye shift: the head rotation

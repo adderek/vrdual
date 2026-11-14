@@ -1166,6 +1166,12 @@ EOF
         wait \$p; rc=\$?; cp '$tmp/shaders.bak' \$f
         [[ \$rc == 0 && \$found == \$k ]] && grep -qx \"shader_rules = \$k:hide\" \$VRDUAL_CONFIG &&
             '$B/vrdual-ctl' --session $sess hunt | grep -q '^hunt off' || { echo rc=\$rc found=\$found k=\$k; cat '$tmp/hf.log' \$VRDUAL_CONFIG; false; }"
+    # The saved rule applies at once (live_rule), not only at the next start.
+    label="hunt find: the saved rule applies to the running app (hunt off, cube still hidden)"
+    check bash -c "$(declare -f snap); B='$B' sess=$sess; k=\$('$B/spvpatch' --hash '$tmp/glsl.spv')
+        [[ \$('$B/vrdual-ctl' --session $sess hunt rules) == \"\${k:0:8} hide\" ]] && snap '$tmp/hl.png' &&
+        (( \$(convert '$tmp/hl.png' -unique-colors -format %w info:) <= 2 )) || { '$B/vrdual-ctl' --session $sess hunt rules; false; }"
+    "$B/vrdual-ctl" --session $sess hunt rules clear >/dev/null
     label="hunt off: posts back, ipd 64mm"
     check bash -c "$(declare -f snap); B='$B' sess=$sess; snap '$tmp/ho.png' && $M '$tmp/ho.png' --ipd 0.064 --anchor center"
     label="config init: built-in button maps listed commented, both modes"
@@ -2053,7 +2059,8 @@ vrdual — dual-GPU per-eye rendering PoC (see README.md)
   hunt find [hide|noshift|hud]  find one shader of the running game by bisection (asks questions;
                                   in the headset: controls = hunt, menu + a / b);
                                   hunt MODE LO HI | off sets a key range, hunt shaders lists keys,
-                                  hunt rule KEY MODE saves a rule for the running game;
+                                  hunt rule KEY MODE saves a rule for the running game (applied
+                                  at once in live mode), hunt rules [clear] lists / drops those;
                                   found keys go into shader_rules (docs/tasks/shader-rules.md)
   snapshot [out.png] [frame]    same, but save one paired SBS frame and exit
   shot [out.png] [--hud show|hide|still] [--depth K] [--gif] [--session S]

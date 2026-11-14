@@ -242,25 +242,28 @@ struct Overlay {
     EyeOut o;
     bool rgba = true;                 // swapchain byte order
     std::string text[kLines], shown;  // shown: text of the uploaded image, "" = transparent
+    bool alert = false;               // amber frame and title: a decision waits (hunt result)
     double until = 0;                 // visible while now < until
 };
 
 // Lines -> pixels: dark translucent panel down to the last non-empty line,
-// line 0 in the accent colour; below it (all lines empty: everything)
-// fully transparent.
-static void overlay_draw(uint8_t* px, const std::string* text, bool rgba) {
+// line 0 in the accent colour (amber with `alert`, a thicker frame); below
+// it (all lines empty: everything) fully transparent.
+static void overlay_draw(uint8_t* px, const std::string* text, bool rgba, bool alert = false) {
     const uint32_t W = Overlay::kW, H = Overlay::kH;
     int last = -1;
     for (int l = 0; l < Overlay::kLines; ++l)
         if (!text[l].empty()) last = l;
     const uint32_t ph = last < 0 ? 0 : std::min(H, 8 + uint32_t(last + 1) * (vrdual::kFontH + 10) + 2);  // panel height
-    const float bg[3] = {16, 18, 24}, fg[2][3] = {{120, 200, 255}, {235, 235, 235}};
+    const float bg[3] = {16, 18, 24}, fg[2][3] = {{120, 200, 255}, {235, 235, 235}}, amber[3] = {255, 170, 30};
+    const float* acc = alert ? amber : fg[0];
+    const uint32_t bw = alert ? 8 : 2;  // frame width
     std::vector<float> c(size_t(W) * H * 4);  // zero = transparent
     for (uint32_t y = 0; y < ph; ++y)
         for (uint32_t x = 0; x < W; ++x) {
             float* p = &c[(size_t(y) * W + x) * 4];
-            bool edge = x < 2 || y < 2 || x >= W - 2 || y >= ph - 2;
-            for (int k = 0; k < 3; ++k) p[k] = edge ? fg[0][k] : bg[k];
+            bool edge = x < bw || y < bw || x >= W - bw || y >= ph - bw;
+            for (int k = 0; k < 3; ++k) p[k] = edge ? acc[k] : bg[k];
             p[3] = edge ? 255 : 210;
         }
     for (int l = 0; l < Overlay::kLines; ++l)
@@ -273,7 +276,7 @@ static void overlay_draw(uint8_t* px, const std::string* text, bool rgba) {
                     char h = gl[y * vrdual::kFontW + x];
                     float a = float(h <= '9' ? h - '0' : h - 'a' + 10) / 15;
                     float* p = &c[(size_t(y0 + y) * W + x0 + x) * 4];
-                    for (int j = 0; j < 3; ++j) p[j] += (fg[l ? 1 : 0][j] - p[j]) * a;
+                    for (int j = 0; j < 3; ++j) p[j] += ((l ? fg[1] : acc)[j] - p[j]) * a;
                     p[3] += (255 - p[3]) * a;
                 }
         }
@@ -312,7 +315,7 @@ static bool overlay_init(XrSession s, Gpu& g, const std::vector<int64_t>& format
 // Draws ov.text into the next swapchain image. VRDUAL_XR_OVERLAY_DUMP=file.pam
 // also writes it there (RGBA, for checks).
 static bool overlay_upload(Gpu& g, Overlay& ov) {
-    overlay_draw(ov.o.map, ov.text, ov.rgba);
+    overlay_draw(ov.o.map, ov.text, ov.rgba, ov.alert);
     if (const char* d = getenv("VRDUAL_XR_OVERLAY_DUMP")) {
         if (FILE* f = fopen(d, "wb")) {
             fprintf(f, "P7\nWIDTH %u\nHEIGHT %u\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n", ov.o.w, ov.o.h);
@@ -1306,7 +1309,8 @@ static int run(int argc, char** argv) {
                     std::string val = app.empty() ? "" : vrdual::add_shader_rule(app, hui.h.found(), vrdual::kHuntModes[hui.h.mode]);
                     if (val.empty()) hui.note = "cannot save the rule (" + vrdual::config_path() + ")";
                     else {
-                        hui.note = "saved: [app:" + app + "] shader_rules = " + val;
+                        bool live = ctl && vrdual::ctl_add_live_rule(ctl, hui.h.found(), uint32_t(hui.h.mode));
+                        hui.note = std::string(live ? "saved, applied now: " : "saved (next start): ") + "[app:" + app + "] shader_rules = " + val;
                         fprintf(stderr, "[xr] hunt: %s\n", hui.note.c_str());
                         config_copy_out("hunt");
                         if (hui.note.size() > 80) hui.note = hui.note.substr(0, 79) + "~";
@@ -1689,8 +1693,10 @@ static int run(int argc, char** argv) {
             // visible: event + current settings; expired: one transparent image
             // (WiVRn keeps showing the last frame when nothing else is sent)
             for (auto& t : ov.text) t.clear();
+            ov.alert = false;  // the text differs whenever it changes: no own re-upload check
             if ((map_on || hunt_on) && mapper) {
                 for (int l = 0; l < Overlay::kLines; ++l) ov.text[l] = map_lines[l];
+                ov.alert = hunt_on && hui.alert();
             } else if (ov.until > vrdual::now_s()) {
                 vrdual_ctl k{};
                 if (ctl) k = vrdual::ctl_read(ctl);

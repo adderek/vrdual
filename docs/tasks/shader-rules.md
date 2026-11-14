@@ -64,7 +64,11 @@ data: `[app:NAME]` sections and later the per-game profile files (TODO 11).
    and vrdual-xr `input = hunt` (controllers, overlay panel) its front ends.
    Fragment shaders 2026-11-02 (`hunt_fragment`, `patch_fragment`): hide
    discards what one fragment shader draws, for effects computed there
-   (Civ V unit shadows); `hide` rules on fragment keys. Next: replacing a
+   (Civ V unit shadows); `hide` rules on fragment keys. 2026-11-14: a saved
+   rule applies to the running game at once (8 live rule slots in the
+   control block, v10, param buffer +160); the headset's result screen is
+   amber and takes the triggers (save right, discard left), not a / b,
+   which the user had pressed through unseen. Next: replacing a
    shader by key (backlog).
 4. Rules in the per-game profile files (`vrdual profiles sync`, TODO 11).
 

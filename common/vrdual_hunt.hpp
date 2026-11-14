@@ -113,23 +113,30 @@ enum { HUNT_START = 1, HUNT_SAVE = 2, HUNT_CHANGED = 4 };
 struct HuntUi {
     Hunt h;
     int mode = 1;  // picked on the start screen (x cycles)
-    bool prev[4] = {};
+    bool prev[6] = {};
     std::string note;  // last result line (saved / discarded)
 
-    // a b x y edges, ignored while menu is held (menu + a / b leaves the mode).
+    // The result screen: other buttons than the answers (a / b / x / y are
+    // pressed in a rhythm by then, and an extra a used to save or discard
+    // unseen), and an amber panel (alert()).
+    bool alert() const { return h.phase == Hunt::Found; }
+
+    // a b x y and trigger (right, left) edges, ignored while menu is held
+    // (menu + a / b leaves the mode). Triggers: pulled past 0.8, released below 0.3.
     int step(const Controls& c) {
-        bool now[4] = {c.a, c.b, c.x, c.y}, e[4];
-        for (int i = 0; i < 4; ++i) e[i] = now[i] && !prev[i] && !c.menu, prev[i] = now[i];
+        bool now[6] = {c.a, c.b, c.x, c.y, c.rt > 0.8f || (prev[4] && c.rt > 0.3f), c.lt > 0.8f || (prev[5] && c.lt > 0.3f)}, e[6];
+        for (int i = 0; i < 6; ++i) e[i] = now[i] && !prev[i] && !c.menu, prev[i] = now[i];
         if (h.asking()) {
             if (e[3]) { h.on = !h.on; return HUNT_CHANGED; }
             for (int i = 0; i < 3; ++i)
                 if (e[i]) { h.answer(i == 0 ? Hunt::Yes : i == 1 ? Hunt::No : Hunt::Unsure); return HUNT_CHANGED; }
             return 0;
         }
-        if (h.phase == Hunt::Found && (e[0] || e[1])) {
+        if (h.phase == Hunt::Found) {  // a / b do nothing here
+            if (!e[4] && !e[5]) return 0;
             h.phase = Hunt::Start;
-            note = e[0] ? "" : "discarded: " + h.found() + ":" + kHuntModes[h.mode];
-            return HUNT_CHANGED | (e[0] ? HUNT_SAVE : 0);
+            note = e[4] ? "" : "discarded: " + h.found() + ":" + kHuntModes[h.mode];
+            return HUNT_CHANGED | (e[4] ? HUNT_SAVE : 0);
         }
         if (h.phase == Hunt::Start) {
             if (e[2]) { mode = mode % 3 + 1; return HUNT_CHANGED; }
@@ -170,8 +177,10 @@ struct HuntUi {
             l.push_back("menu + a / b: leave (nothing saved)");
             break;
         case Hunt::Found:
-            l.push_back("found: " + h.found() + " (" + kHuntModes[h.mode] + ")");
-            l.push_back("a: save the rule for this game (applies at its next start)   b: discard");
+            l.push_back("FOUND: " + h.found() + " (" + kHuntModes[h.mode] + ")");
+            l.push_back("");
+            l.push_back("RIGHT TRIGGER: save the rule for this game (applies now and at every start)");
+            l.push_back("LEFT TRIGGER: discard        (a / b do nothing here)");
             break;
         case Hunt::NotFound:
         case Hunt::Quit:
