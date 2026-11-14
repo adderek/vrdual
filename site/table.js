@@ -1,7 +1,8 @@
 // Sortable, filterable table with a column chooser; the viewer's choices
 // (hidden columns, filters, sort, search) are kept per browser under one key.
 // cols: [{k, label, text(row) -> string for filter and sort, html(row) -> cell,
-//         key(row) -> sort key (default: text, case-folded), hide: hidden by default}]
+//         key(row) -> sort key (default: text, case-folded), hide: hidden by default,
+//         hint() -> what the column means, shown on hover over its title}]
 // Filter syntax per column: words must all match (substring, any case);
 // !word = must not match; * = not empty; !* = empty. Hidden columns do not filter.
 // Optional: search = {input, text(row)} (all words must match), detail(row) ->
@@ -36,7 +37,8 @@ function makeTable({table, cols, rows, store, tools, count, onRender, defaults =
     table.tHead.innerHTML = `<tr>${vis.map(c => {
       const i = st.sort.findIndex(([k]) => k === c.k);
       const so = i < 0 ? "none" : st.sort[i][1] > 0 ? "ascending" : "descending";
-      return `<th data-k="${c.k}" aria-sort="${so}" title="${esc(t("tb_sort_hint", "click: sort · shift+click: add as next sort key"))}">${esc(c.label())}${st.sort.length > 1 && i >= 0 ? `<sup>${i + 1}</sup>` : ""}</th>`;
+      const tip = (c.hint ? c.hint() + "\n\n" : "") + t("tb_sort_hint", "click: sort · shift+click: add as next sort key");
+      return `<th data-k="${c.k}" aria-sort="${so}" title="${esc(tip)}">${esc(c.label())}${st.sort.length > 1 && i >= 0 ? `<sup>${i + 1}</sup>` : ""}</th>`;
     }).join("")}</tr><tr class="filters">${vis.map(c =>
       `<td data-h="${esc(c.label())}"><input type="search" data-f="${c.k}" value="${esc(st.filters[c.k] || "")}" placeholder="${esc(fph)}" aria-label="${esc(c.label() + ": " + fph)}"></td>`).join("")}</tr>`;
     tools.innerHTML = `<details class="cols"><summary>${esc(t("tb_cols", "Columns"))}</summary><div>${cols.map(c =>

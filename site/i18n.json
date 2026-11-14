@@ -99,7 +99,9 @@
   "g_hidden": "Pasują gry z biblioteki ({n}), ale filtry je ukrywają.",
   "g_show_all": "Pokaż je",
   "g_paid": "💰 = płatny produkt komercyjny (zakup lub subskrypcja): vorpX, R.E.A.L. VR. Pozostałe wymienione tu narzędzia są darmowe.",
-  "g_paid_title": "płatny produkt komercyjny"
+  "g_paid_title": "płatny produkt komercyjny",
+  "g_hint_ded": "Sposoby, żeby zagrać w tę konkretną grę w VR: wersja VR tej gry, tryb VR wbudowany w grę albo mod VR zrobiony przez fanów właśnie dla niej.",
+  "g_hint_gen": "Narzędzia VR, które działają z wieloma grami zbudowanymi na tej samej technologii (silniku gry) co ta. Nie są robione pod tę grę: mogą działać dobrze, słabo albo wcale."
  },
  "de": {
   "desc": "Echtes Stereo-3D für normale Spiele im VR-Headset unter Linux: Jedes Auge bekommt sein eigenes gerendertes Bild. Keine Mods. Eine Grafikkarte reicht.",
@@ -201,7 +203,9 @@
   "g_hidden": "Spiele aus der Bibliothek passen ({n}), aber die Filter blenden sie aus.",
   "g_show_all": "Anzeigen",
   "g_paid": "💰 = kostenpflichtiges kommerzielles Produkt (Kauf oder Abo): vorpX, R.E.A.L. VR. Die anderen hier genannten Werkzeuge sind kostenlos.",
-  "g_paid_title": "kostenpflichtiges kommerzielles Produkt"
+  "g_paid_title": "kostenpflichtiges kommerzielles Produkt",
+  "g_hint_ded": "Wege, genau dieses Spiel in VR zu spielen: eine VR-Version des Spiels, ein eingebauter VR-Modus oder ein VR-Mod, den Fans für dieses Spiel gemacht haben.",
+  "g_hint_gen": "VR-Werkzeuge, die mit vielen Spielen auf derselben Technik (Spiel-Engine) wie dieses funktionieren. Nicht für dieses Spiel gemacht: kann gut, schlecht oder gar nicht laufen."
  },
  "es": {
   "desc": "Estéreo 3D real para juegos normales en un visor VR en Linux: cada ojo recibe su propia imagen renderizada. Sin mods. Basta una tarjeta gráfica.",
@@ -303,7 +307,9 @@
   "g_hidden": "Coinciden juegos de la biblioteca ({n}), pero los filtros los ocultan.",
   "g_show_all": "Mostrarlos",
   "g_paid": "💰 = producto comercial de pago (compra o suscripción): vorpX, R.E.A.L. VR. Las demás herramientas citadas aquí son gratuitas.",
-  "g_paid_title": "producto comercial de pago"
+  "g_paid_title": "producto comercial de pago",
+  "g_hint_ded": "Formas de jugar a este juego en concreto en RV: una versión VR del juego, un modo VR incluido en él o un mod VR hecho por fans para este juego.",
+  "g_hint_gen": "Herramientas de RV que funcionan con muchos juegos hechos con la misma tecnología (motor de juego) que este. No están hechas para este juego: pueden ir bien, mal o no funcionar."
  },
  "fr": {
   "desc": "Une vraie stéréo 3D pour des jeux ordinaires dans un casque VR sous Linux : chaque œil reçoit sa propre image rendue. Sans mods. Une seule carte graphique suffit.",
@@ -405,7 +411,9 @@
   "g_hidden": "Des jeux de la bibliothèque correspondent ({n}), mais les filtres les masquent.",
   "g_show_all": "Les afficher",
   "g_paid": "💰 = produit commercial payant (achat ou abonnement) : vorpX, R.E.A.L. VR. Les autres outils cités ici sont gratuits.",
-  "g_paid_title": "produit commercial payant"
+  "g_paid_title": "produit commercial payant",
+  "g_hint_ded": "Façons de jouer à ce jeu précis en VR : une version VR du jeu, un mode VR intégré ou un mod VR créé par des fans pour ce jeu.",
+  "g_hint_gen": "Outils VR qui marchent avec beaucoup de jeux construits sur la même technologie (moteur de jeu) que celui-ci. Pas faits pour ce jeu : ils peuvent bien marcher, mal ou pas du tout."
  },
  "pt-BR": {
   "desc": "Estéreo 3D de verdade para jogos comuns em um headset VR no Linux: cada olho recebe sua própria imagem renderizada. Sem mods. Uma placa de vídeo basta.",
@@ -507,7 +515,9 @@
   "g_hidden": "Jogos da biblioteca correspondem ({n}), mas os filtros os ocultam.",
   "g_show_all": "Mostrá-los",
   "g_paid": "💰 = produto comercial pago (compra ou assinatura): vorpX, R.E.A.L. VR. As demais ferramentas citadas aqui são gratuitas.",
-  "g_paid_title": "produto comercial pago"
+  "g_paid_title": "produto comercial pago",
+  "g_hint_ded": "Formas de jogar este jogo específico em RV: uma versão VR do jogo, um modo VR embutido nele ou um mod VR feito por fãs para este jogo.",
+  "g_hint_gen": "Ferramentas de RV que funcionam com muitos jogos feitos com a mesma tecnologia (engine) que este. Não foram feitas para este jogo: podem funcionar bem, mal ou nem funcionar."
  },
  "ru": {
   "desc": "Настоящее стерео 3D для обычных игр в VR-шлеме на Linux: каждый глаз получает собственное отрендеренное изображение. Без модов. Достаточно одной видеокарты.",
@@ -609,7 +619,9 @@
   "g_hidden": "Есть подходящие игры из библиотеки ({n}), но фильтры их скрывают.",
   "g_show_all": "Показать",
   "g_paid": "💰 = платный коммерческий продукт (покупка или подписка): vorpX, R.E.A.L. VR. Остальные упомянутые здесь инструменты бесплатны.",
-  "g_paid_title": "платный коммерческий продукт"
+  "g_paid_title": "платный коммерческий продукт",
+  "g_hint_ded": "Способы сыграть именно в эту игру в VR: VR-версия игры, встроенный режим VR или VR-мод, сделанный фанатами специально для неё.",
+  "g_hint_gen": "VR-инструменты, которые работают со многими играми на той же технологии (игровом движке), что и эта. Сделаны не для этой игры: могут работать хорошо, плохо или не работать вовсе."
  },
  "ja": {
   "desc": "Linux で普通のゲームを VR ヘッドセットで本物のステレオ 3D に：左右の目それぞれに別々の映像をレンダリングします。MOD 不要。GPU は 1 枚で十分です。",
@@ -711,7 +723,9 @@
   "g_hidden": "ライブラリのゲームが一致しますが({n} 件)、フィルターで非表示になっています。",
   "g_show_all": "表示する",
   "g_paid": "💰 = 有料の商用製品(購入またはサブスクリプション):vorpX、R.E.A.L. VR。ここに挙げたほかのツールは無料です。",
-  "g_paid_title": "有料の商用製品"
+  "g_paid_title": "有料の商用製品",
+  "g_hint_ded": "このゲームそのものを VR で遊ぶ方法:ゲームの VR 版、ゲームに組み込まれた VR モード、またはファンがこのゲーム用に作った VR MOD。",
+  "g_hint_gen": "このゲームと同じ技術(ゲームエンジン)で作られた多くのゲームで使える VR ツール。このゲーム専用ではないため、うまく動くことも、うまく動かないことも、まったく動かないこともあります。"
  },
  "zh-CN": {
   "desc": "在 Linux 上让普通游戏在 VR 头显中呈现真正的立体 3D：每只眼睛获得各自渲染的画面。无需模组。一块显卡就够了。",
@@ -813,6 +827,8 @@
   "g_hidden": "库中有匹配的游戏({n} 个),但被筛选条件隐藏了。",
   "g_show_all": "显示",
   "g_paid": "💰 = 付费商业产品(购买或订阅):vorpX、R.E.A.L. VR。这里提到的其他工具都是免费的。",
-  "g_paid_title": "付费商业产品"
+  "g_paid_title": "付费商业产品",
+  "g_hint_ded": "用 VR 玩这款游戏的方法:游戏的 VR 版本、游戏内置的 VR 模式,或玩家专为这款游戏制作的 VR 模组。",
+  "g_hint_gen": "适用于许多与本游戏使用相同技术(游戏引擎)的游戏的 VR 工具。并非为这款游戏制作:可能运行良好、效果一般,也可能完全不能用。"
  }
 }
