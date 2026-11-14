@@ -172,3 +172,7 @@ table.resp td { font-size: 14px; }
 }
 #quick button { text-decoration: none; }
 #quick button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.paid { cursor: help; }
+#none ul { margin: 6px 0; padding-left: 1.2em; }
+#none button { font: inherit; font-size: 14px; padding: 2px 10px; border-radius: 8px; cursor: pointer;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); }

@@ -16,6 +16,11 @@ function md(s) {
     });
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 }
+// Paid commercial VR tools (purchase or subscription), marked wherever named.
+const PAID = ["vorpX", "R.E.A.L. VR"];
+const paidMark = () => ` <span class="paid" title="${esc(tr("g_paid_title", "paid commercial product"))}">💰</span>`;
+const PAID_RE = new RegExp("(<[^>]*>)|(" + PAID.map(p => p.replace(/[.]/g, "\\.")).join("|") + ")", "g");
+const markPaid = html => html.replace(PAID_RE, (m, tag, w) => tag || w + paidMark());  // text only, not inside tags
 const nameKey = g => g.game.replace(/\(.*?\)/g, "").trim().toLowerCase().replace(/^(the|a) /, "").replace(/[^a-z0-9 ]/g, "");
 const slug = g => g.game.replace(/\(.*?\)/g, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const stCls = s => "st st-" + (s || "untested").replace(" ", "-");

@@ -92,7 +92,14 @@
   "g_q_works2": "działa na dwóch GPU",
   "g_q_works1": "działa na jednym GPU",
   "g_count": "pokazane gry: {shown} z {total} · działające na dwóch GPU: {works} · z dedykowaną drogą do VR: {ded}",
-  "g_not_owned": "Brak pasujących gier. Lista obejmuje tylko gry, które ma opiekun projektu (tylko te można przetestować); sprawdź filtry powyżej lub pisownię."
+  "g_not_owned": "Brak pasujących gier. Lista obejmuje tylko gry, które ma opiekun projektu (tylko te można przetestować); sprawdź filtry powyżej lub pisownię.",
+  "g_known": "Opiekun projektu nie ma tej gry, więc nie może jej tu przetestować z vrdual. Pasujące gry w PCGamingWiki (silnik, API grafiki i obsługa VR na ich stronach):",
+  "g_unknown": "Żadna znana gra nie pasuje; sprawdź pisownię.",
+  "g_known_more": "i {n} więcej; zawęź wyszukiwanie.",
+  "g_hidden": "Pasują gry z biblioteki ({n}), ale filtry je ukrywają.",
+  "g_show_all": "Pokaż je",
+  "g_paid": "💰 = płatny produkt komercyjny (zakup lub subskrypcja): vorpX, R.E.A.L. VR. Pozostałe wymienione tu narzędzia są darmowe.",
+  "g_paid_title": "płatny produkt komercyjny"
  },
  "de": {
   "desc": "Echtes Stereo-3D für normale Spiele im VR-Headset unter Linux: Jedes Auge bekommt sein eigenes gerendertes Bild. Keine Mods. Eine Grafikkarte reicht.",
@@ -187,7 +194,14 @@
   "g_q_works2": "läuft auf zwei GPUs",
   "g_q_works1": "läuft auf einer GPU",
   "g_count": "Spiele angezeigt: {shown} von {total} · laufen auf zwei GPUs: {works} · mit eigenem VR-Weg: {ded}",
-  "g_not_owned": "Kein Spiel passt. Aufgeführt sind nur Spiele, die der Maintainer besitzt (nur diese lassen sich testen); Filter oben oder Schreibweise prüfen."
+  "g_not_owned": "Kein Spiel passt. Aufgeführt sind nur Spiele, die der Maintainer besitzt (nur diese lassen sich testen); Filter oben oder Schreibweise prüfen.",
+  "g_known": "Der Maintainer besitzt dieses Spiel nicht und kann es daher hier nicht mit vrdual testen. Passende Spiele bei PCGamingWiki (Engine, Grafik-API und VR-Unterstützung auf ihren Seiten):",
+  "g_unknown": "Kein bekanntes Spiel passt; Schreibweise prüfen.",
+  "g_known_more": "{n} weitere; Suche eingrenzen.",
+  "g_hidden": "Spiele aus der Bibliothek passen ({n}), aber die Filter blenden sie aus.",
+  "g_show_all": "Anzeigen",
+  "g_paid": "💰 = kostenpflichtiges kommerzielles Produkt (Kauf oder Abo): vorpX, R.E.A.L. VR. Die anderen hier genannten Werkzeuge sind kostenlos.",
+  "g_paid_title": "kostenpflichtiges kommerzielles Produkt"
  },
  "es": {
   "desc": "Estéreo 3D real para juegos normales en un visor VR en Linux: cada ojo recibe su propia imagen renderizada. Sin mods. Basta una tarjeta gráfica.",
@@ -282,7 +296,14 @@
   "g_q_works2": "funciona con dos GPU",
   "g_q_works1": "funciona con una GPU",
   "g_count": "juegos mostrados: {shown} de {total} · funcionan con dos GPU: {works} · con vía VR dedicada: {ded}",
-  "g_not_owned": "Ningún juego coincide. Solo se listan los juegos que tiene el mantenedor (solo esos se pueden probar); revisa los filtros de arriba o la ortografía."
+  "g_not_owned": "Ningún juego coincide. Solo se listan los juegos que tiene el mantenedor (solo esos se pueden probar); revisa los filtros de arriba o la ortografía.",
+  "g_known": "El mantenedor no tiene este juego, así que no puede probarlo aquí con vrdual. Juegos que coinciden en PCGamingWiki (motor, API gráfica y soporte de RV en sus páginas):",
+  "g_unknown": "Ningún juego conocido coincide; revisa la ortografía.",
+  "g_known_more": "{n} más; afina la búsqueda.",
+  "g_hidden": "Coinciden juegos de la biblioteca ({n}), pero los filtros los ocultan.",
+  "g_show_all": "Mostrarlos",
+  "g_paid": "💰 = producto comercial de pago (compra o suscripción): vorpX, R.E.A.L. VR. Las demás herramientas citadas aquí son gratuitas.",
+  "g_paid_title": "producto comercial de pago"
  },
  "fr": {
   "desc": "Une vraie stéréo 3D pour des jeux ordinaires dans un casque VR sous Linux : chaque œil reçoit sa propre image rendue. Sans mods. Une seule carte graphique suffit.",
@@ -377,7 +398,14 @@
   "g_q_works2": "marche sur deux GPU",
   "g_q_works1": "marche sur un GPU",
   "g_count": "jeux affichés : {shown} sur {total} · marchent sur deux GPU : {works} · avec une voie VR dédiée : {ded}",
-  "g_not_owned": "Aucun jeu ne correspond. Seuls les jeux que possède le mainteneur sont listés (seuls ceux-ci peuvent être testés) ; vérifiez les filtres ci-dessus ou l'orthographe."
+  "g_not_owned": "Aucun jeu ne correspond. Seuls les jeux que possède le mainteneur sont listés (seuls ceux-ci peuvent être testés) ; vérifiez les filtres ci-dessus ou l'orthographe.",
+  "g_known": "Le mainteneur ne possède pas ce jeu, il ne peut donc pas le tester ici avec vrdual. Jeux correspondants sur PCGamingWiki (moteur, API graphique et prise en charge de la VR sur leurs pages) :",
+  "g_unknown": "Aucun jeu connu ne correspond ; vérifiez l'orthographe.",
+  "g_known_more": "{n} de plus ; affinez la recherche.",
+  "g_hidden": "Des jeux de la bibliothèque correspondent ({n}), mais les filtres les masquent.",
+  "g_show_all": "Les afficher",
+  "g_paid": "💰 = produit commercial payant (achat ou abonnement) : vorpX, R.E.A.L. VR. Les autres outils cités ici sont gratuits.",
+  "g_paid_title": "produit commercial payant"
  },
  "pt-BR": {
   "desc": "Estéreo 3D de verdade para jogos comuns em um headset VR no Linux: cada olho recebe sua própria imagem renderizada. Sem mods. Uma placa de vídeo basta.",
@@ -472,7 +500,14 @@
   "g_q_works2": "funciona em duas GPUs",
   "g_q_works1": "funciona em uma GPU",
   "g_count": "jogos exibidos: {shown} de {total} · funcionam em duas GPUs: {works} · com caminho VR dedicado: {ded}",
-  "g_not_owned": "Nenhum jogo corresponde. Só são listados os jogos que o mantenedor possui (só esses podem ser testados); confira os filtros acima ou a grafia."
+  "g_not_owned": "Nenhum jogo corresponde. Só são listados os jogos que o mantenedor possui (só esses podem ser testados); confira os filtros acima ou a grafia.",
+  "g_known": "O mantenedor não possui este jogo, então não pode testá-lo aqui com o vrdual. Jogos correspondentes no PCGamingWiki (engine, API gráfica e suporte a RV nas páginas deles):",
+  "g_unknown": "Nenhum jogo conhecido corresponde; confira a grafia.",
+  "g_known_more": "mais {n}; refine a busca.",
+  "g_hidden": "Jogos da biblioteca correspondem ({n}), mas os filtros os ocultam.",
+  "g_show_all": "Mostrá-los",
+  "g_paid": "💰 = produto comercial pago (compra ou assinatura): vorpX, R.E.A.L. VR. As demais ferramentas citadas aqui são gratuitas.",
+  "g_paid_title": "produto comercial pago"
  },
  "ru": {
   "desc": "Настоящее стерео 3D для обычных игр в VR-шлеме на Linux: каждый глаз получает собственное отрендеренное изображение. Без модов. Достаточно одной видеокарты.",
@@ -567,7 +602,14 @@
   "g_q_works2": "работает на двух GPU",
   "g_q_works1": "работает на одной GPU",
   "g_count": "показано игр: {shown} из {total} · работают на двух GPU: {works} · с отдельным путём в VR: {ded}",
-  "g_not_owned": "Ничего не найдено. В списке только игры, которыми владеет автор проекта (проверить можно только их); проверьте фильтры выше или написание."
+  "g_not_owned": "Ничего не найдено. В списке только игры, которыми владеет автор проекта (проверить можно только их); проверьте фильтры выше или написание.",
+  "g_known": "У автора проекта нет этой игры, поэтому проверить её с vrdual здесь нельзя. Подходящие игры на PCGamingWiki (движок, графический API и поддержка VR на их страницах):",
+  "g_unknown": "Известных игр с таким названием нет; проверьте написание.",
+  "g_known_more": "ещё {n}; уточните поиск.",
+  "g_hidden": "Есть подходящие игры из библиотеки ({n}), но фильтры их скрывают.",
+  "g_show_all": "Показать",
+  "g_paid": "💰 = платный коммерческий продукт (покупка или подписка): vorpX, R.E.A.L. VR. Остальные упомянутые здесь инструменты бесплатны.",
+  "g_paid_title": "платный коммерческий продукт"
  },
  "ja": {
   "desc": "Linux で普通のゲームを VR ヘッドセットで本物のステレオ 3D に：左右の目それぞれに別々の映像をレンダリングします。MOD 不要。GPU は 1 枚で十分です。",
@@ -662,7 +704,14 @@
   "g_q_works2": "GPU 2 枚で動作",
   "g_q_works1": "GPU 1 枚で動作",
   "g_count": "表示中のゲーム:{total} 件中 {shown} 件 · GPU 2 枚で動作:{works} · 専用の VR 手段あり:{ded}",
-  "g_not_owned": "一致するゲームはありません。一覧にはメンテナーが所有するゲームだけが載っています(テストできるのはそれだけ)。上のフィルターや綴りを確認してください。"
+  "g_not_owned": "一致するゲームはありません。一覧にはメンテナーが所有するゲームだけが載っています(テストできるのはそれだけ)。上のフィルターや綴りを確認してください。",
+  "g_known": "メンテナーはこのゲームを所有していないため、ここで vrdual でテストすることはできません。PCGamingWiki で一致するゲーム(各ページにエンジン、グラフィックス API、VR 対応):",
+  "g_unknown": "一致する既知のゲームはありません。綴りを確認してください。",
+  "g_known_more": "ほか {n} 件。検索を絞り込んでください。",
+  "g_hidden": "ライブラリのゲームが一致しますが({n} 件)、フィルターで非表示になっています。",
+  "g_show_all": "表示する",
+  "g_paid": "💰 = 有料の商用製品(購入またはサブスクリプション):vorpX、R.E.A.L. VR。ここに挙げたほかのツールは無料です。",
+  "g_paid_title": "有料の商用製品"
  },
  "zh-CN": {
   "desc": "在 Linux 上让普通游戏在 VR 头显中呈现真正的立体 3D：每只眼睛获得各自渲染的画面。无需模组。一块显卡就够了。",
@@ -757,6 +806,13 @@
   "g_q_works2": "双 GPU 可用",
   "g_q_works1": "单 GPU 可用",
   "g_count": "显示游戏:{shown} / {total} · 双 GPU 可用:{works} · 有专用 VR 途径:{ded}",
-  "g_not_owned": "没有匹配的游戏。列表只包含维护者拥有的游戏(只有这些能测试);请检查上面的筛选条件或拼写。"
+  "g_not_owned": "没有匹配的游戏。列表只包含维护者拥有的游戏(只有这些能测试);请检查上面的筛选条件或拼写。",
+  "g_known": "维护者没有这款游戏,因此无法在这里用 vrdual 测试。PCGamingWiki 上匹配的游戏(其页面上有引擎、图形 API 和 VR 支持信息):",
+  "g_unknown": "没有匹配的已知游戏;请检查拼写。",
+  "g_known_more": "还有 {n} 个;请缩小搜索范围。",
+  "g_hidden": "库中有匹配的游戏({n} 个),但被筛选条件隐藏了。",
+  "g_show_all": "显示",
+  "g_paid": "💰 = 付费商业产品(购买或订阅):vorpX、R.E.A.L. VR。这里提到的其他工具都是免费的。",
+  "g_paid_title": "付费商业产品"
  }
 }

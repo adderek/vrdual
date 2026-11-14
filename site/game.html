@@ -31,8 +31,8 @@ function show() {
     <div class="cards">
       <div class="card"><h3>${esc(t("g_two", "two GPUs"))}</h3>${stHtml(g.status)}</div>
       <div class="card"><h3>${esc(t("g_one", "one GPU"))}</h3>${stHtml(g.single)}</div>
-      <div class="card wide"><h3>${esc(t("l_col_ded", "dedicated VR"))}</h3>${r && r.vr ? md(r.vr) : '<span class="muted">—</span>'}</div>
-      <div class="card"><h3>${esc(t("l_col_gen", "generic VR"))}</h3>${r && r.generic.length ? esc(r.generic.join(", ")) : '<span class="muted">—</span>'}</div>
+      <div class="card wide"><h3>${esc(t("l_col_ded", "dedicated VR"))}</h3>${r && r.vr ? markPaid(md(r.vr)) : '<span class="muted">—</span>'}</div>
+      <div class="card"><h3>${esc(t("l_col_gen", "generic VR"))}</h3>${r && r.generic.length ? markPaid(esc(r.generic.join(", "))) : '<span class="muted">—</span>'}</div>
     </div>
     <h2>${esc(t("p_materials", "Materials"))}</h2>
     ${g.media.length ? `<div class="media">${g.media.map(mediaHtml).join("")}</div>

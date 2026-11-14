@@ -105,6 +105,8 @@ function makeTable({table, cols, rows, store, tools, count, onRender, defaults =
     render() { head(); body(); },
     filter(k, v) { st.filters[k] = v; save(); head(); body(); },
     filters: () => st.filters,
+    query(q) { st.q = q; save(); head(); body(); },
+    q: () => st.q,
     // show one row expanded: filters that hide it are dropped for this view
     show(r) {
       open.add(rid(r));

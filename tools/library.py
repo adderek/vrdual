@@ -9,6 +9,10 @@ library.py pcgw        fill engine / api / pcgw_vr from PCGamingWiki
                        rerun only asks for games not seen yet; --refresh
                        asks again for all)
 library.py generic     recompute "generic" from engine / api / pcgw_vr
+library.py known       write site/known.json: titles of all game pages on
+                       PCGamingWiki (Category:Games); the game list loads it
+                       only when a search finds nothing in the library, to
+                       tell a game the maintainer does not own from a typo
 library.py link        fill "tested" (the game's name in site/games.json)
                        where the names match; others stay as written
 
@@ -31,6 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "site" / "library.json"
 GAMES = ROOT / "site" / "games.json"
+KNOWN = ROOT / "site" / "known.json"
 CACHE = Path.home() / ".cache" / "vrdual" / "pcgw.json"
 API = "https://www.pcgamingwiki.com/w/api.php"
 UA = "vrdual-library/1 (https://github.com/adderek/vrdual)"
@@ -200,6 +205,23 @@ def pcgw(refresh):
           f"{len(miss) - len(done)} left unsearched (run again)", file=sys.stderr)
 
 
+def known():
+    titles, cont = [], {}
+    while True:
+        d = get({"action": "query", "list": "categorymembers", "cmtitle": "Category:Games", "cmnamespace": "0",
+                 "cmlimit": "500", "cmprop": "title", **cont})
+        titles += [m["title"] for m in d["query"]["categorymembers"]]
+        if "continue" not in d:
+            break
+        cont = {"cmcontinue": d["continue"]["cmcontinue"]}
+        if len(titles) % 5000 < 500:
+            print(f"  {len(titles)} titles", file=sys.stderr)
+        time.sleep(1)
+    titles = sorted(set(titles), key=str.casefold)
+    KNOWN.write_text(json.dumps(titles, ensure_ascii=False, separators=(",", ":")) + "\n")
+    print(f"{len(titles)} titles written to {KNOWN.relative_to(ROOT)}", file=sys.stderr)
+
+
 def api_list(a):
     names = {"direct3d versions": "D3D", "directdraw versions": "DirectDraw ", "opengl versions": "OpenGL ",
              "glide versions": "Glide ", "vulkan versions": "Vulkan "}
@@ -245,9 +267,14 @@ def main():
     a = sys.argv[1:]
     if a == ["--check"]:
         lib = load()
-        print(f"{len(lib)} games in {DATA.relative_to(ROOT)}")
+        k = json.loads(KNOWN.read_text()) if KNOWN.exists() else None
+        if not isinstance(k, list) or not k or not all(isinstance(x, str) and x for x in k):
+            sys.exit(f"{KNOWN.name}: want a non-empty list of titles (library.py known)")
+        print(f"{len(lib)} games in {DATA.relative_to(ROOT)}, {len(k)} known titles")
     elif a[:1] == ["pcgw"]:
         pcgw("--refresh" in a)
+    elif a == ["known"]:
+        known()
     elif a == ["link"]:
         lib = load()
         idx = {norm(g["game"]): g for g in lib}

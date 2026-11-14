@@ -12,7 +12,7 @@ const pcgwUrl = r => PCGW + encodeURIComponent(r.pcgw.replace(/ /g, "_"));
 const nativeOf = r => r.pcgw_vr.filter(x => x === "native VR" || x === "native 3D")
   .map(x => x === "native VR" ? t("l_pcgw_vr", "native VR mode") : t("l_pcgw_3d", "native stereo 3D mode"));
 const dedText = r => [r.vr, ...nativeOf(r)].filter(Boolean).join("; ");
-const dedHtml = r => [r.vr ? md(r.vr) : "", ...nativeOf(r).map(x => `${esc(x)} <span class="muted small">(<a href="${pcgwUrl(r)}#VR_support">PCGamingWiki</a>)</span>`)]
+const dedHtml = r => [r.vr ? markPaid(md(r.vr)) : "", ...nativeOf(r).map(x => `${esc(x)} <span class="muted small">(<a href="${pcgwUrl(r)}#VR_support">PCGamingWiki</a>)</span>`)]
   .filter(Boolean).join("; ");
 const dual = r => r.t ? r.t.status : "untested", single = r => r.t && r.t.single || "untested";
 
@@ -37,7 +37,7 @@ const COLS = [
   {k: "single", label: () => t("g_one", "one GPU"), text: r => single(r) + " " + stLabel(single(r)), key: r => ORDER.indexOf(single(r)), html: r => stHtml(single(r))},
   {k: "vr", label: () => t("l_col_ded", "dedicated VR"), text: dedText, key: r => dedText(r) ? 0 : 1, html: dedHtml},
   {k: "generic", label: () => t("l_col_gen", "generic VR"), text: r => r.generic.join(" "), key: r => -r.generic.length,
-    html: r => r.generic.map(x => `<a class="tag" href="${GEN_URL[x]}">${esc(x)}</a>`).join(" ")},
+    html: r => r.generic.map(x => `<a class="tag" href="${GEN_URL[x]}">${esc(x)}${PAID.includes(x) ? paidMark() : ""}</a>`).join(" ")},
   {k: "platform", label: () => t("l_col_plat", "VR route runs on"), text: r => r.platform, html: r => esc(r.platform), hide: true},
   {k: "engine", label: () => t("l_col_engine", "engine"), text: r => r.engine.join(", "), html: r => esc(r.engine.join(", "))},
   {k: "api", label: () => t("l_col_api", "graphics API"), text: r => r.api.join(", "), html: r => esc(r.api.join(", ")), hide: true},
@@ -50,10 +50,36 @@ function onRender() {
   const f = tbl.filters();
   document.querySelectorAll("#quick button").forEach(b => b.setAttribute("aria-pressed", String((f[b.dataset.f] || "") === b.dataset.v)));
   document.getElementById("single-note").hidden = !(f.single || "").trim();
-  // nothing found by name: say why rather than show an empty table
+  notFound();
+}
+
+// Nothing shown: hidden by the filters, a game the maintainer does not own
+// (known.json: all games on PCGamingWiki, loaded only now), or a typo.
+let known = null;
+function notFound() {
   const none = document.getElementById("none");
   none.hidden = !!document.querySelector("#t tbody tr");
-  none.textContent = t("g_not_owned", "No game matches. Only games the maintainer owns are listed (only those can be tested); check the filters above or the spelling.");
+  if (none.hidden) return;
+  const q = tbl.q(), words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = s => words.every(w => s.toLowerCase().includes(w));
+  const filtersOnly = () => { none.textContent = t("g_not_owned", "No game matches. Only games the maintainer owns are listed (only those can be tested); check the filters above or the spelling."); };
+  const owned = rows.filter(r => hit(r.game)).length;
+  if (words.length && owned) {  // the column filters hide them (by default: untested games)
+    none.innerHTML = `${esc(t("g_hidden", "Owned games match ({n}), but the filters hide them.", {n: owned}))} <button type="button" class="clear">${esc(t("g_show_all", "Show them"))}</button>`;
+    return;
+  }
+  if (!words.length) return filtersOnly();
+  none.textContent = "…";
+  (known ||= getJson("known.json")).then(k => {
+    if (tbl.q() !== q) return;  // typed on meanwhile
+    const lib = new Set(rows.map(r => r.pcgw));
+    const m = k.filter(x => hit(x) && !lib.has(x));
+    if (!m.length) { none.textContent = t("g_unknown", "No known game matches; check the spelling."); return; }
+    m.sort((a, b) => a.length - b.length);
+    none.innerHTML = `${esc(t("g_known", "The maintainer does not own this game, so it cannot be tested with vrdual here. Matching games on PCGamingWiki (engine, graphics API and VR support on their pages):"))}
+      <ul>${m.slice(0, 10).map(x => `<li><a href="${PCGW + encodeURIComponent(x.replace(/ /g, "_"))}">${esc(x)}</a></li>`).join("")}</ul>` +
+      (m.length > 10 ? esc(t("g_known_more", "{n} more; refine the search.", {n: m.length - 10})) : "");
+  }).catch(filtersOnly);
 }
 
 function start(want) {
@@ -70,11 +96,16 @@ function start(want) {
   tbl.render();
   const r = want && rows.find(x => x.t && slug(x.t) === want);
   if (r) tbl.show(r);
+  const q = new URLSearchParams(location.search).get("q");  // shareable search: games.html?q=NAME
+  if (q !== null) tbl.query(q);
 }
 
 document.getElementById("quick").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b || !tbl) return;
   tbl.filter(b.dataset.f, b.getAttribute("aria-pressed") === "true" ? "" : b.dataset.v);
+});
+document.getElementById("none").addEventListener("click", e => {
+  if (e.target.closest("button.clear")) for (const k of Object.keys(tbl.filters())) tbl.filter(k, "");
 });
 document.querySelector("#t tbody").addEventListener("click", e => {
   const load = e.target.closest("button.load");

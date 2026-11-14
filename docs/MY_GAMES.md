@@ -12,4 +12,6 @@ and from catalogs of VR mods), `platform` (where that route runs),
 PCGamingWiki), `pcgw` (the page), `tested` (the game's entry in
 [site/games.json](../site/games.json), whose status the page shows).
 `tools/library.py`: `pcgw` refreshes the PCGamingWiki fields, `link` fills
-`tested`, `--check` validates (part of `vrdual ci`).
+`tested`, `known` rewrites [site/known.json](../site/known.json) (titles of
+all games on PCGamingWiki: a search for a game that is not owned says so
+and links its PCGamingWiki page), `--check` validates (part of `vrdual ci`).
