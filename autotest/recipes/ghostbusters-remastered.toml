@@ -1,0 +1,20 @@
+# Ghostbusters: The Video Game Remastered (Epic, via Heroic), Proton-CachyOS
+# (umu), D3D11 via DXVK (64-bit ghost.exe). Format: docs/tasks/game-autotest.md.
+# Not yet executable; the format has no Heroic launch key yet (Epic app name
+# Mint).
+
+[game]
+slug = "ghostbusters-remastered"
+profile = "ghost.exe"   # [app:...] in the user's config
+regression = false
+
+# Tested 2026-11-15 in the headset: 1920x1080 gamescope (Heroic), two-GPU
+# mirror, no profile, nothing tuned. Stereo confirmed; sound and picture drift
+# apart (30 frames/s with stretches near 17), not yet compared without vrdual.
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "ghostbusters-remastered"

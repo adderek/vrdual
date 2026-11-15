@@ -79,6 +79,9 @@ struct vrdual_shm_header {
 // this frame's layer injects vrdual-xr's keys and mouse into the game's X
 // server (XTEST, vrdual_ctl.xin): vrdual-xr sends them there, not to uinput
 #define VRDUAL_SLOT_XTEST 8u
+// the mirror (second GPU) stopped: both frame files hold the left eye's
+// picture, no stereo (vrdual-xr says so once)
+#define VRDUAL_SLOT_MONO 16u
 
 // Cursor image: premultiplied ARGB32 (B, G, R, A bytes), cursor_w * cursor_h
 // pixels at VRDUAL_CURSOR_OFF, cropped to VRDUAL_CURSOR_MAX square.

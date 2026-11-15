@@ -1698,7 +1698,7 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
     fi
     # 4a. Mirror stopped on purpose in a 32-bit GL app (transient maps, like
     # Alice): the game must keep rendering fresh data (its shadowed uploads
-    # still reach A), only the right eye freezes. gltest animates its texture.
+    # still reach A), the right eye shows the left (mono). gltest animates its texture.
     if [[ -x $B/lib32/vrdual-gltest ]] && (( two )); then
         rm -f /dev/shm/vrdual-$sess-*
         env vblank_mode=0 __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink VK_ADD_LAYER_PATH="$B/lib32" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo \
@@ -1712,6 +1712,12 @@ print(*(next((x for x in range(250) if sum(im.getpixel((x0 + x, 128))) > 120), -
             for i in \$(seq 50); do b=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-0);
                 [ \"\${b% *}\" -ge \$(( \${a% *} + 2 )) ] && break; sleep 0.1; done; echo \"\$a / \$b\";
             grep -q 'VRDUAL_MIRROR_FAIL_AT reached' '$tmp/stop.log' && kill -0 $gp && [ \"\${a#* }\" != \"\${b#* }\" ] && [ \"\${a% *}\" != \"\${b% *}\" ]"
+        # a frozen right eye blacks out vrdual-xr (it pairs L[F] with R[F]): the left goes to both
+        label="mirror stopped: right eye shows the left (mono)"
+        check bash -c "a=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-1);
+            for i in \$(seq 50); do b=\$(python3 -I '$VRDUAL_ROOT/tools/frame_hash.py' /dev/shm/vrdual-$sess-1);
+                [ \"\${b% *}\" -ge \$(( \${a% *} + 2 )) ] && break; sleep 0.1; done; echo \"\$a / \$b\";
+            [ \"\${a#* }\" != \"\${b#* }\" ] && [ \"\${a% *}\" != \"\${b% *}\" ]"
         kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true
     fi
 

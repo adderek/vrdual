@@ -909,7 +909,7 @@ static int run(int argc, char** argv) {
     long submitted = 0, uploads = 0;
     // stats line (VRDUAL_XR_STATS seconds): headset frames, those without a new
     // game frame, age of the shown frames (layer publish -> our upload), L/R skew
-    long sub_reported = 0, repeats = 0, aged = 0;
+    long sub_reported = 0, repeats = 0, aged = 0, dark_l = 0, dark_r = 0, dark_total = 0;
     double age_sum = 0, age_max = 0, skew_sum = 0;
     // where a headset frame goes: blocked in xrWaitFrame (runtime pacing) vs our work
     long loops = 0;
@@ -925,6 +925,7 @@ static int run(int argc, char** argv) {
     bool blanked = false;
     bool unturned = false;  // newest frame drawn without head turn (VRDUAL_SLOT_UNTURNED)
     bool unfocused = false;  // the game's window has no input focus (VRDUAL_SLOT_UNFOCUSED): no keys / mouse
+    bool mono = false;       // VRDUAL_SLOT_MONO: the game's mirror stopped, both eyes the same
     bool was_presenting = true;
     float hud_k = 1;        // the HUD's shift in the picture, in HUD shifts (VRDUAL_SLOT_HUD_TWICE: 2)
     // input: profile follows the game in the frame file (hdr->app)
@@ -1491,6 +1492,20 @@ static int run(int argc, char** argv) {
             if (got) {
                 shown = F + 1;
                 blanked = false;
+                {  // black-frame detector: ~4096 sampled pixels per eye, all RGB <= 2 = dark (a flicker the eye cannot catch)
+                    auto dark = [&](const EyeOut& o) {
+                        size_t n = size_t(o.w) * o.h, step = std::max<size_t>(1, n / 4096);
+                        for (size_t i = 0; i < n; i += step) {
+                            const uint8_t* q = o.map + i * 4;
+                            if (q[0] > 2 || q[1] > 2 || q[2] > 2) return false;
+                        }
+                        return true;
+                    };
+                    bool dl = dark(out[0]), dr = dark(out[1]);
+                    dark_l += dl; dark_r += dr;
+                    if ((dl || dr) && dark_total++ < 50)
+                        fprintf(stderr, "[xr] dark frame %llu: %s%s%s\n", (unsigned long long)F, dl ? "eye 0" : "", dl && dr ? " + " : "", dr ? "eye 1" : "");
+                }
                 bool was = unturned;  // the layer drew it without head turn (menu, video): cursor and scroll follow
                 uint32_t fl = L.hdr->slot_flags[F % VRDUAL_SLOTS];
                 unturned = fl & VRDUAL_SLOT_UNTURNED;
@@ -1504,6 +1519,11 @@ static int run(int argc, char** argv) {
                     fprintf(stderr, "[xr] keys and mouse: %s\n", x ? "XTEST into the game's X server (its layer injects them; the pad stays uinput)" : "uinput");
                 }
                 if (unturned != was) fprintf(stderr, "[xr] frames %s head turn (cursor, scroll keys follow)\n", unturned ? "without" : "with");
+                if (bool m = fl & VRDUAL_SLOT_MONO; m != mono) {
+                    fprintf(stderr, "[xr] %s\n", m ? "mirror stopped in the game: mono (left eye in both, see the game's log)" : "stereo again");
+                    if (m) notify("mirror stopped: mono, no 3D (game log)", false);
+                    mono = m;
+                }
                 float hk = fl & VRDUAL_SLOT_HUD_TWICE ? 2.f : 1.f;
                 if (hk != hud_k) fprintf(stderr, "[xr] HUD at %gx the HUD shift (%s): the cursor's HUD depth follows\n", hk,
                                          hk > 1 ? "view scaled onto the screen by a shifted quad" : "drawn once");
@@ -1776,7 +1796,9 @@ static int run(int argc, char** argv) {
                 for (int i = 0; i < 10; ++i) fprintf(stderr, "%s%s %.1f", i ? ", " : "", ph_name[i], ph[i] / loops * 1e3);
                 fprintf(stderr, ")");
             }
+            if (dark_l || dark_r) fprintf(stderr, ", DARK frames: %ld eye 0, %ld eye 1", dark_l, dark_r);
             fprintf(stderr, "\n");
+            dark_l = dark_r = 0;
             uploads = repeats = aged = loops = 0;
             age_sum = age_max = skew_sum = wait_sum = work_sum = work_max = 0;
             for (double& x : ph) x = 0;

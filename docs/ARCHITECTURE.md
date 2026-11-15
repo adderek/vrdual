@@ -174,7 +174,7 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
 - **Replay**: every device-level call runs on A, then again on B with all
   handles translated (arrays, nested structs, pNext chains). Created handles
   are recorded A→B. Queries (`vkGet*`) run on A only. Untranslatable commands
-  stop the mirror with a log line ("mirror STOPPED"), the app keeps running on A.
+  stop the mirror with a log line ("mirror STOPPED"), the app keeps running on A and its picture goes to both frame files (mono, slot flag `VRDUAL_SLOT_MONO`; vrdual-xr says so): a frozen right eye would black out the HMD, which pairs L[F] with R[F].
 - **Host memory**: mappings are given to the app as a CPU shadow; at each
   submit/flush/unmap the changed 8-byte words go to A and B. Cached
   (readback, HOST_CACHED) memory too since 2026-10-21: its shadow starts as a

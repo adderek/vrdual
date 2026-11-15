@@ -380,6 +380,7 @@ struct CopyRes {
         Readback* drb = nullptr;  // depth copy of the same frame, if any
         VkFormat dfmt = VK_FORMAT_UNDEFINED;
         uint32_t flags = 0;  // VRDUAL_SLOT_*
+        bool mono = false;   // also publish as the right eye (mirror stopped)
     } pend[2];
 };
 
@@ -439,6 +440,7 @@ static void destroy_twin(DeviceData* dd);
 static void create_swapchain_twin(DeviceData* dd, const VkSwapchainCreateInfoKHR* ci, struct ::SwapchainData& s);
 static void destroy_swapchain_twin(DeviceData* dd, struct ::SwapchainData& s);
 static void present_twin(DeviceData* dd, VkQueue queue, uint32_t family, const VkPresentInfoKHR* pi, struct ::SwapchainData* s, uint64_t frame, int own);
+static bool stopped(const DeviceData* dd);  // mirror ran and stopped: the left eye goes to both frame files
 static PFN_vkVoidFunction lookup(const char* name);
 }
 
@@ -1715,6 +1717,7 @@ static void finish_readback(const Dispatch& d, VkDevice dev, CopyRes& cr, int k)
         }
     uint64_t t1 = now_ns();
     if (g_owner.sc == p.sc) shm_publish(p.eye, p.frame, p.rb->map, p.bytes, p.drb ? p.drb->map : nullptr, p.dfmt, p.flags);
+    if (g_owner.sc == p.sc && p.mono) shm_publish(1, p.frame, p.rb->map, p.bytes, p.drb ? p.drb->map : nullptr, p.dfmt, p.flags);
     // where the game's present thread spends export time (g_shm_lock held)
     static uint64_t wait_ns = 0, pub_ns = 0, n = 0;
     wait_ns += t1 - t0;
@@ -1903,7 +1906,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
         VkPhysicalDeviceProperties p;
         dd->inst->GetPhysicalDeviceProperties(dd->phys, &p);
         shm_open_out(g_cfg.eye, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str(), dd->pt && dd->pt->depth);
-        if (dd->aer) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str(), dd->pt && dd->pt->depth);
+        if (dd->aer || mirror::stopped(dd)) shm_open_out(1, s->extent.width, s->extent.height, s->pixfmt, p.deviceName, pci_string(dd->inst, dd->phys).c_str(), dd->pt && dd->pt->depth);
     }
     if (dd->md) mirror::present_twin(dd, queue, family, pi, s, frame, own);
     if (!own || !ensure_copy_res(dd->d, dd->device, dd->set_loader_data, family, dd->cr)) {
@@ -1949,6 +1952,10 @@ static VKAPI_ATTR VkResult VKAPI_CALL vrd_QueuePresentKHR(VkQueue queue, const V
     // Alternate-eye rendering: pair F = frames 2F (left) and 2F+1 (right).
     dd->cr.pend[k] = {true, dd->aer ? frame / 2 : frame, sc_id(pi->pSwapchains[0]), dd->aer ? eye : g_cfg.eye, &s->rb[k], bytes,
                       dp.img ? &s->drb[k] : nullptr, dp.fmt, slot_flags(dd)};
+    if (!dd->aer && g_cfg.eye == 0 && mirror::stopped(dd)) {  // a frozen right eye would black out the HMD
+        dd->cr.pend[k].mono = true;
+        dd->cr.pend[k].flags |= VRDUAL_SLOT_MONO;
+    }
     finish_readback(dd->d, dd->device, dd->cr, k ^ 1);  // frame - 1
     el.unlock();
     if (frame && !dd->aer) lockstep_wait(frame - 1);

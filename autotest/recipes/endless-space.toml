@@ -1,0 +1,19 @@
+# ENDLESS Space - Definitive Edition, run via Proton (umu) from its game
+# folder (`Endless space.exe`). Format: docs/tasks/game-autotest.md. Not yet
+# executable; the launch key for a plain exe path does not exist yet.
+
+[game]
+slug = "endless-space"
+profile = "Endless space.exe"   # [app:...] in the user's config
+regression = false
+
+# Tested 2026-11-15 in the headset: two-GPU mirror, no curated profile.
+# Tuned with `tune` to world_scale ~0.06 (hfov 90, screen_fov 60), saved under
+# [app:Endless space.exe]. The owner's verdict: works.
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu, then the galaxy map
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "endless-space"

@@ -20,7 +20,7 @@
 //   * shaders: modules are created separately on A and B, each patched with
 //     its own eye's parameter buffer.
 // If B cannot follow (failed call, untranslatable command) the mirror stops and
-// the app keeps running on A; the right eye freezes, with a log line.
+// the app keeps running on A; the right eye shows the left one (mono, VRDUAL_SLOT_MONO), with a log line.
 namespace mirror {
 
 // ------------------------------------------------------------ handle map ----
@@ -167,8 +167,10 @@ static MDev* mdev_of(void* k) {
 }
 
 static void mirror_fail(MDev* md, const char* why) {
-    if (md->live.exchange(false)) logf("mirror STOPPED: %s — the right eye freezes, the app continues on the left GPU", why);
+    if (md->live.exchange(false)) logf("mirror STOPPED: %s — the right eye shows the left one (mono), the app continues on the left GPU", why);
 }
+
+static bool stopped(const DeviceData* dd) { return dd->md && !dd->md->live; }
 
 // Per-call scratch: arena for translated structs + translation status.
 struct Ctx {
@@ -1090,8 +1092,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_AllocateMemory(VkDevice dev, const VkMem
     if (rb < 0) {
         std::string chain;
         for (auto* s = (const VkBaseInStructure*)bai.pNext; s; s = s->pNext) chain += " " + std::to_string(int(s->sType));
-        logf("mirror: vkAllocateMemory on B returned %d (size %llu, type %u, pNext sTypes:%s)", int(rb),
-             (unsigned long long)bai.allocationSize, bai.memoryTypeIndex, chain.empty() ? " none" : chain.c_str());
+        logf("mirror: vkAllocateMemory on B returned %d (size %llu, type %u, pNext sTypes:%s, replay address 0x%llx)", int(rb),
+             (unsigned long long)bai.allocationSize, bai.memoryTypeIndex, chain.empty() ? " none" : chain.c_str(),
+             (unsigned long long)(rp ? oc.opaqueCaptureAddress : 0));
         mirror_fail(md, "vkAllocateMemory failed on B");
         return r;
     }
@@ -1179,8 +1182,11 @@ static VKAPI_ATTR void VKAPI_CALL m_FreeMemory(VkDevice dev, VkDeviceMemory mem,
     // the same handle and record its own twin (same for every Destroy/Free)
     VkDeviceMemory bm = mem && md->live ? xl_handle(mem) : VK_NULL_HANDLE;
     forget_handle(mem);
-    md->a.FreeMemory(dev, mem, alloc);
+    // B first: once A frees, another thread may get A's device address and
+    // replay it on B, which must be free by then (Callisto Protocol, vkd3d:
+    // VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS at start)
     if (bm) md->b.FreeMemory(md->bdev, bm, nullptr);
+    md->a.FreeMemory(dev, mem, alloc);
 }
 
 static VKAPI_ATTR VkResult VKAPI_CALL m_MapMemory(VkDevice dev, VkDeviceMemory mem, VkDeviceSize off, VkDeviceSize size, VkMemoryMapFlags flags, void** pp) {

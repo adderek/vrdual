@@ -1,0 +1,21 @@
+# The Callisto Protocol (Epic, via Heroic), Proton-CachyOS (umu), D3D12 via
+# vkd3d-proton (Unreal Engine 4, 64-bit TheCallistoProtocol-Win64-Shipping.exe).
+# Format: docs/tasks/game-autotest.md. Not yet executable; the format has no
+# Heroic launch key yet (Epic app name 256ba8bdd1ff4c26a0b2d3776d1a1bf6).
+
+[game]
+slug = "the-callisto-protocol"
+profile = "TheCallistoProtocol-Win64-Shipping.exe"   # [app:...] in the user's config
+regression = true   # the mirror used to stop at the start (address replay race)
+
+# Tested 2026-11-15 in the headset: 1920x1080 gamescope (Heroic), two-GPU
+# mirror, no curated profile, nothing tuned. Before the fix the mirror stopped
+# right at the start ("mirror STOPPED: vkAllocateMemory failed on B" in the
+# Proton log). The owner's verdict: works.
+
+[[step]]
+wait_frames = 900           # TODO template of the main menu
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "the-callisto-protocol"

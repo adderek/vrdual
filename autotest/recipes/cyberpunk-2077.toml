@@ -1,0 +1,21 @@
+# Cyberpunk 2077 (GOG, via Heroic), Proton-CachyOS (umu), D3D12 via
+# vkd3d-proton (REDengine, 64-bit Cyberpunk2077.exe; REDlauncher via Zink).
+# Format: docs/tasks/game-autotest.md. Not yet executable; the format has no
+# Heroic launch key yet (GOG id 1423049311).
+
+[game]
+slug = "cyberpunk-2077"
+profile = "Cyberpunk2077.exe"   # [app:...] in the user's config
+regression = false
+
+# Tested 2026-11-15 in the headset: 1920x1080 gamescope (Heroic), two-GPU
+# mirror, no curated profile. Tuned with `tune` to world_scale ~0.025,
+# hud_depth 0, hfov 90 (saved under [app:Cyberpunk2077.exe]). The owner's
+# verdict: works, strong effect.
+
+[[step]]
+wait_frames = 1800          # TODO template: launcher Play, then the main menu
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "cyberpunk-2077"

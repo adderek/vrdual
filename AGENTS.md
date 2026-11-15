@@ -222,6 +222,12 @@ machine unless a row says otherwise. Read them with its topology in mind:
   textures flickered black); importing host pages into A fails on amdgpu
   userptr (ARCHITECTURE "Host memory").
 
+- Mirror frees: B before A. Freed on A first, another app thread (vkd3d
+  allocates from several) gets the same device address and its replay on B
+  fails with `VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS` (Callisto Protocol,
+  2026-11-15: mirror stopped at start). A stopped mirror now sends the left
+  eye to both frame files (mono): a frozen eye blacked out vrdual-xr.
+
 - `glslc` segfaults on `GL_EXT_buffer_reference_uvec2` with constant operands;
   `glslangValidator -V` works.
 - SPIR-V inserts must respect section order: capabilities → extensions →

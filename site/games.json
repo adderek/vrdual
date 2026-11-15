@@ -69,7 +69,7 @@
    "`world_scale` 0.2 gives a strong effect but can cause heavy nausea.",
    "Earlier hang after skipping the intro videos and artifacts outside the 1920x1200 image in a 1920x1080 gamescope are no longer seen."
   ],
-  "tested": "2026-10-29",
+  "tested": "2026-11-15",
   "single": "",
   "media": [],
   "writeup_pending": false
@@ -1011,6 +1011,66 @@
   ],
   "tested": "",
   "single": "runs",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
+  "game": "ENDLESS Space - Definitive Edition",
+  "store": "Steam, Amazon: positive",
+  "path": "Proton (umu), `Endless space.exe`",
+  "status": "works",
+  "settings": "mirror mode; `world_scale` ~0.06 (`tune`, saved under `[app:Endless space.exe]`), hfov 90, screen_fov 60",
+  "notes": [
+   "Works: stereo confirmed in the headset (two-GPU mirror).",
+   "`world_scale` tuned to ~0.06 in the headset."
+  ],
+  "tested": "2026-11-15",
+  "single": "",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
+  "game": "The Callisto Protocol",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D12 (UE4, vkd3d-proton, 64-bit `TheCallistoProtocol-Win64-Shipping.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic), mirror mode; no profile, nothing tuned",
+  "notes": [
+   "Works: stereo confirmed in the headset (two-GPU mirror).",
+   "Fixed in vrdual: the mirror stopped right at the start (device address replay on the second GPU failed), the headset showed black, later mono."
+  ],
+  "tested": "2026-11-15",
+  "single": "",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
+  "game": "Cyberpunk 2077",
+  "store": "GOG (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D12 (REDengine, vkd3d-proton, 64-bit `Cyberpunk2077.exe`; launcher via Zink)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic), mirror mode; `[app:Cyberpunk2077.exe]` `world_scale` ~0.025 (`tune`), `hud_depth = 0`, `hfov = 90`",
+  "notes": [
+   "Works: stereo confirmed in the headset (two-GPU mirror), a strong effect.",
+   "`world_scale` tuned to ~0.025 in the headset."
+  ],
+  "tested": "2026-11-15",
+  "single": "",
+  "media": [],
+  "writeup_pending": false
+ },
+ {
+  "game": "Ghostbusters: The Video Game Remastered",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D11 (DXVK, 64-bit `ghost.exe`)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic), mirror mode; no profile, nothing tuned",
+  "notes": [
+   "Stereo confirmed in the headset (two-GPU mirror).",
+   "Sound and picture drift apart; the game runs at 30 frames/s with stretches near 17. Not yet checked whether it happens without vrdual."
+  ],
+  "tested": "2026-11-15",
+  "single": "",
   "media": [],
   "writeup_pending": false
  }
