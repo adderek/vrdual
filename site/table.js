@@ -18,9 +18,13 @@ function makeTable({table, cols, rows, store, tools, count, onRender, defaults =
   st.sort = st.sort.filter(([k]) => known.has(k));
   const save = () => { try { localStorage.setItem(store, JSON.stringify(st)); } catch (_) {} };
   const fold = s => String(s).toLowerCase();
-  const txt = new Map(cols.map(c => [c.k, new Map(rows.map(r => [r, fold(c.text(r))]))]));
-  const skey = new Map(cols.map(c => [c.k, new Map(rows.map(r => [r, c.key ? c.key(r) : fold(c.text(r))]))]));
-  const hay = search ? new Map(rows.map(r => [r, fold(search.text(r))])) : null;
+  let txt, skey, hay;
+  const cache = () => {  // texts and sort keys per row; again after the column functions changed (refresh)
+    txt = new Map(cols.map(c => [c.k, new Map(rows.map(r => [r, fold(c.text(r))]))]));
+    skey = new Map(cols.map(c => [c.k, new Map(rows.map(r => [r, c.key ? c.key(r) : fold(c.text(r))]))]));
+    hay = search ? new Map(rows.map(r => [r, fold(search.text(r))])) : null;
+  };
+  cache();
   const open = new Set();
   const rid = r => id ? id(r) : String(rows.indexOf(r));
 
@@ -105,6 +109,7 @@ function makeTable({table, cols, rows, store, tools, count, onRender, defaults =
   });
   return {
     render() { head(); body(); },
+    refresh() { cache(); head(); body(); },  // cell contents changed (page option)
     filter(k, v) { st.filters[k] = v; save(); head(); body(); },
     filters: () => st.filters,
     query(q) { st.q = q; save(); head(); body(); },

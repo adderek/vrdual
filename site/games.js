@@ -7,12 +7,21 @@ const GEN_URL = {"UEVR": "https://github.com/praydog/UEVR", "UUVR": "https://git
 const PCGW = "https://www.pcgamingwiki.com/wiki/";
 const ORDER = ["works", "runs", "broken", "no effect", "retest", "untested"];
 let tbl = null, rows = null;
+// Viewer option: hide paid tools (PAID) from the VR route columns, counts and filters.
+let noPaid = false;
+try { noPaid = localStorage.getItem("vrdual-nopaid") === "1"; } catch (_) {}
+const isPaid = s => PAID.some(p => s.includes(p));
+// vr items: "; " outside parentheses, one tool each (library.py)
+const vrItems = s => { let d = 0, o = [""]; for (let i = 0; i < s.length; i++) { const c = s[i];
+  if (c === "(") d++; else if (c === ")") d--; else if (d === 0 && s.startsWith("; ", i)) { o.push(""); i++; continue; } o[o.length - 1] += c; } return o; };
+const vrOf = r => !r.vr || !noPaid ? r.vr : vrItems(r.vr).filter(x => !isPaid(x)).join("; ");
+const genOf = r => noPaid ? r.generic.filter(x => !PAID.includes(x)) : r.generic;
 
 const pcgwUrl = r => PCGW + encodeURIComponent(r.pcgw.replace(/ /g, "_"));
 const nativeOf = r => r.pcgw_vr.filter(x => x === "native VR" || x === "native 3D")
   .map(x => x === "native VR" ? t("l_pcgw_vr", "native VR mode") : t("l_pcgw_3d", "native stereo 3D mode"));
-const dedText = r => [r.vr, ...nativeOf(r)].filter(Boolean).join("; ");
-const dedHtml = r => [r.vr ? markPaid(md(r.vr)) : "", ...nativeOf(r).map(x => `${esc(x)} <span class="muted small">(<a href="${pcgwUrl(r)}#VR_support">PCGamingWiki</a>)</span>`)]
+const dedText = r => [vrOf(r), ...nativeOf(r)].filter(Boolean).join("; ");
+const dedHtml = r => [vrOf(r) ? markPaid(md(vrOf(r))) : "", ...nativeOf(r).map(x => `${esc(x)} <span class="muted small">(<a href="${pcgwUrl(r)}#VR_support">PCGamingWiki</a>)</span>`)]
   .filter(Boolean).join("; ");
 const dual = r => r.t ? r.t.status : "untested", single = r => r.t && r.t.single || "untested";
 
@@ -37,9 +46,9 @@ const COLS = [
   {k: "single", label: () => t("g_one", "one GPU"), text: r => single(r) + " " + stLabel(single(r)), key: r => ORDER.indexOf(single(r)), html: r => stHtml(single(r))},
   {k: "vr", label: () => t("l_col_ded", "dedicated VR"), text: dedText,
     hint: () => t("g_hint_ded", "Ways to play this particular game in VR: a VR version of the game, a VR mode built into it, or a VR mod made by fans for this game."), key: r => dedText(r) ? 0 : 1, html: dedHtml},
-  {k: "generic", label: () => t("l_col_gen", "generic VR"), text: r => r.generic.join(" "),
-    hint: () => t("g_hint_gen", "VR tools that work with many games built on the same technology (game engine) as this one. Not made for this game: it may work well, poorly or not at all."), key: r => -r.generic.length,
-    html: r => r.generic.map(x => `<a class="tag" href="${GEN_URL[x]}">${esc(x)}${PAID.includes(x) ? paidMark() : ""}</a>`).join(" ")},
+  {k: "generic", label: () => t("l_col_gen", "generic VR"), text: r => genOf(r).join(" "),
+    hint: () => t("g_hint_gen", "VR tools that work with many games built on the same technology (game engine) as this one. Not made for this game: it may work well, poorly or not at all."), key: r => -genOf(r).length,
+    html: r => genOf(r).map(x => `<a class="tag" href="${GEN_URL[x]}">${esc(x)}${PAID.includes(x) ? paidMark() : ""}</a>`).join(" ")},
   {k: "platform", label: () => t("l_col_plat", "VR route runs on"), text: r => r.platform, html: r => esc(r.platform), hide: true},
   {k: "engine", label: () => t("l_col_engine", "engine"), text: r => r.engine.join(", "), html: r => esc(r.engine.join(", "))},
   {k: "api", label: () => t("l_col_api", "graphics API"), text: r => r.api.join(", "), html: r => esc(r.api.join(", ")), hide: true},
@@ -50,7 +59,7 @@ const COLS = [
 
 function onRender() {
   const f = tbl.filters();
-  document.querySelectorAll("#quick button").forEach(b => b.setAttribute("aria-pressed", String((f[b.dataset.f] || "") === b.dataset.v)));
+  document.querySelectorAll("#quick button[data-f]").forEach(b => b.setAttribute("aria-pressed", String((f[b.dataset.f] || "") === b.dataset.v)));
   document.getElementById("single-note").hidden = !(f.single || "").trim();
   notFound();
 }
@@ -104,6 +113,11 @@ function start(want) {
 
 document.getElementById("quick").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b || !tbl) return;
+  if (b.id === "nopaid") {
+    noPaid = !noPaid; b.setAttribute("aria-pressed", String(noPaid));
+    try { localStorage.setItem("vrdual-nopaid", noPaid ? "1" : "0"); } catch (_) {}
+    return tbl.refresh();
+  }
   tbl.filter(b.dataset.f, b.getAttribute("aria-pressed") === "true" ? "" : b.dataset.v);
 });
 document.getElementById("none").addEventListener("click", e => {
@@ -119,5 +133,6 @@ onLang(() => { if (tbl) tbl.render(); });
 Promise.all([loadLibrary(), loadGames()]).then(([lib, gs]) => {
   const by = new Map(gs.map(g => [g.game, g]));
   rows = lib.map(r => ({...r, t: by.get(r.tested) || null}));
+  document.getElementById("nopaid").setAttribute("aria-pressed", String(noPaid));
   start(new URLSearchParams(location.search).get("g"));
 }).catch(e => { document.getElementById("count").textContent = "games.json / library.json: " + e; });

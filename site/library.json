@@ -625,7 +625,7 @@
 {"game": "GRIP", "stores": ["GOG"], "vr": "", "platform": "", "generic": ["UEVR", "Geo-11"], "engine": ["Unreal Engine 4"], "api": ["D3D11"], "pcgw_vr": ["native VR"], "pcgw": "GRIP: Combat Racing", "tested": ""},
 {"game": "Grow Home", "stores": ["Humble"], "vr": "", "platform": "", "generic": ["UUVR"], "engine": ["Unity"], "api": ["D3D9", "OpenGL"], "pcgw_vr": [], "pcgw": "Grow Home", "tested": ""},
 {"game": "GRUNND", "stores": ["Amazon"], "vr": "", "platform": "", "generic": ["UUVR"], "engine": ["Unity"], "api": [], "pcgw_vr": [], "pcgw": "GRUNND", "tested": ""},
-{"game": "GTA V", "stores": ["Epic"], "vr": "R.E.A.L. VR (Luke Ross); story mode only (GTA Online has anti-cheat)", "platform": "Win", "generic": ["vorpX", "Geo-11"], "engine": ["RAGE"], "api": ["D3D11"], "pcgw_vr": ["vorpX profile"], "pcgw": "Grand Theft Auto V", "tested": ""},
+{"game": "GTA V", "stores": ["Epic"], "vr": "R.E.A.L. VR (Luke Ross; story mode only, GTA Online has anti-cheat)", "platform": "Win", "generic": ["vorpX", "Geo-11"], "engine": ["RAGE"], "api": ["D3D11"], "pcgw_vr": ["vorpX profile"], "pcgw": "Grand Theft Auto V", "tested": ""},
 {"game": "GTR Evolution", "stores": ["Steam"], "vr": "", "platform": "", "generic": [], "engine": [], "api": [], "pcgw_vr": [], "pcgw": "", "tested": ""},
 {"game": "Guacamelee! 2", "stores": ["Humble"], "vr": "", "platform": "", "generic": ["Geo-11"], "engine": ["DrinkBox Engine"], "api": ["D3D11"], "pcgw_vr": [], "pcgw": "Guacamelee! 2", "tested": ""},
 {"game": "Guacamelee! Super Turbo Championship Edition", "stores": ["Epic"], "vr": "", "platform": "", "generic": [], "engine": ["DrinkBox Engine"], "api": ["D3D9.0c"], "pcgw_vr": [], "pcgw": "Guacamelee! Super Turbo Championship Edition", "tested": ""},

@@ -18,7 +18,9 @@ library.py link        fill "tested" (the game's name in site/games.json)
 
 One row per game; "stores" lists where it is owned. Hand-written fields:
 "vr" (dedicated VR routes for this game: VR editions, native VR, mods;
-Markdown subset of the site) and "platform" (where that route runs). The
+Markdown subset of the site; routes separated by "; " outside parentheses,
+one tool per item, so the page can hide paid ones) and "platform" (where
+that route runs). The
 vrdual status is not stored here: "tested" names the game's entry in
 site/games.json ("" = untested) and the page shows that entry's status.
 Public material only (the site publishes it).
