@@ -3,7 +3,7 @@
 Status per game, dual GPU (2x RX 7900 XTX, host "fractal", see AGENTS.md "Reference test machine") unless noted.
 Launch option for all: `/home/<user>/vrdual/run %command%` (from
 `vrdual install`); `vrdual xr` runs once for all games. Last update
-2026-11-15. Most games here are Steam; Epic/GOG ones go through Heroic
+2026-11-17. Most games here are Steam; Epic/GOG ones go through Heroic
 (setup below), Assassin's Creed Origins through Heroic + Ubisoft Connect.
 
 Status: **works** = stereo in the HMD confirmed; **runs** = renders, stereo
@@ -55,6 +55,7 @@ data of the web page, `site/`).
 | Galactic Civilizations III | Epic (Heroic): positive | Proton (umu, Proton-CachyOS), D3D11 (DXVK, 64-bit `GalCiv3.exe`) | works | 2026-10-29 | gamescope 1920x1080 windowed (Heroic) | • Works correctly.<br>• Mouse cursor in the HMD: under gamescope (64-bit games) it is read from the root of gamescope's X screen. |
 | Ghostbusters: The Video Game Remastered | Epic (Heroic): positive | Proton (umu, Proton-CachyOS), D3D11 (DXVK, 64-bit `ghost.exe`) | works | 2026-11-15 | gamescope 1920x1080 (Heroic), mirror mode; no profile, nothing tuned | • Stereo confirmed in the headset (two-GPU mirror).<br>• Sound and picture drift apart; the game runs at 30 frames/s with stretches near 17. Not yet checked whether it happens without vrdual. |
 | Grim Fandango Remastered | GOG (Heroic): positive | Proton (umu, Proton-CachyOS), OpenGL → Zink (32-bit `GrimFandango.exe`) | works | 2026-10-27 | gamescope 1920x1080 (Heroic); `[app:GrimFandango.exe]` profile (`world_scale` ~0.1) | • Works. |
+| GTA V Enhanced | Epic (Heroic): positive | Proton (umu, Proton-CachyOS), D3D12 (RAGE, vkd3d-proton, 64-bit `GTA5_Enhanced.exe`; started by `PlayGTAV.exe` and Rockstar's launcher) | works | 2026-11-17 | gamescope 1920x1080 (Heroic), mirror mode; `[app:GTA5_Enhanced.exe]` `sparse = 1`; `[app:SocialClubHelper.exe]` `stereo = 0` | • Works: stereo confirmed in the headset.<br>• Needs `sparse = 1`: without it the launcher reports that the graphics card lacks DirectX 12 feature level 12_0.<br>• Rockstar's Social Club helper loads the layer and alternates frames with the game (skewed picture, an 'already running' dialog): `stereo = 0` for it. |
 | Hogwarts Legacy (990080) | Steam: positive | Proton, D3D12 (UE4) | works | 2026-10-23 | tuned configuration, write-up pending (until then tune it yourself) | • Impressive stereo.<br>• Fast since cached-memory write tracking (before: mirror memory sync ~12 ms per submit).<br>• No native VR (a UEVR mod exists for Windows). |
 | Hospital Tycoon (11590) | Steam: positive | Proton | works | 2026-10-20 | gamescope 1920x1080 (below) | • Works; the system cursor is drawn by `vrdual xr` at the scene's depth (`cursor_depth = auto`).<br>• Crashes on a portrait desktop (NULL read in the game). |
 | Islands of Insight (2071500) | Steam: positive | Proton Experimental, D3D11 (UE5, DXVK, 64-bit `IslandsofInsight-Win64-Shipping.exe`) | works | 2026-11-06 | `[app:IslandsofInsight-Win64-Shipping.exe]` `world_scale` ~4.6, `screen_fov` ~58; gamescope 1920x1080 | • Works in the headset.<br>• The crosshair is doubled (drawn in the 3D view, shifted per eye); fix: a `noshift` or `hud` [shader rule](tasks/shader-rules.md) for its shader, not found yet. |

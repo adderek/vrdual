@@ -1101,5 +1101,21 @@
    "single": "",
    "media": [],
    "writeup_pending": false
+ },
+  {
+  "game": "GTA V Enhanced",
+  "store": "Epic (Heroic): positive",
+  "path": "Proton (umu, Proton-CachyOS), D3D12 (RAGE, vkd3d-proton, 64-bit `GTA5_Enhanced.exe`; started by `PlayGTAV.exe` and Rockstar's launcher)",
+  "status": "works",
+  "settings": "gamescope 1920x1080 (Heroic), mirror mode; `[app:GTA5_Enhanced.exe]` `sparse = 1`; `[app:SocialClubHelper.exe]` `stereo = 0`",
+  "notes": [
+   "Works: stereo confirmed in the headset.",
+   "Needs `sparse = 1`: without it the launcher reports that the graphics card lacks DirectX 12 feature level 12_0.",
+   "Rockstar's Social Club helper loads the layer and alternates frames with the game (skewed picture, an 'already running' dialog): `stereo = 0` for it."
+  ],
+  "tested": "2026-11-17",
+  "single": "",
+  "media": [],
+  "writeup_pending": false
  }
 ]

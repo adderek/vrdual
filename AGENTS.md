@@ -259,6 +259,20 @@ machine unless a row says otherwise. Read them with its topology in mind:
   size the swapchain images and the game's own view target must be told
   apart (Civ V at 1920x1080 had per-eye shadows until 2026-11-06). When a
   game "worked before", ask which settings changed (resolution, quality).
+- Config edits go to the host file `~/.config/vrdual/vrdual.conf` (`vrdual-ctl path`),
+  then `vrdual install`. Never to the copy in the Flatpak dir
+  (`~/.var/app/com.valvesoftware.Steam/vrdual/vrdual.conf`) or to Heroic's
+  setup: `install` overwrites the Flatpak copy from the host file whenever they
+  differ, so the edit silently vanishes (GTA V Enhanced `sparse`, 2026-11-17).
+- A game's exe is the one in the game's own process (`ps -eo args`), not the
+  launcher's stub: GTA V Enhanced runs as `GTA5_Enhanced.exe` (started by
+  `PlayGTAV.exe` and Rockstar's `Launcher.exe`). Profile keys match that exe.
+  Don't put `ps` args in notes: Epic launches carry the session password.
+- Every process in the game's prefix that uses Vulkan loads the layer, helpers
+  included. A helper that presents its own frames (Rockstar's Social Club
+  Chromium `SocialClubHelper.exe`) alternates frames with the game in one session
+  (`new frame sequence` resets in `xr.log`, skewed picture, "already running"
+  dialog). Set `stereo = 0` for it in `[app:NAME]` (launchers: see CONFIG.md).
 
 ## Working in sessions
 

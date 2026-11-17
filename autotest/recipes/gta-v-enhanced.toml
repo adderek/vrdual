@@ -1,0 +1,22 @@
+# GTA V Enhanced (Epic, via Heroic), Proton-CachyOS (umu), D3D12 via
+# vkd3d-proton (RAGE, 64-bit GTA5_Enhanced.exe). Started by PlayGTAV.exe (Epic
+# stub) -> Rockstar Launcher.exe -> GTA5_Enhanced_BE.exe -> GTA5_Enhanced.exe.
+# Format: docs/tasks/game-autotest.md. Not yet executable (no Heroic launch
+# key; Epic id 3240220).
+
+[game]
+slug = "gta-v-enhanced"
+profile = "GTA5_Enhanced.exe"   # [app:...] in the user's config
+regression = false
+
+# Tested 2026-11-17 in the headset: 1920x1080 gamescope (Heroic), mirror mode.
+# Needs `sparse = 1` (D3D12 feature level 12_0; without it the launcher shows
+# "graphics card does not meet hardware requirements"). Rockstar's Social Club
+# helper (SocialClubHelper.exe) loads the layer too: `stereo = 0` for it.
+
+[[step]]
+wait_frames = 1800          # TODO template: launcher, then the main menu
+[[step]]
+check = "eyes_differ"
+[[step]]
+snapshot = "gta-v-enhanced"
