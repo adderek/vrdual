@@ -1073,5 +1073,33 @@
   "single": "",
   "media": [],
   "writeup_pending": false
+ },
+ {
+   "game": "Outcast 1.1",
+   "store": "GOG",
+   "path": "GOG, D3D9 (GAIA engine)",
+   "status": "works",
+   "settings": "",
+   "notes": [
+     "Works."
+   ],
+   "tested": "2026-11-17",
+   "single": "",
+   "media": [],
+   "writeup_pending": false
+ },
+ {
+   "game": "Outcast - Second Contact",
+   "store": "GOG",
+   "path": "GOG, D3D11 (Unity)",
+   "status": "works",
+   "settings": "",
+   "notes": [
+     "Works."
+   ],
+   "tested": "2026-11-17",
+   "single": "",
+   "media": [],
+   "writeup_pending": false
  }
 ]
