@@ -22,6 +22,24 @@ says where to get it).
 
 ## 2. Install
 
+### Arch Linux: package (no AUR account needed)
+
+```bash
+git clone https://github.com/adderek/vrdual
+cd vrdual/packaging/aur
+makepkg -si      # builds vrdual-git from GitHub master, installs it and its dependencies
+vrdual install   # the Steam / Flatpak layer copy, as below
+vrdual xr
+```
+
+The package puts the built checkout in `/usr/share/vrdual` and links
+`/usr/bin/vrdual` to it. `vrdual install` then writes only to your home
+directory. Later, once it is on the AUR: `yay -S vrdual-git`. Skip the rest of this
+section (the checkout install) if you use the package.
+
+### Any distribution: from the checkout
+
+
 ```bash
 git clone --recursive https://github.com/adderek/vrdual
 cd vrdual
