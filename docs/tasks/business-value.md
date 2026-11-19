@@ -32,12 +32,13 @@ UI, network or threads inside the app process (AGENTS.md invariants).
    donors. Collection stays manual or via `vrdual perf` plus an issue form; no
    telemetry. Private configurations stay local (item 18).
 
-4. **Single-GPU quality.** Assumed: most VR users have one GPU, and the
-   two-GPU requirement limits adoption. Mode M6 (alternate-eye) exists but
-   halves the frame rate. Depth-based synthesis of the missing eye in
-   `vrdual-xr` (framegen-effects.md, DIBR) is the largest reach lever and the
-   most expensive. Start with a measurement: `vrdual measure` numbers on a
-   single-GPU setup.
+4. **Single-GPU quality.** Single GPU is supported (M6, alternate-eye, since
+   2026-10-18; README "One or two GPUs"), so it is no longer a blocker. Most VR
+   users have one card, and that mode halves the per-eye frame rate and mixes
+   the eyes in temporal effects (GAMES.md). Improving it is the reach lever.
+   Depth-based synthesis of the missing eye in `vrdual-xr` (framegen-effects.md,
+   DIBR) is the largest lever and the most expensive. Start with a measurement:
+   `vrdual measure` numbers on a single-GPU setup.
 
 5. **Packaging.** AUR package, Flatpak of the tools next to Steam's layer copy,
    `.deb` / `.rpm`. Today install means checkout, SDL3, glslc, multilib. Cheap
@@ -68,7 +69,7 @@ not engineering.
 
 - Which distributions for packaging (5)?
 - Is a B2B offer (7) allowed under the public-site rules?
-- Is a single-GPU user base the goal, or do two-GPU users stay the target (4)?
+- Is single-GPU quality (4) the priority, ahead of packaging (5)?
 
 ## Verified
 

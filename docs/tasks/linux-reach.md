@@ -11,7 +11,7 @@ Owner decisions: marked **OWNER**.
 | 1 | Packages: AUR, Flathub, `.deb`/`.rpm` | Install today = git + SDL3 + glslc + multilib |
 | 2 | One start page: "1 GPU, WiVRn, Steam game → do this" | Users meet architecture before results |
 | 3 | `vrdual doctor` | Most reports are environment problems |
-| 4 | Measure on one GPU, publish numbers | Most VR users have one GPU; vrdual needs two |
+| 4 | Measure single-GPU fps and quality, publish numbers | Most VR users have one GPU; it works (half rate per eye), numbers are missing |
 | 5 | Post where Linux VR users are (WiVRn, Monado, r/linux_gaming) | One game + "works/runs/broken" table |
 | 6 | Public compatibility matrix | Reproducible proof, not marketing |
 | 7 | `vrdual profiles sync` | New profiles without a checkout |
@@ -24,6 +24,6 @@ Owner decisions: marked **OWNER**.
 ## OWNER
 
 - Which distributions for step 1?
-- Measure one-GPU first (step 4), or keep two-GPU as the target?
+- Measure single-GPU (step 4) before packaging (step 1)?
 
 Status: proposal. Nothing built or run.

@@ -4,13 +4,16 @@ Play ordinary 3D games in a VR headset with real stereo 3D: each eye gets
 its own rendered view. The games don't need to know about it: no mods,
 no VR support needed. Linux, Vulkan, OpenGL (via Zink) and Proton/DXVK games.
 
-**One graphics card is enough**, any vendor (AMD, NVIDIA, Intel via Mesa).
+**One graphics card is enough** (AMD and NVIDIA tested; Intel via Mesa untested).
 The eyes are then rendered on alternate frames, so each eye gets half the
-game's frame rate. A second, identical GPU is optional: it renders the other
+game's frame rate. Two cards are optional: the second one renders the other
 eye in parallel, so each eye gets the full frame rate.
 
 Status: early, but games run in the headset ([game list](https://adderek.github.io/vrdual/games.html)). Headset: Quest 3/3S
 via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should work.
+
+Linux only for now. Packages: AUR (Arch) in progress; other distributions build
+from source ([INSTALL.md](INSTALL.md)).
 
 ## Pictures
 
@@ -54,9 +57,6 @@ Releases: `vrdual-<version>.tar.gz` from
 GitHub's own "Source code" archives lack the Vulkan headers submodule and do
 not build).
 
-With one GPU the game window on the monitor flickers (it shows left and right
-frames alternately); the headset is fine.
-
 ## Try it without a game
 
 ```bash
@@ -69,11 +69,20 @@ frames alternately); the headset is fine.
 
 Settings: `~/.config/vrdual/vrdual.conf` (`./vrdual config init`).
 
-## Two GPUs (optional)
+## One or two GPUs
 
-Both cards must be the same model and driver. Note: in most PCs the second
+**One GPU (the default case):** nothing to configure. Each eye gets every
+second frame, so each eye sees half the game's frame rate. Game
+temporal effects mix the two eyes, so turn off TAA, DLSS, FSR, XeSS, motion
+blur and frame generation in the game (see [INSTALL.md](INSTALL.md) and
+[docs/GAMES.md](docs/GAMES.md)). With one GPU the monitor shows the two eyes
+alternately, so the game window on the desktop flickers; the headset is fine.
+
+**Two GPUs (optional):** each eye is rendered by its own card, at full frame
+rate. Both cards should be the same model and driver. In most PCs the second
 card sits behind the chipset with a slower link (e.g. PCIe Gen3 x4 instead of
-Gen4 x16); check with `./vrdual gpus`.
+Gen4 x16); check with `./vrdual gpus`. The headless card (no monitor) renders
+the right eye; vrdual picks the cards by what is connected.
 
 ## Tested
 
