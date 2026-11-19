@@ -1,0 +1,68 @@
+# AUR package: vrdual-git (builds the tip of master; no release tags yet).
+# Maintainer: adderek
+#
+# Installs the whole checkout (built) to /usr/share/vrdual; /usr/bin/vrdual
+# links to its script. The user then runs `vrdual install` (writes only to
+# $HOME: Steam/Flatpak layer copy) and `vrdual xr`. Nothing is written to
+# /usr at run time.
+
+pkgname=vrdual-git
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc='Stereo 3D for flat games in a VR headset on Linux: Vulkan layer, OpenXR output'
+arch=(x86_64)
+url='https://github.com/adderek/vrdual'
+license=(Apache-2.0)
+depends=(
+    sdl3
+    vulkan-icd-loader
+    libx11
+    libxcb
+    libglvnd
+)
+makedepends=(
+    git
+    shaderc        # glslc
+    lib32-glibc    # 32-bit layer (`make install-build` builds it too)
+    lib32-gcc-libs
+)
+optdepends=(
+    'python: generated dispatch headers at build time; selftest (with python-pillow)'
+    'python-pillow: selftest snapshots (tools/wiggle.py)'
+    'imagemagick: selftest (magick)'
+    'spirv-tools: selftest (spirv-val)'
+    'ffmpeg: vrdual record'
+    'flatpak: Steam (Flatpak) games, WiVRn (io.github.wivrn.wivrn)'
+)
+provides=(vrdual)
+conflicts=(vrdual)
+source=("$pkgname::git+https://github.com/adderek/vrdual.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$pkgname"
+    printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+    cd "$pkgname"
+    git submodule update --init --recursive
+}
+
+build() {
+    cd "$pkgname"
+    make install-build
+}
+
+package() {
+    cd "$pkgname"
+
+    install -d "$pkgdir/usr/share/vrdual" "$pkgdir/usr/bin"
+    # the built checkout; .git stays out
+    find . -mindepth 1 -maxdepth 1 ! -name .git -exec cp -a {} "$pkgdir/usr/share/vrdual/" \;
+
+    ln -s /usr/share/vrdual/vrdual "$pkgdir/usr/bin/vrdual"
+
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"
+}

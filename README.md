@@ -12,8 +12,9 @@ eye in parallel, so each eye gets the full frame rate.
 Status: early, but games run in the headset ([game list](https://adderek.github.io/vrdual/games.html)). Headset: Quest 3/3S
 via [WiVRn](https://github.com/WiVRn/WiVRn) tested; any OpenXR runtime should work.
 
-Linux only for now. Packages: AUR (Arch) in progress; other distributions build
-from source ([INSTALL.md](INSTALL.md)).
+Linux only for now. Arch: AUR package `vrdual-git` (recipe in
+[packaging/aur](packaging/aur/PKGBUILD), not yet published); other distributions
+build from source ([INSTALL.md](INSTALL.md)).
 
 ## Pictures
 
