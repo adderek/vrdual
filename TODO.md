@@ -124,6 +124,7 @@ Before you start: `./vrdual selftest` must pass (see [AGENTS.md](AGENTS.md)).
     question, one fact one place, current vs history, decision records,
     ci checks on links / index. Proposal first, ask before moving files.
 25. [amdgpu runtime-PM resume failure](docs/tasks/amdgpu-runpm-resume.md): seen once 2026-11-09 on the bifurcated slot (0 in ~1040 wake-ups on the x16 slot); known AMD problem, bug bounty on RX 9070 (owner): reproduce, report upstream, maybe a vrdual-side "reboot needed" check
+26. [Business value and usefulness](docs/tasks/business-value.md) (owner's request 2026-11-19): proposal only. Order: `vrdual doctor`, profile sync, public performance matrix; three OWNER questions open in the file.
 
 Done: M0 PoC, M0.1 config + live IPD + calibration (2026-10-09). M1 mirror mode
 (one process, hidden second GPU), Steam/Flatpak/32-bit/OpenGL (Zink) support,
