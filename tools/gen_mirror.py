@@ -32,6 +32,7 @@ MANUAL = {
     'vkUpdateDescriptorSetWithTemplate', 'vkCmdPushDescriptorSetWithTemplate',
     'vkCmdPushDescriptorSetWithTemplate2', 'vkCreateGraphicsPipelines', 'vkBeginCommandBuffer',
     'vkCreateBuffer', 'vkGetBufferDeviceAddress', 'vkGetMemoryFdKHR',
+    'vkImportSemaphoreFdKHR', 'vkImportFenceFdKHR',
 }
 
 # Generated, plus a hand-written hook in vrdual_mirror.hpp: hook_<Cmd>(md, args)

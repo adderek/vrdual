@@ -1033,6 +1033,43 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_GetMemoryFdKHR(VkDevice dev, const VkMem
     return r;
 }
 
+// Sync fd import (binary semaphore, fence): A takes the fd on success, so B
+// imports a dup taken before the call. Both then wait on the same sync file.
+// Export stays on A only (B's twin keeps its own payload).
+static VKAPI_ATTR VkResult VKAPI_CALL m_ImportSemaphoreFdKHR(VkDevice dev, const VkImportSemaphoreFdInfoKHR* ii) {
+    MDev* md = mdev_of(key(dev));
+    if (!md->live || !md->b.ImportSemaphoreFdKHR || ii->fd < 0) return md->a.ImportSemaphoreFdKHR(dev, ii);
+    int bfd = dup(ii->fd);
+    VkResult r = md->a.ImportSemaphoreFdKHR(dev, ii);
+    if (bfd < 0) { mirror_fail(md, "vkImportSemaphoreFdKHR: dup of the fd failed"); return r; }
+    if (r < 0) { close(bfd); return r; }
+    Ctx& c = ctx_begin(md);
+    VkImportSemaphoreFdInfoKHR bi{};
+    tr_VkImportSemaphoreFdInfoKHR(c, ii, &bi);  // B's handles
+    bi.fd = bfd;
+    VkResult rb = c.ok() ? md->b.ImportSemaphoreFdKHR(md->bdev, &bi) : VK_ERROR_UNKNOWN;
+    ctx_end(c);
+    if (rb < 0) { close(bfd); mirror_fail(md, "vkImportSemaphoreFdKHR failed on B"); }
+    return r;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL m_ImportFenceFdKHR(VkDevice dev, const VkImportFenceFdInfoKHR* ii) {
+    MDev* md = mdev_of(key(dev));
+    if (!md->live || !md->b.ImportFenceFdKHR || ii->fd < 0) return md->a.ImportFenceFdKHR(dev, ii);
+    int bfd = dup(ii->fd);
+    VkResult r = md->a.ImportFenceFdKHR(dev, ii);
+    if (bfd < 0) { mirror_fail(md, "vkImportFenceFdKHR: dup of the fd failed"); return r; }
+    if (r < 0) { close(bfd); return r; }
+    Ctx& c = ctx_begin(md);
+    VkImportFenceFdInfoKHR bi{};
+    tr_VkImportFenceFdInfoKHR(c, ii, &bi);  // B's handles
+    bi.fd = bfd;
+    VkResult rb = c.ok() ? md->b.ImportFenceFdKHR(md->bdev, &bi) : VK_ERROR_UNKNOWN;
+    ctx_end(c);
+    if (rb < 0) { close(bfd); mirror_fail(md, "vkImportFenceFdKHR failed on B"); }
+    return r;
+}
+
 // Import of an fd on A: B imports its twin of the exporting memory (same
 // handle type), or, for an fd from elsewhere, gets plain memory.
 static void import_on_b(MDev* md, uint64_t ino, VkMemoryAllocateInfo& bai) {
@@ -1935,7 +1972,7 @@ static PFN_vkVoidFunction lookup(const char* name) {
         M(CreateDescriptorUpdateTemplate); M(DestroyDescriptorUpdateTemplate); M(UpdateDescriptorSetWithTemplate);
         M(CmdPushDescriptorSetWithTemplate); M(CmdPushDescriptorSetWithTemplate2); M(CreateShaderModule);
         M(CreateGraphicsPipelines); M(AcquireNextImageKHR); M(AcquireNextImage2KHR); M(CreateBuffer);
-        M(GetBufferDeviceAddress); M(GetMemoryFdKHR);
+        M(GetBufferDeviceAddress); M(GetMemoryFdKHR); M(ImportSemaphoreFdKHR); M(ImportFenceFdKHR);
 #undef M
         if (n == "vkDestroyDevice") return (PFN_vkVoidFunction)vrd_DestroyDevice;
         if (n == "vkCreateSwapchainKHR") return (PFN_vkVoidFunction)vrd_CreateSwapchainKHR;

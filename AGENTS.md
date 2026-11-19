@@ -173,6 +173,14 @@ machine unless a row says otherwise. Read them with its topology in mind:
 
 ## Gotchas already paid for
 
+- A hidden device extension that an OpenXR runtime asks for (WiVRn's list, xrizer's
+  temporary device) fails `vkCreateDevice` with `ERROR_EXTENSION_NOT_PRESENT`: the
+  loader checks requests against the layer's filtered list. Xrizer's temporary
+  device runs in mirror mode (`eye=both`). Check: `vrdual-devext-test`. Hide only
+  what the app can't live without. Fd sync (`VK_KHR_external_*_fd`) stays visible;
+  in mirror, A takes the fd on import, so B imports a dup (`m_ImportSemaphoreFdKHR`).
+  Without the dup and B's own handles, B fails and the mirror stops ("mirror
+  STOPPED"), or a wait hangs. Check: `vrdual-devext-test` (round trip, both eyes).
 - Zink (Mesa 26) refuses a Vulkan 1.4 driver whose reported apiVersion is
   clamped to 1.3 ("failed to load driver: zink") — hide features, not versions.
 - GPL link pipelines come with `FAIL_ON_PIPELINE_COMPILE_REQUIRED`: A hits its

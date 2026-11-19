@@ -14,7 +14,7 @@ LAYERFLAGS := -shared -fPIC -fvisibility=hidden -static-libstdc++ -static-libgcc
 BUILDINFO = -DVRDUAL_BUILD_INFO="\"$$(tools/build_info.sh)\""
 LAYERSRC := layer/vrdual_layer.cpp layer/vrdual_mirror.hpp layer/vrdual_cursor.hpp layer/vrdual_passes.hpp layer/vrdual_gamefix.hpp layer/spirv_patch.hpp common/vrdual_shm.h common/vrdual_config.hpp common/vrdual_ctl.hpp $(B)/mirror_gen.hpp
 
-all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test $(B)/vrdual-gamefix-test
+all: $(B)/libVkLayer_vrdual.so $(B)/VkLayer_vrdual.json $(B)/vrdual-cube $(B)/vrdual-gltest $(B)/vrdual-compositor $(B)/vrdual-xr $(B)/spvpatch $(B)/spvpatch-asan $(B)/vrdual-ctl $(B)/vrdual-input-test $(B)/vrdual-frames-test $(B)/vrdual-calib-test $(B)/vrdual-gamefix-test $(B)/vrdual-devext-test
 
 # What `vrdual install` needs: the tools and both layers (no 32-bit GL test app).
 install-build: all $(B)/lib32/libVkLayer_vrdual.so $(B)/lib32/VkLayer_vrdual.json
@@ -77,6 +77,9 @@ $(B)/spvpatch: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
 # selftest's fuzz run: the patcher under AddressSanitizer
 $(B)/spvpatch-asan: tools/spvpatch.cpp layer/spirv_patch.hpp | $(B)
 	$(CXX) $(CXXFLAGS) -O1 -fsanitize=address,undefined -fno-sanitize-recover=all $(BUILDINFO) -o $@ $<
+
+$(B)/vrdual-devext-test: tools/devext_test.cpp | $(B)
+	$(CXX) $(CXXFLAGS) -o $@ $< -lvulkan
 
 $(B)/vrdual-frames-test: tools/frames_test.cpp common/vrdual_frames.hpp common/vrdual_shm.h | $(B)
 	$(CXX) $(CXXFLAGS) $(BUILDINFO) -o $@ $<

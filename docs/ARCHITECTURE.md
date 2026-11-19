@@ -251,8 +251,9 @@ The layer (`layer/vrdual_layer.cpp`) does four things:
   skip export. Claim and publish run under one lock (a re-map used to race a
   publish from another swapchain: SIGSEGV in Tomb Raider II).
 - **Capability filter** (all stereo modes): hidden from the app are shader
-  objects, descriptor buffers, external memory/semaphores, sparse, mesh
-  shaders, ray tracing, host image copy, maintenance7+, present wait/id, ...
+  objects, descriptor buffers, external memory (dma_buf, host), sparse, mesh
+  shaders, ray tracing, (external semaphore/fence fd stay visible: in mirror,
+  `m_ImportSemaphoreFdKHR` / `m_ImportFenceFdKHR` give B a dup of the fd), host image copy, maintenance7+, present wait/id, ...
   (`ext_hidden`, `hide_features` in the layer); device addresses and
   maintenance5/6 as above. Zink and DXVK fall back to plain paths. The API version is not clamped (Zink refuses a 1.4 driver
   reporting 1.3; `VRDUAL_CLAMP_API=1` to force).

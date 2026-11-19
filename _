@@ -1022,6 +1022,16 @@ vrdual_selftest() {
 
     _selftest_nogpu
 
+    # xrizer's temporary device (mirror mode, eye=both) asks for the OpenXR
+    # extension list through the layer: a hidden extension there fails with
+    # ERROR_EXTENSION_NOT_PRESENT. The sync fd round trip must also not stop
+    # the mirror on device B ("mirror STOPPED" on the layer's stderr).
+    for e in left both; do
+        label="device extensions: OpenXR list creates, sync fd round trip, mirror not stopped, eye=$e"
+        check env VK_ADD_LAYER_PATH="$B" VK_INSTANCE_LAYERS=VK_LAYER_VRDUAL_stereo VRDUAL_SESSION=$sess-devext VRDUAL_EYE=$e \
+            bash -c 'out=$("$1" 2>&1) || { printf "%s\n" "$out"; exit 1; }; printf "%s\n" "$out"; ! grep -q "mirror STOPPED" <<<"$out"' _ "$B/vrdual-devext-test"
+    done
+
     # 1b. vrdual install into a fresh HOME: wrapper + both layers + launch
     # option; `vrdual xr`'s --quiet run is silent when nothing changed and
     # replaces a layer copy that differs from build/.
